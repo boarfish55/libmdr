@@ -1,0 +1,73 @@
+#ifndef MDR_H
+#define MDR_H
+
+#include <stdint.h>
+
+/*
+ * Minimal Data Representation
+ */
+struct mdr {
+	/*
+	 * Big-endian over the wire.
+	 */
+	uint64_t *size;
+	uint32_t *flags;
+	uint32_t *namespace;
+	uint16_t *id;
+	uint16_t *version;
+
+	char     *buf;
+	uint64_t  buf_sz;
+	char     *pos;
+	int       dyn;
+};
+
+
+/* Namespaces are 32 bits */
+#define MDR_NS_ECHO 0x00000001
+
+/* IDs are 16 bits */
+#define MDR_ID_ECHO 0x0001
+
+struct mdr_echo {
+	struct mdr m;
+	char       echo[1024];
+};
+
+uint64_t  mdr_hdr_size();
+uint64_t  mdr_size(struct mdr *);
+uint64_t  mdr_rewind(struct mdr *);
+uint64_t  mdr_tell(struct mdr *);
+uint64_t  mdr_seek(struct mdr *, uint64_t);
+void     *mdr_buf(struct mdr *);
+void      mdr_free(struct mdr *);
+
+uint32_t mdr_namespace(struct mdr *);
+uint16_t mdr_id(struct mdr *);
+uint16_t mdr_version(struct mdr *);
+
+// TODO: need some equivalent with file descriptors as targets
+uint64_t mdr_encode(struct mdr *, uint16_t, uint16_t, uint16_t,
+             char *, uint64_t);
+uint64_t mdr_pack_uint64(struct mdr *, uint64_t);
+uint64_t mdr_pack_uint32(struct mdr *, uint32_t);
+uint64_t mdr_pack_uint16(struct mdr *, uint16_t);
+uint64_t mdr_pack_uint8(struct mdr *, uint8_t);
+uint64_t mdr_pack_bytes(struct mdr *, const char *, uint64_t);
+uint64_t mdr_pack_string(struct mdr *, const char *);
+uint64_t mdr_pack_mdr(struct mdr *, struct mdr *);
+uint64_t mdr_pack(struct mdr *, const char *, ...);
+
+uint64_t mdr_decode(struct mdr *, char *, uint64_t);
+uint64_t mdr_unpack_uint64(struct mdr *, uint64_t *);
+uint64_t mdr_unpack_uint32(struct mdr *, uint32_t *);
+uint64_t mdr_unpack_uint16(struct mdr *, uint16_t *);
+uint64_t mdr_unpack_uint8(struct mdr *, uint8_t *);
+uint64_t mdr_unpack_bytes(struct mdr *, char *, uint64_t *);
+uint64_t mdr_unpack_string(struct mdr *, char *, uint64_t *);
+uint64_t mdr_unpack(struct mdr *, const char *, ...);
+
+uint64_t mdr_echo_encode(struct mdr_echo *);
+uint64_t mdr_echo_decode(struct mdr_echo *, char *, uint64_t);
+
+#endif
