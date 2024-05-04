@@ -34,19 +34,19 @@ struct mdr_echo {
 	char       echo[1024];
 };
 
-uint64_t  mdr_hdr_size();
+void     *mdr_buf(struct mdr *);
+void      mdr_free(struct mdr *);
 uint64_t  mdr_size(struct mdr *);
+uint64_t  mdr_hdr_size();
+
 uint64_t  mdr_rewind(struct mdr *);
 uint64_t  mdr_tell(struct mdr *);
 uint64_t  mdr_seek(struct mdr *, uint64_t);
-void     *mdr_buf(struct mdr *);
-void      mdr_free(struct mdr *);
 
 uint32_t mdr_namespace(struct mdr *);
 uint16_t mdr_id(struct mdr *);
 uint16_t mdr_version(struct mdr *);
 
-// TODO: need some equivalent with file descriptors as targets
 uint64_t mdr_encode(struct mdr *, uint16_t, uint16_t, uint16_t,
              char *, uint64_t);
 uint64_t mdr_pack_uint64(struct mdr *, uint64_t);
@@ -54,6 +54,7 @@ uint64_t mdr_pack_uint32(struct mdr *, uint32_t);
 uint64_t mdr_pack_uint16(struct mdr *, uint16_t);
 uint64_t mdr_pack_uint8(struct mdr *, uint8_t);
 uint64_t mdr_pack_bytes(struct mdr *, const char *, uint64_t);
+uint64_t mdr_pack_bytes_prefix(struct mdr *, uint64_t);
 uint64_t mdr_pack_string(struct mdr *, const char *);
 uint64_t mdr_pack_mdr(struct mdr *, struct mdr *);
 uint64_t mdr_pack(struct mdr *, const char *, ...);
@@ -64,6 +65,7 @@ uint64_t mdr_unpack_uint32(struct mdr *, uint32_t *);
 uint64_t mdr_unpack_uint16(struct mdr *, uint16_t *);
 uint64_t mdr_unpack_uint8(struct mdr *, uint8_t *);
 uint64_t mdr_unpack_bytes(struct mdr *, char *, uint64_t *);
+uint64_t mdr_unpack_bytes_prefix(struct mdr *, uint64_t *);
 uint64_t mdr_unpack_string(struct mdr *, char *, uint64_t *);
 uint64_t mdr_unpack(struct mdr *, const char *, ...);
 

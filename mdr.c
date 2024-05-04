@@ -276,7 +276,7 @@ mdr_pack_bytes(struct mdr *m, const char *bytes, uint64_t bytes_sz)
 		return UINT64_MAX;
 	}
 
-	/* 
+	/*
 	 * Only store the byte string length as a single byte if the leading
 	 * bit is zero. Otherwise use the full 8 bytes. This should prevent
 	 * wasting 7 bytes for large numbers of small strings.
@@ -293,6 +293,37 @@ mdr_pack_bytes(struct mdr *m, const char *bytes, uint64_t bytes_sz)
 
 	memcpy(m->pos, bytes, bytes_sz);
 	m->pos += bytes_sz;
+
+	return mdr_update_size(m);
+}
+
+uint64_t
+mdr_pack_bytes_prefix(struct mdr *m, uint64_t bytes_sz)
+{
+	if (m == NULL) {
+		errno = EINVAL;
+		return UINT64_MAX;
+	}
+	if (!mdr_can_fit(m, sizeof(uint8_t) +
+	    ((bytes_sz < UINT8_MAX) ? 0 : sizeof(uint64_t)))) {
+		errno = EOVERFLOW;
+		return UINT64_MAX;
+	}
+
+	/*
+	 * Only store the byte string length as a single byte if the leading
+	 * bit is zero. Otherwise use the full 8 bytes. This should prevent
+	 * wasting 7 bytes for large numbers of small strings.
+	 */
+	if (bytes_sz < UINT8_MAX) {
+		*(uint8_t *)m->pos = (uint8_t)bytes_sz;
+		m->pos += sizeof(uint8_t);
+	} else {
+		*(uint8_t *)m->pos = 0xFF;
+		m->pos += sizeof(uint8_t);
+		*(uint64_t *)m->pos = htobe64(bytes_sz);
+		m->pos += sizeof(uint64_t);
+	}
 
 	return mdr_update_size(m);
 }
@@ -564,6 +595,33 @@ mdr_unpack_bytes(struct mdr *m, char *bytes, uint64_t *bytes_sz)
 
 	memcpy(bytes, m->pos, (avail < *bytes_sz) ? avail : *bytes_sz);
 	m->pos += *bytes_sz;
+
+	return mdr_size(m) - mdr_tell(m);
+}
+
+uint64_t
+mdr_unpack_bytes_prefix(struct mdr *m, uint64_t *bytes_sz)
+{
+	if (m == NULL || bytes_sz == NULL) {
+		errno = EINVAL;
+		return UINT64_MAX;
+	}
+
+	if (m->buf_sz - mdr_tell(m) < sizeof(uint8_t)) {
+		errno = ERANGE;
+		return UINT64_MAX;
+	}
+	*bytes_sz = *(uint8_t *)m->pos;
+	m->pos += sizeof(uint8_t);
+
+	if (*bytes_sz == UINT8_MAX) {
+		if (m->buf_sz - mdr_tell(m) < sizeof(uint64_t)) {
+			errno = ERANGE;
+			return UINT64_MAX;
+		}
+		*bytes_sz = be64toh(*(uint64_t *)m->pos);
+		m->pos += sizeof(uint64_t);
+	}
 
 	return mdr_size(m) - mdr_tell(m);
 }

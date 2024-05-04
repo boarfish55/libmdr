@@ -32,6 +32,25 @@ test_long_str()
 }
 
 void
+test_long_bytes_prefix()
+{
+	uint64_t   r, len;
+	struct mdr echo, decode;
+
+	r = mdr_encode(&echo, MDR_NS_ECHO, MDR_ID_ECHO, 0, NULL, 0);
+	printf("mdr_encode=%lu\n", r);
+
+	r = mdr_pack_bytes_prefix(&echo, 1024);
+	printf("mdr_pack_bytes_prefix=%lu\n", r);
+
+	r = mdr_decode(&decode, mdr_buf(&echo), mdr_size(&echo));
+	printf("mdr_decode=%lu\n", r);
+
+	r = mdr_unpack_bytes_prefix(&decode, &len);
+	printf("mdr_unpack_bytes_prefix() -> %lu\n", len);
+}
+
+void
 test_echo()
 {
 	int             i;
@@ -139,6 +158,8 @@ main()
 	test_long_str();
 
 	test_echo();
+
+	test_long_bytes_prefix();
 
 	return 0;
 }
