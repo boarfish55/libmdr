@@ -25,6 +25,14 @@ mdr_can_fit(struct mdr *m, size_t n)
 	m->buf_sz = mdr_tell(m) + n;
 	if (tmp != m->buf) {
 		m->pos = tmp + mdr_tell(m);
+
+		m->size = (uint64_t *)(tmp + ((char *)m->size - m->buf));
+		m->flags = (uint32_t *)(tmp + ((char *)m->flags - m->buf));
+		m->namespace = (uint32_t *)(tmp + ((char *)m->namespace -
+		    m->buf));
+		m->id = (uint16_t *)(tmp + ((char *)m->id - m->buf));
+		m->version = (uint16_t *)(tmp + ((char *)m->version - m->buf));
+
 		m->buf = tmp;
 	}
 
@@ -85,25 +93,15 @@ mdr_tell(struct mdr *m)
 	return m->pos - m->buf;
 }
 
-uint64_t
-mdr_seek(struct mdr *m, uint64_t offset)
+int
+mdr_reset(struct mdr *m)
 {
 	if (m == NULL) {
 		errno = EINVAL;
-		return UINT64_MAX;
+		return -1;
 	}
-	if (offset >= be64toh(*m->size)) {
-		errno = ERANGE;
-		return UINT64_MAX;
-	}
-	m->pos = m->buf + offset;
-	return m->pos - m->buf;
-}
-
-uint64_t
-mdr_rewind(struct mdr *m)
-{
-	return mdr_seek(m, mdr_hdr_size());
+	m->pos = m->buf;
+	return 0;
 }
 
 uint32_t

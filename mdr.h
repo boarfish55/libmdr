@@ -39,9 +39,8 @@ void      mdr_free(struct mdr *);
 uint64_t  mdr_size(struct mdr *);
 uint64_t  mdr_hdr_size();
 
-uint64_t  mdr_rewind(struct mdr *);
+int       mdr_reset(struct mdr *);
 uint64_t  mdr_tell(struct mdr *);
-uint64_t  mdr_seek(struct mdr *, uint64_t);
 
 uint32_t mdr_namespace(struct mdr *);
 uint16_t mdr_id(struct mdr *);

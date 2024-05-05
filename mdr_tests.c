@@ -147,12 +147,12 @@ main()
 	printf("mdr_unpack_bytes(b)=%.*s (%lu)\n", (int)len, str5, len);
 
 
-	printf("mdr_rewind()=%lu\n", mdr_rewind(&echo3));
+	printf("mdr_reset()=%d\n", mdr_reset(&echo3));
 	len = sizeof(str5);
 	r = mdr_unpack_string(&echo3, str5, &len);
 	printf("mdr_unpack_string(s)=%.*s (%lu)\n", (int)len, str5, len);
 
-	printf("mdr_rewind()=%lu\n", mdr_rewind(&echo3));
+	printf("mdr_reset()=%d\n", mdr_reset(&echo3));
 	len = sizeof(buf_echo);
 	r = mdr_unpack_string(&echo3, buf_echo, &len);
 	printf("mdr_unpack_string(s)=%.*s (%lu)\n", (int)len, buf_echo, len);
