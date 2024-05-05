@@ -18,7 +18,7 @@ test_long_str()
 	r = mdr_encode(&echo, MDR_NS_ECHO, MDR_ID_ECHO, 0, NULL, 0);
 	printf("mdr_encode=%lu\n", r);
 
-	mdr_pack_string(&echo, str);
+	r = mdr_pack_string(&echo, str);
 	printf("mdr_pack_string=%lu\n", r);
 
 	r = mdr_decode(&decode, mdr_buf(&echo), mdr_size(&echo));
@@ -26,9 +26,10 @@ test_long_str()
 
 	len = sizeof(str2);
 	r = mdr_unpack_string(&decode, str2, &len);
-	printf("mdr_unpack_string(s)=%*s (%lu -> %lu)\n",
+	printf("mdr_unpack_string(s)=%.*s (%lu -> %lu)\n",
 	    (int)((len < sizeof(str2)) ? len - 1 : sizeof(str2) - 1),
 	    str2, len, sizeof(str2));
+	mdr_free(&echo);
 }
 
 void
@@ -48,6 +49,7 @@ test_long_bytes_prefix()
 
 	r = mdr_unpack_bytes_prefix(&decode, &len);
 	printf("mdr_unpack_bytes_prefix() -> %lu\n", len);
+	mdr_free(&echo);
 }
 
 void
@@ -81,7 +83,7 @@ main()
 	uint16_t   u16 = 0;
 	int8_t     i8 = 0;
 	char       dbytes[1024];
-	uint64_t   dlen;
+	uint64_t   dlen = 0;
 	char       dstr[1024];
 	uint64_t   dstr_len;
 
@@ -127,7 +129,7 @@ main()
 	printf("u64: 111 == %lu\n", u64);
 	printf("i8: 111 == %d\n", i8);
 	printf("u16: 111 == %u\n", u16);
-	printf("dbytes: allo == %*s\n", (int)dlen, dbytes);
+	printf("dbytes: allo == [%.*s] (%d)\n", (int)dlen, dbytes, (int)dlen);
 	printf("dstr: string == %s\n", dstr);
 
 	r = mdr_encode(&echo3, MDR_NS_ECHO, MDR_ID_ECHO, 0,
@@ -142,18 +144,18 @@ main()
 
 	len = sizeof(str5);
 	r = mdr_unpack_bytes(&echo3, str5, &len);
-	printf("mdr_unpack_bytes(b)=%*s (%lu)\n", (int)len, str5, len);
+	printf("mdr_unpack_bytes(b)=%.*s (%lu)\n", (int)len, str5, len);
 
 
 	printf("mdr_rewind()=%lu\n", mdr_rewind(&echo3));
 	len = sizeof(str5);
 	r = mdr_unpack_string(&echo3, str5, &len);
-	printf("mdr_unpack_string(s)=%*s (%lu)\n", (int)len, str5, len);
+	printf("mdr_unpack_string(s)=%.*s (%lu)\n", (int)len, str5, len);
 
 	printf("mdr_rewind()=%lu\n", mdr_rewind(&echo3));
 	len = sizeof(buf_echo);
 	r = mdr_unpack_string(&echo3, buf_echo, &len);
-	printf("mdr_unpack_string(s)=%*s (%lu)\n", (int)len, buf_echo, len);
+	printf("mdr_unpack_string(s)=%.*s (%lu)\n", (int)len, buf_echo, len);
 
 	test_long_str();
 
