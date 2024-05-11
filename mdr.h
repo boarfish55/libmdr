@@ -7,6 +7,7 @@
  * Minimal Data Representation
  *
  * An mdr message can contain at most (UINT64_MAX - 1) bytes.
+ * Total bytes excluding tail bytes is PTRDIFF_MAX.
  */
 struct mdr {
 	/*

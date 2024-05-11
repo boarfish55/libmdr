@@ -1,5 +1,7 @@
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "mdr.h"
 
@@ -72,17 +74,25 @@ test_limits()
 	r = mdr_encode(&echo, MDR_NS_ECHO, MDR_ID_ECHO, 0, NULL, 0);
 	printf("mdr_encode=%lu\n", r);
 
-	n = UINT64_MAX - (mdr_hdr_size() + 9);
+	n = (PTRDIFF_MAX - (mdr_hdr_size() + 9)) + 1;
 	errno = 0;
 	r = mdr_pack_bytes(&echo, str, n);
 	if (errno != EOVERFLOW)
 		printf("mdr_pack_bytes(b): expected EOVERFLOW, got %d\n", errno);
 
-	n = UINT64_MAX - (mdr_hdr_size() + 9 + 1);
+	n = PTRDIFF_MAX - (mdr_hdr_size() + 9 + 1);
 	errno = 0;
 	r = mdr_pack_bytes(&echo, str, n);
 	if (errno != ENOMEM)
 		printf("mdr_pack_bytes(b): expected ENOMEM, got %d\n", errno);
+
+	n = UINT64_MAX - (mdr_hdr_size() + 9);
+	errno = 0;
+	r = mdr_pack_tail_bytes(&echo, n);
+	if (errno != EOVERFLOW)
+		printf("mdr_pack_bytes(b): expected EOVERFLOW, got %d\n", errno);
+
+	mdr_free(&echo);
 }
 
 void

@@ -7,11 +7,11 @@
 #include "mdr.h"
 
 static int
-mdr_can_fit(struct mdr *m, uint64_t n)
+mdr_can_fit(struct mdr *m, size_t n)
 {
 	char *tmp;
 
-	if ((UINT64_MAX - (mdr_size(m) + 1)) < n) {
+	if ((PTRDIFF_MAX - mdr_tell(m)) < n) {
 		errno = EOVERFLOW;
 		return 0;
 	}
@@ -310,32 +310,39 @@ mdr_pack_tail_bytes(struct mdr *m, uint64_t bytes_sz)
 		return UINT64_MAX;
 	}
 
-	if (!mdr_can_fit(m, sizeof(uint8_t) +
-	    ((bytes_sz < UINT8_MAX) ? 0 : sizeof(uint64_t))))
-		return UINT64_MAX;
-
 	/*
 	 * Only store the byte string length as a single byte if the leading
 	 * bit is zero. Otherwise use the full 8 bytes. This should prevent
 	 * wasting 7 bytes for large numbers of small strings.
 	 */
 	if (bytes_sz < UINT8_MAX) {
+		if (!mdr_can_fit(m, sizeof(uint8_t)))
+			return UINT64_MAX;
+
+		if ((UINT64_MAX - ((mdr_tell(m) + m->tail_bytes +
+		    sizeof(uint8_t)) + 1)) < bytes_sz) {
+			errno = EOVERFLOW;
+			return UINT64_MAX;
+		}
+
 		*(uint8_t *)m->pos = (uint8_t)bytes_sz;
 		m->pos += sizeof(uint8_t);
 	} else {
+		if (!mdr_can_fit(m, sizeof(uint8_t) + sizeof(uint64_t)))
+			return UINT64_MAX;
+
+		if ((UINT64_MAX - ((mdr_tell(m) + m->tail_bytes +
+		    sizeof(uint8_t) + sizeof(uint64_t)) + 1)) < bytes_sz) {
+			errno = EOVERFLOW;
+			return UINT64_MAX;
+		}
+
 		*(uint8_t *)m->pos = 0xFF;
 		m->pos += sizeof(uint8_t);
 		*(uint64_t *)m->pos = htobe64(bytes_sz);
 		m->pos += sizeof(uint64_t);
 	}
 
-	/* We need mdr_size() to return update size now */
-	mdr_update_size(m);
-
-	if ((UINT64_MAX - (mdr_size(m) + 1)) < bytes_sz) {
-		errno = EOVERFLOW;
-		return UINT64_MAX;
-	}
 	m->tail_bytes += bytes_sz;
 
 	return mdr_update_size(m);
