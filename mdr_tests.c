@@ -33,23 +33,56 @@ test_long_str()
 }
 
 void
-test_long_bytes_prefix()
+test_long_tail_bytes()
 {
 	uint64_t   r, len;
 	struct mdr echo, decode;
+	char       buf[4096];
+	char       str[1024], str2[1024];
+	int        i;
 
-	r = mdr_encode(&echo, MDR_NS_ECHO, MDR_ID_ECHO, 0, NULL, 0);
+	bzero(str2, sizeof(str2));
+	for (i = 0; i < sizeof(str) - 1; i++)
+		str[i] = 'a';
+	str[i] = '\0';
+
+	r = mdr_encode(&echo, MDR_NS_ECHO, MDR_ID_ECHO, 0, buf, sizeof(buf));
 	printf("mdr_encode=%lu\n", r);
 
-	r = mdr_pack_bytes_prefix(&echo, 1024);
-	printf("mdr_pack_bytes_prefix=%lu\n", r);
+	r = mdr_pack_tail_bytes(&echo, sizeof(str));
+	printf("mdr_pack_tail_bytes=%lu\n", r);
+	memcpy(buf + r, str, sizeof(str));
 
 	r = mdr_decode(&decode, mdr_buf(&echo), mdr_size(&echo));
 	printf("mdr_decode=%lu\n", r);
 
-	r = mdr_unpack_bytes_prefix(&decode, &len);
-	printf("mdr_unpack_bytes_prefix() -> %lu\n", len);
-	mdr_free(&echo);
+	r = mdr_unpack_tail_bytes(&decode, &len);
+	printf("mdr_unpack_tail_bytes() -> %lu -> %lu\n", r, len);
+	memcpy(str2, buf + r, len);
+	printf("unpacked string: %s -> %lu\n", str2, len);
+}
+
+void
+test_limits()
+{
+	uint64_t   r, n;
+	struct mdr echo;
+	char       str[1];
+
+	r = mdr_encode(&echo, MDR_NS_ECHO, MDR_ID_ECHO, 0, NULL, 0);
+	printf("mdr_encode=%lu\n", r);
+
+	n = UINT64_MAX - (mdr_hdr_size() + 9);
+	errno = 0;
+	r = mdr_pack_bytes(&echo, str, n);
+	if (errno != EOVERFLOW)
+		printf("mdr_pack_bytes(b): expected EOVERFLOW, got %d\n", errno);
+
+	n = UINT64_MAX - (mdr_hdr_size() + 9 + 1);
+	errno = 0;
+	r = mdr_pack_bytes(&echo, str, n);
+	if (errno != ENOMEM)
+		printf("mdr_pack_bytes(b): expected ENOMEM, got %d\n", errno);
 }
 
 void
@@ -161,7 +194,9 @@ main()
 
 	test_echo();
 
-	test_long_bytes_prefix();
+	test_long_tail_bytes();
+
+	test_limits();
 
 	return 0;
 }

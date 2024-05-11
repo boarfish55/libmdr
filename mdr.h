@@ -5,19 +5,37 @@
 
 /*
  * Minimal Data Representation
+ *
+ * An mdr message can contain at most (UINT64_MAX - 1) bytes.
  */
 struct mdr {
 	/*
-	 * Big-endian over the wire.
+	 * Big-endian over the wire. Minimum size is thus 20 bytes.
 	 */
 	uint64_t *size;
+
+	/* Reserved for future use */
 	uint32_t *flags;
+
+	/*
+	 * Namespace, id and version is used to identify
+	 * the data structure globally across many services.
+	 *
+	 * For instance, namespace may be used as a service identifier,
+	 * while id can identify the type of request and version can
+	 * allow defining multiple revisions or variants of this requests,
+	 * like adding new fields.
+	 */
 	uint32_t *namespace;
 	uint16_t *id;
 	uint16_t *version;
 
+	/*
+	 * Internal only; not part of wire payload.
+	 */
 	char     *buf;
 	uint64_t  buf_sz;
+	uint64_t  tail_bytes;
 	char     *pos;
 	int       dyn;
 };
@@ -53,7 +71,7 @@ uint64_t mdr_pack_uint32(struct mdr *, uint32_t);
 uint64_t mdr_pack_uint16(struct mdr *, uint16_t);
 uint64_t mdr_pack_uint8(struct mdr *, uint8_t);
 uint64_t mdr_pack_bytes(struct mdr *, const char *, uint64_t);
-uint64_t mdr_pack_bytes_prefix(struct mdr *, uint64_t);
+uint64_t mdr_pack_tail_bytes(struct mdr *, uint64_t);
 uint64_t mdr_pack_string(struct mdr *, const char *);
 uint64_t mdr_pack_mdr(struct mdr *, struct mdr *);
 uint64_t mdr_pack(struct mdr *, const char *, ...);
@@ -64,7 +82,7 @@ uint64_t mdr_unpack_uint32(struct mdr *, uint32_t *);
 uint64_t mdr_unpack_uint16(struct mdr *, uint16_t *);
 uint64_t mdr_unpack_uint8(struct mdr *, uint8_t *);
 uint64_t mdr_unpack_bytes(struct mdr *, char *, uint64_t *);
-uint64_t mdr_unpack_bytes_prefix(struct mdr *, uint64_t *);
+uint64_t mdr_unpack_tail_bytes(struct mdr *, uint64_t *);
 uint64_t mdr_unpack_string(struct mdr *, char *, uint64_t *);
 uint64_t mdr_unpack(struct mdr *, const char *, ...);
 

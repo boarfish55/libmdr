@@ -7,15 +7,20 @@
 #include "mdr.h"
 
 static int
-mdr_can_fit(struct mdr *m, size_t n)
+mdr_can_fit(struct mdr *m, uint64_t n)
 {
 	char *tmp;
+
+	if ((UINT64_MAX - (mdr_size(m) + 1)) < n) {
+		errno = EOVERFLOW;
+		return 0;
+	}
 
 	if (m->buf_sz >= mdr_tell(m) + n)
 		return 1;
 
 	if (!m->dyn) {
-		errno = EINVAL;
+		errno = EOVERFLOW;
 		return 0;
 	}
 
@@ -46,7 +51,13 @@ mdr_update_size(struct mdr *m)
 		errno = EINVAL;
 		return UINT64_MAX;
 	}
-	*m->size = htobe64(m->pos - m->buf);
+	*m->size = htobe64((m->pos - m->buf) + m->tail_bytes);
+
+	/*
+	 * We return the size without trailing bytes to make
+	 * it easy for callers to know where to start appending bytes
+	 * in a buffer.
+	 */
 	return m->pos - m->buf;
 }
 
@@ -164,6 +175,7 @@ mdr_encode(struct mdr *m, uint16_t namespace, uint16_t id,
 		m->dyn = 1;
 	}
 
+	m->tail_bytes = 0;
 	m->pos = m->buf;
 
 	m->size = (uint64_t *)m->pos;
@@ -196,10 +208,9 @@ mdr_pack_uint64(struct mdr *m, uint64_t v)
 		errno = EINVAL;
 		return UINT64_MAX;
 	}
-	if (!mdr_can_fit(m, sizeof(uint64_t))) {
-		errno = EOVERFLOW;
+
+	if (!mdr_can_fit(m, sizeof(uint64_t)))
 		return UINT64_MAX;
-	}
 
 	*(uint64_t *)m->pos = htobe64(v);
 	m->pos += sizeof(uint64_t);
@@ -214,10 +225,9 @@ mdr_pack_uint32(struct mdr *m, uint32_t v)
 		errno = EINVAL;
 		return UINT64_MAX;
 	}
-	if (!mdr_can_fit(m, sizeof(uint32_t))) {
-		errno = EOVERFLOW;
+
+	if (!mdr_can_fit(m, sizeof(uint32_t)))
 		return UINT64_MAX;
-	}
 
 	*(uint32_t *)m->pos = htobe32(v);
 	m->pos += sizeof(uint32_t);
@@ -232,10 +242,9 @@ mdr_pack_uint16(struct mdr *m, uint16_t v)
 		errno = EINVAL;
 		return UINT64_MAX;
 	}
-	if (!mdr_can_fit(m, sizeof(uint16_t))) {
-		errno = EOVERFLOW;
+
+	if (!mdr_can_fit(m, sizeof(uint16_t)))
 		return UINT64_MAX;
-	}
 
 	*(uint16_t *)m->pos = htobe16(v);
 	m->pos += sizeof(uint16_t);
@@ -250,10 +259,9 @@ mdr_pack_uint8(struct mdr *m, uint8_t v)
 		errno = EINVAL;
 		return UINT64_MAX;
 	}
-	if (!mdr_can_fit(m, sizeof(uint8_t))) {
-		errno = EOVERFLOW;
+
+	if (!mdr_can_fit(m, sizeof(uint8_t)))
 		return UINT64_MAX;
-	}
 
 	*(uint8_t *)m->pos = v;
 	m->pos += sizeof(uint8_t);
@@ -268,11 +276,10 @@ mdr_pack_bytes(struct mdr *m, const char *bytes, uint64_t bytes_sz)
 		errno = EINVAL;
 		return UINT64_MAX;
 	}
+
 	if (!mdr_can_fit(m, bytes_sz + sizeof(uint8_t) +
-	    ((bytes_sz < UINT8_MAX) ? 0 : sizeof(uint64_t)))) {
-		errno = EOVERFLOW;
+	    ((bytes_sz < UINT8_MAX) ? 0 : sizeof(uint64_t))))
 		return UINT64_MAX;
-	}
 
 	/*
 	 * Only store the byte string length as a single byte if the leading
@@ -296,17 +303,16 @@ mdr_pack_bytes(struct mdr *m, const char *bytes, uint64_t bytes_sz)
 }
 
 uint64_t
-mdr_pack_bytes_prefix(struct mdr *m, uint64_t bytes_sz)
+mdr_pack_tail_bytes(struct mdr *m, uint64_t bytes_sz)
 {
 	if (m == NULL) {
 		errno = EINVAL;
 		return UINT64_MAX;
 	}
+
 	if (!mdr_can_fit(m, sizeof(uint8_t) +
-	    ((bytes_sz < UINT8_MAX) ? 0 : sizeof(uint64_t)))) {
-		errno = EOVERFLOW;
+	    ((bytes_sz < UINT8_MAX) ? 0 : sizeof(uint64_t))))
 		return UINT64_MAX;
-	}
 
 	/*
 	 * Only store the byte string length as a single byte if the leading
@@ -322,6 +328,15 @@ mdr_pack_bytes_prefix(struct mdr *m, uint64_t bytes_sz)
 		*(uint64_t *)m->pos = htobe64(bytes_sz);
 		m->pos += sizeof(uint64_t);
 	}
+
+	/* We need mdr_size() to return update size now */
+	mdr_update_size(m);
+
+	if ((UINT64_MAX - (mdr_size(m) + 1)) < bytes_sz) {
+		errno = EOVERFLOW;
+		return UINT64_MAX;
+	}
+	m->tail_bytes += bytes_sz;
 
 	return mdr_update_size(m);
 }
@@ -387,31 +402,23 @@ mdr_pack(struct mdr *m, const char *spec, ...)
 				errno = EOVERFLOW;
 				return UINT64_MAX;
 			}
-			prev = p + 1;
-			continue;
-		}
-
-		if (strcmp(spbuf, "s") == 0) {
+		} else if (strcmp(spbuf, "s") == 0) {
 			if (mdr_pack_string(m, va_arg(ap, char *))
 			    == UINT64_MAX) {
 				errno = EOVERFLOW;
 				return UINT64_MAX;
 			}
-			prev = p + 1;
-			continue;
-		}
+		} else if (spbuf[0] == 'u' || spbuf[0] == 'i') {
+			if (strlen(spbuf) < 2) {
+				errno = EINVAL;
+				return UINT64_MAX;
+			}
 
-		if (strlen(spbuf) < 2) {
-			errno = EINVAL;
-			return UINT64_MAX;
-		}
+			if ((bits = strtoull(spbuf + 1, NULL, 10)) == ULLONG_MAX) {
+				errno = EINVAL;
+				return UINT64_MAX;
+			}
 
-		if ((bits = strtoull(spbuf + 1, NULL, 10)) == ULLONG_MAX) {
-			errno = EINVAL;
-			return UINT64_MAX;
-		}
-
-		if (spbuf[0] == 'u' || spbuf[0] == 'i') {
 			switch (bits) {
 			case 8:
 				if (mdr_pack_uint8(m,
@@ -445,12 +452,16 @@ mdr_pack(struct mdr *m, const char *spec, ...)
 				errno = EINVAL;
 				return UINT64_MAX;
 			}
+		} else {
+			/* Unknown type specifier */
+			errno = EINVAL;
+			return UINT64_MAX;
 		}
 		prev = p + 1;
 	}
 	va_end(ap);
 
-	return mdr_size(m);
+	return mdr_tell(m);
 }
 
 uint64_t
@@ -461,12 +472,23 @@ mdr_decode(struct mdr *m, char *buf, uint64_t buf_sz)
 		return UINT64_MAX;
 	}
 
+	if (buf_sz < mdr_hdr_size()) {
+		errno = ERANGE;
+		return UINT64_MAX;
+	}
+
 	m->buf = buf;
 	m->buf_sz = buf_sz;
 	m->pos = m->buf;
+	m->tail_bytes = 0;
 
 	m->size = (uint64_t *)m->pos;
 	m->pos += sizeof(*m->size);
+
+	if (mdr_size(m) == UINT64_MAX) {
+		errno = EINVAL;
+		return UINT64_MAX;
+	}
 
 	m->flags = (uint32_t *)m->pos;
 	m->pos += sizeof(*m->flags);
@@ -499,7 +521,7 @@ mdr_unpack_uint8(struct mdr *m, uint8_t *v)
 	*v = *(uint8_t *)m->pos;
 	m->pos += sizeof(*v);
 
-	return mdr_size(m) - mdr_tell(m);
+	return mdr_tell(m);
 }
 
 uint64_t
@@ -518,7 +540,7 @@ mdr_unpack_uint16(struct mdr *m, uint16_t *v)
 	*v = be16toh(*(uint16_t *)m->pos);
 	m->pos += sizeof(*v);
 
-	return mdr_size(m) - mdr_tell(m);
+	return mdr_tell(m);
 }
 
 uint64_t
@@ -537,7 +559,7 @@ mdr_unpack_uint32(struct mdr *m, uint32_t *v)
 	*v = be32toh(*(uint32_t *)m->pos);
 	m->pos += sizeof(*v);
 
-	return mdr_size(m) - mdr_tell(m);
+	return mdr_tell(m);
 }
 
 uint64_t
@@ -556,7 +578,7 @@ mdr_unpack_uint64(struct mdr *m, uint64_t *v)
 	*v = be64toh(*(uint64_t *)m->pos);
 	m->pos += sizeof(*v);
 
-	return mdr_size(m) - mdr_tell(m);
+	return mdr_tell(m);
 }
 
 uint64_t
@@ -594,11 +616,11 @@ mdr_unpack_bytes(struct mdr *m, char *bytes, uint64_t *bytes_sz)
 	memcpy(bytes, m->pos, (avail < *bytes_sz) ? avail : *bytes_sz);
 	m->pos += *bytes_sz;
 
-	return mdr_size(m) - mdr_tell(m);
+	return mdr_tell(m);
 }
 
 uint64_t
-mdr_unpack_bytes_prefix(struct mdr *m, uint64_t *bytes_sz)
+mdr_unpack_tail_bytes(struct mdr *m, uint64_t *bytes_sz)
 {
 	if (m == NULL || bytes_sz == NULL) {
 		errno = EINVAL;
@@ -621,7 +643,9 @@ mdr_unpack_bytes_prefix(struct mdr *m, uint64_t *bytes_sz)
 		m->pos += sizeof(uint64_t);
 	}
 
-	return mdr_size(m) - mdr_tell(m);
+	m->tail_bytes += *bytes_sz;
+
+	return mdr_tell(m);
 }
 
 uint64_t
@@ -698,11 +722,7 @@ mdr_unpack(struct mdr *m, const char *spec, ...)
 				errno = EOVERFLOW;
 				return UINT64_MAX;
 			}
-			prev = p + 1;
-			continue;
-		}
-
-		if (strcmp(spbuf, "s") == 0) {
+		} else if (strcmp(spbuf, "s") == 0) {
 			bytes = va_arg(ap, char *);
 			bytes_sz = va_arg(ap, uint64_t *);
 			if (mdr_unpack_string(m, bytes, bytes_sz)
@@ -710,21 +730,17 @@ mdr_unpack(struct mdr *m, const char *spec, ...)
 				errno = EOVERFLOW;
 				return UINT64_MAX;
 			}
-			prev = p + 1;
-			continue;
-		}
+		} else if (spbuf[0] == 'u' || spbuf[0] == 'i') {
+			if (strlen(spbuf) < 2) {
+				errno = EINVAL;
+				return UINT64_MAX;
+			}
 
-		if (strlen(spbuf) < 2) {
-			errno = EINVAL;
-			return UINT64_MAX;
-		}
+			if ((bits = strtoull(spbuf + 1, NULL, 10)) == ULLONG_MAX) {
+				errno = EINVAL;
+				return UINT64_MAX;
+			}
 
-		if ((bits = strtoull(spbuf + 1, NULL, 10)) == ULLONG_MAX) {
-			errno = EINVAL;
-			return UINT64_MAX;
-		}
-
-		if (spbuf[0] == 'u' || spbuf[0] == 'i') {
 			switch (bits) {
 			case 8:
 				if (mdr_unpack_uint8(m,
@@ -758,12 +774,16 @@ mdr_unpack(struct mdr *m, const char *spec, ...)
 				errno = EINVAL;
 				return UINT64_MAX;
 			}
+		} else {
+			/* Unknown type specifier */
+			errno = EINVAL;
+			return UINT64_MAX;
 		}
 		prev = p + 1;
 	}
 	va_end(ap);
 
-	return mdr_size(m);
+	return mdr_tell(m);
 }
 
 uint64_t
