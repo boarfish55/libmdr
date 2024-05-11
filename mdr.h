@@ -35,7 +35,7 @@ struct mdr {
 	 * Internal only; not part of wire payload.
 	 */
 	char     *buf;
-	uint64_t  buf_sz;
+	size_t    buf_sz;
 	uint64_t  tail_bytes;
 	char     *pos;
 	int       dyn;
@@ -56,17 +56,17 @@ struct mdr_echo {
 void     *mdr_buf(struct mdr *);
 void      mdr_free(struct mdr *);
 uint64_t  mdr_size(struct mdr *);
-uint64_t  mdr_hdr_size();
+size_t    mdr_hdr_size();
 
 int       mdr_reset(struct mdr *);
-uint64_t  mdr_tell(struct mdr *);
+size_t    mdr_tell(struct mdr *);
 
 uint32_t mdr_namespace(struct mdr *);
 uint16_t mdr_id(struct mdr *);
 uint16_t mdr_version(struct mdr *);
 
 uint64_t mdr_encode(struct mdr *, uint16_t, uint16_t, uint16_t,
-             char *, uint64_t);
+             char *, size_t);
 uint64_t mdr_pack_uint64(struct mdr *, uint64_t);
 uint64_t mdr_pack_uint32(struct mdr *, uint32_t);
 uint64_t mdr_pack_uint16(struct mdr *, uint16_t);
@@ -77,7 +77,7 @@ uint64_t mdr_pack_string(struct mdr *, const char *);
 uint64_t mdr_pack_mdr(struct mdr *, struct mdr *);
 uint64_t mdr_pack(struct mdr *, const char *, ...);
 
-uint64_t mdr_decode(struct mdr *, char *, uint64_t);
+uint64_t mdr_decode(struct mdr *, char *, size_t);
 uint64_t mdr_unpack_uint64(struct mdr *, uint64_t *);
 uint64_t mdr_unpack_uint32(struct mdr *, uint32_t *);
 uint64_t mdr_unpack_uint16(struct mdr *, uint16_t *);

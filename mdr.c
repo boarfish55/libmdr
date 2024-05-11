@@ -68,7 +68,7 @@ mdr_free(struct mdr *m)
 	bzero(m, sizeof(struct mdr));
 }
 
-uint64_t
+size_t
 mdr_hdr_size()
 {
 	/*
@@ -94,7 +94,7 @@ mdr_size(struct mdr *m)
 	return be64toh(*m->size);
 }
 
-uint64_t
+size_t
 mdr_tell(struct mdr *m)
 {
 	if (m == NULL) {
@@ -153,7 +153,7 @@ mdr_buf(struct mdr *m)
 
 uint64_t
 mdr_encode(struct mdr *m, uint16_t namespace, uint16_t id,
-    uint16_t version, char *buf, uint64_t buf_sz)
+    uint16_t version, char *buf, size_t buf_sz)
 {
 	if (m == NULL || (buf == NULL && buf_sz > 0)) {
 		errno = EINVAL;
@@ -472,7 +472,7 @@ mdr_pack(struct mdr *m, const char *spec, ...)
 }
 
 uint64_t
-mdr_decode(struct mdr *m, char *buf, uint64_t buf_sz)
+mdr_decode(struct mdr *m, char *buf, size_t buf_sz)
 {
 	if (m == NULL || buf == NULL) {
 		errno = EINVAL;
@@ -509,7 +509,7 @@ mdr_decode(struct mdr *m, char *buf, uint64_t buf_sz)
 	m->version = (uint16_t *)m->pos;
 	m->pos += sizeof(*m->version);
 
-	return mdr_size(m) - mdr_tell(m);
+	return mdr_tell(m);
 }
 
 uint64_t
