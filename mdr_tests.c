@@ -13,6 +13,8 @@ test_long_str()
 	char       str[1024], str2[1000];
 	struct mdr echo, decode;
 
+	printf("%s\n", __func__);
+
 	for (i = 0; i < sizeof(str) - 1; i++)
 		str[i] = 'a';
 	str[i] = '\0';
@@ -43,6 +45,8 @@ test_long_tail_bytes()
 	char       str[1024], str2[1024];
 	int        i;
 
+	printf("%s\n", __func__);
+
 	bzero(str2, sizeof(str2));
 	for (i = 0; i < sizeof(str) - 1; i++)
 		str[i] = 'a';
@@ -71,22 +75,24 @@ test_limits()
 	struct mdr echo;
 	char       str[1];
 
+	printf("%s\n", __func__);
+
 	r = mdr_encode(&echo, MDR_NS_ECHO, MDR_ID_ECHO, 0, NULL, 0);
 	printf("mdr_encode=%lu\n", r);
 
-	n = (PTRDIFF_MAX - (mdr_hdr_size() + 9)) + 1;
+	n = (PTRDIFF_MAX - (mdr_hdr_size() + sizeof(uint64_t))) + 1;
 	errno = 0;
 	r = mdr_pack_bytes(&echo, str, n);
 	if (errno != EOVERFLOW)
 		printf("mdr_pack_bytes(b): expected EOVERFLOW, got %d\n", errno);
 
-	n = PTRDIFF_MAX - (mdr_hdr_size() + 9 + 1);
+	n = PTRDIFF_MAX - (mdr_hdr_size() + sizeof(uint64_t) + 1);
 	errno = 0;
 	r = mdr_pack_bytes(&echo, str, n);
 	if (errno != ENOMEM)
 		printf("mdr_pack_bytes(b): expected ENOMEM, got %d\n", errno);
 
-	n = UINT64_MAX - (mdr_hdr_size() + 9);
+	n = UINT64_MAX - (mdr_hdr_size() + sizeof(uint64_t));
 	errno = 0;
 	r = mdr_pack_tail_bytes(&echo, n);
 	if (errno != EOVERFLOW)
@@ -101,6 +107,8 @@ test_echo()
 	int             i;
 	struct mdr_echo e_src, e_dst;
 	uint64_t        r;
+
+	printf("%s\n", __func__);
 
 	bzero(&e_src, sizeof(e_src));
 	for (i = 0; i < sizeof(e_src.echo) - 1; i++)

@@ -111,7 +111,7 @@ mdr_reset(struct mdr *m)
 		errno = EINVAL;
 		return -1;
 	}
-	m->pos = m->buf;
+	m->pos = m->buf + mdr_hdr_size();
 	return 0;
 }
 
@@ -272,13 +272,13 @@ mdr_pack_uint8(struct mdr *m, uint8_t v)
 uint64_t
 mdr_pack_bytes(struct mdr *m, const char *bytes, uint64_t bytes_sz)
 {
-	if (m == NULL) {
+	if (m == NULL || bytes_sz & 0x8000000000000000) {
 		errno = EINVAL;
 		return UINT64_MAX;
 	}
 
-	if (!mdr_can_fit(m, bytes_sz + sizeof(uint8_t) +
-	    ((bytes_sz < UINT8_MAX) ? 0 : sizeof(uint64_t))))
+	if (!mdr_can_fit(m, bytes_sz +
+	    ((bytes_sz <= 0x7f) ? sizeof(uint8_t) : sizeof(uint64_t))))
 		return UINT64_MAX;
 
 	/*
@@ -286,13 +286,11 @@ mdr_pack_bytes(struct mdr *m, const char *bytes, uint64_t bytes_sz)
 	 * bit is zero. Otherwise use the full 8 bytes. This should prevent
 	 * wasting 7 bytes for large numbers of small strings.
 	 */
-	if (bytes_sz < UINT8_MAX) {
+	if (bytes_sz <= 0x7f) {
 		*(uint8_t *)m->pos = (uint8_t)bytes_sz;
 		m->pos += sizeof(uint8_t);
 	} else {
-		*(uint8_t *)m->pos = 0xFF;
-		m->pos += sizeof(uint8_t);
-		*(uint64_t *)m->pos = htobe64(bytes_sz);
+		*(uint64_t *)m->pos = htobe64(bytes_sz | 0x8000000000000000);
 		m->pos += sizeof(uint64_t);
 	}
 
@@ -310,38 +308,17 @@ mdr_pack_tail_bytes(struct mdr *m, uint64_t bytes_sz)
 		return UINT64_MAX;
 	}
 
-	/*
-	 * Only store the byte string length as a single byte if the leading
-	 * bit is zero. Otherwise use the full 8 bytes. This should prevent
-	 * wasting 7 bytes for large numbers of small strings.
-	 */
-	if (bytes_sz < UINT8_MAX) {
-		if (!mdr_can_fit(m, sizeof(uint8_t)))
-			return UINT64_MAX;
+	if (!mdr_can_fit(m, sizeof(uint64_t)))
+		return UINT64_MAX;
 
-		if ((UINT64_MAX - ((mdr_tell(m) + m->tail_bytes +
-		    sizeof(uint8_t)) + 1)) < bytes_sz) {
-			errno = EOVERFLOW;
-			return UINT64_MAX;
-		}
-
-		*(uint8_t *)m->pos = (uint8_t)bytes_sz;
-		m->pos += sizeof(uint8_t);
-	} else {
-		if (!mdr_can_fit(m, sizeof(uint8_t) + sizeof(uint64_t)))
-			return UINT64_MAX;
-
-		if ((UINT64_MAX - ((mdr_tell(m) + m->tail_bytes +
-		    sizeof(uint8_t) + sizeof(uint64_t)) + 1)) < bytes_sz) {
-			errno = EOVERFLOW;
-			return UINT64_MAX;
-		}
-
-		*(uint8_t *)m->pos = 0xFF;
-		m->pos += sizeof(uint8_t);
-		*(uint64_t *)m->pos = htobe64(bytes_sz);
-		m->pos += sizeof(uint64_t);
+	if ((UINT64_MAX - (mdr_tell(m) + m->tail_bytes +
+	    sizeof(uint64_t) + 1)) < bytes_sz) {
+		errno = EOVERFLOW;
+		return UINT64_MAX;
 	}
+
+	*(uint64_t *)m->pos = htobe64(bytes_sz);
+	m->pos += sizeof(uint64_t);
 
 	m->tail_bytes += bytes_sz;
 
@@ -603,16 +580,17 @@ mdr_unpack_bytes(struct mdr *m, char *bytes, uint64_t *bytes_sz)
 		errno = ERANGE;
 		return UINT64_MAX;
 	}
-	*bytes_sz = *(uint8_t *)m->pos;
-	m->pos += sizeof(uint8_t);
 
-	if (*bytes_sz == UINT8_MAX) {
+	*bytes_sz = *(uint8_t *)m->pos;
+	if (*bytes_sz & 0x80) {
 		if (m->buf_sz - mdr_tell(m) < sizeof(uint64_t)) {
 			errno = ERANGE;
 			return UINT64_MAX;
 		}
-		*bytes_sz = be64toh(*(uint64_t *)m->pos);
+		*bytes_sz = be64toh(*(uint64_t *)m->pos) & 0x7fffffffffffffff;
 		m->pos += sizeof(uint64_t);
+	} else {
+		m->pos += sizeof(uint8_t);
 	}
 
 	if (m->buf_sz - mdr_tell(m) < *bytes_sz) {
@@ -634,21 +612,12 @@ mdr_unpack_tail_bytes(struct mdr *m, uint64_t *bytes_sz)
 		return UINT64_MAX;
 	}
 
-	if (m->buf_sz - mdr_tell(m) < sizeof(uint8_t)) {
+	if (m->buf_sz - mdr_tell(m) < sizeof(uint64_t)) {
 		errno = ERANGE;
 		return UINT64_MAX;
 	}
-	*bytes_sz = *(uint8_t *)m->pos;
-	m->pos += sizeof(uint8_t);
-
-	if (*bytes_sz == UINT8_MAX) {
-		if (m->buf_sz - mdr_tell(m) < sizeof(uint64_t)) {
-			errno = ERANGE;
-			return UINT64_MAX;
-		}
-		*bytes_sz = be64toh(*(uint64_t *)m->pos);
-		m->pos += sizeof(uint64_t);
-	}
+	*bytes_sz = be64toh(*(uint64_t *)m->pos);
+	m->pos += sizeof(uint64_t);
 
 	m->tail_bytes += *bytes_sz;
 

@@ -42,8 +42,12 @@ struct mdr {
 };
 
 
-/* Namespaces are 32 bits */
-#define MDR_NS_ECHO 0x00000001
+/*
+ * Namespaces are 32 bits. The most significant bit is reserved for
+ * future use, which in effect means the highest namespace is 0x7FFFFFFF.
+ */
+#define MDR_NS_ECHO     0x00000001
+#define MDR_NS_RESERVED 0x80000000
 
 /* IDs are 16 bits */
 #define MDR_ID_ECHO 0x0001
