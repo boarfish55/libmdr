@@ -17,6 +17,7 @@ struct mdr {
 
 	/* Reserved for future use */
 	uint32_t *flags;
+#define MDR_F_TAIL_BYTES 0x00000001
 
 	/*
 	 * Namespace, id and version is used to identify
@@ -30,13 +31,13 @@ struct mdr {
 	uint32_t *namespace;
 	uint16_t *id;
 	uint16_t *version;
+	uint64_t *tail_bytes;
 
 	/*
 	 * Internal only; not part of wire payload.
 	 */
 	char     *buf;
 	size_t    buf_sz;
-	uint64_t  tail_bytes;
 	char     *pos;
 	int       dyn;
 };
@@ -60,16 +61,19 @@ struct mdr_echo {
 void     *mdr_buf(struct mdr *);
 void      mdr_free(struct mdr *);
 uint64_t  mdr_size(struct mdr *);
-size_t    mdr_hdr_size();
+size_t    mdr_hdr_size(uint32_t);
 
 int       mdr_reset(struct mdr *);
 size_t    mdr_tell(struct mdr *);
+size_t    mdr_pending(struct mdr *);
 
+uint32_t mdr_flags(struct mdr *);
 uint32_t mdr_namespace(struct mdr *);
 uint16_t mdr_id(struct mdr *);
 uint16_t mdr_version(struct mdr *);
+uint64_t mdr_tail_bytes(struct mdr *);
 
-uint64_t mdr_encode(struct mdr *, uint16_t, uint16_t, uint16_t,
+uint64_t mdr_pack_hdr(struct mdr *, uint32_t, uint16_t, uint16_t, uint16_t,
              char *, size_t);
 uint64_t mdr_pack_uint64(struct mdr *, uint64_t);
 uint64_t mdr_pack_uint32(struct mdr *, uint32_t);
@@ -81,7 +85,7 @@ uint64_t mdr_pack_string(struct mdr *, const char *);
 uint64_t mdr_pack_mdr(struct mdr *, struct mdr *);
 uint64_t mdr_pack(struct mdr *, const char *, ...);
 
-uint64_t mdr_decode(struct mdr *, char *, size_t);
+uint64_t mdr_unpack_hdr(struct mdr *, char *, size_t);
 uint64_t mdr_unpack_uint64(struct mdr *, uint64_t *);
 uint64_t mdr_unpack_uint32(struct mdr *, uint32_t *);
 uint64_t mdr_unpack_uint16(struct mdr *, uint16_t *);
