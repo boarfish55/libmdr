@@ -1,3 +1,4 @@
 .vimtags
 *.o
 mdr_tests
+mdrc

@@ -390,12 +390,13 @@ mdr_pack_mdr(struct mdr *m, struct mdr *src)
 }
 
 uint64_t
-mdr_pack(struct mdr *m, const char *spec, ...)
+mdr_packf(struct mdr *m, const char *spec, ...)
 {
 	va_list     ap;
 	int         finish = 0;
 	const char *p, *prev;
 	const char *bytes;
+	char       *end;
 	uint64_t    bytes_sz;
 	uint64_t    bits;
 	/*
@@ -450,7 +451,8 @@ mdr_pack(struct mdr *m, const char *spec, ...)
 				return UINT64_MAX;
 			}
 
-			if ((bits = strtoull(spbuf + 1, NULL, 10)) == ULLONG_MAX) {
+			if ((bits = strtoull(spbuf + 1, &end, 10))
+			    == ULLONG_MAX || *end != '\0') {
 				errno = EINVAL;
 				return UINT64_MAX;
 			}
@@ -717,12 +719,12 @@ mdr_unpack_string(struct mdr *m, char *bytes, uint64_t *bytes_sz)
 }
 
 uint64_t
-mdr_unpack(struct mdr *m, const char *spec, ...)
+mdr_unpackf(struct mdr *m, const char *spec, ...)
 {
 	va_list     ap;
 	int         finish = 0;
 	const char *p, *prev;
-	char       *bytes;
+	char       *bytes, *end;
 	uint64_t   *bytes_sz;
 	uint64_t    bits;
 	/*
@@ -775,7 +777,8 @@ mdr_unpack(struct mdr *m, const char *spec, ...)
 				return UINT64_MAX;
 			}
 
-			if ((bits = strtoull(spbuf + 1, NULL, 10)) == ULLONG_MAX) {
+			if ((bits = strtoull(spbuf + 1, &end, 10))
+			    == ULLONG_MAX || *end != '\0') {
 				errno = EINVAL;
 				return UINT64_MAX;
 			}

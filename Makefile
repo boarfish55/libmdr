@@ -2,13 +2,16 @@ CC := cc
 CFLAGS := -Wall -g $(shell pkg-config --cflags libbsd-overlay)
 LDFLAGS := $(shell pkg-config --libs libbsd-overlay)
 
-all: mdr_tests
+all: mdrc mdr_tests
 
 mdr.o: mdr.c mdr.h
 	$(CC) $(CFLAGS) -c mdr.c -o mdr.o
 
 mdr_tests: mdr.o mdr_tests.c
 	$(CC) $(CFLAGS) mdr_tests.c mdr.o $(LDFLAGS) -o mdr_tests
+
+mdrc: mdr.o mdrc.c
+	$(CC) $(CFLAGS) mdrc.c mdr.o $(LDFLAGS) -o mdrc
 
 tests: mdr_tests
 	test -x /usr/bin/valgrind \

@@ -86,7 +86,7 @@ uint64_t mdr_pack_bytes(struct mdr *, const char *, uint64_t);
 uint64_t mdr_pack_tail_bytes(struct mdr *, uint64_t);
 uint64_t mdr_pack_string(struct mdr *, const char *);
 uint64_t mdr_pack_mdr(struct mdr *, struct mdr *);
-uint64_t mdr_pack(struct mdr *, const char *, ...);
+uint64_t mdr_packf(struct mdr *, const char *, ...);
 
 uint64_t mdr_unpack_hdr(struct mdr *, char *, size_t);
 uint64_t mdr_unpack_uint64(struct mdr *, uint64_t *);
@@ -96,7 +96,7 @@ uint64_t mdr_unpack_uint8(struct mdr *, uint8_t *);
 uint64_t mdr_unpack_bytes(struct mdr *, char *, uint64_t *);
 uint64_t mdr_unpack_tail_bytes(struct mdr *, uint64_t *);
 uint64_t mdr_unpack_string(struct mdr *, char *, uint64_t *);
-uint64_t mdr_unpack(struct mdr *, const char *, ...);
+uint64_t mdr_unpackf(struct mdr *, const char *, ...);
 
 uint64_t mdr_echo_encode(struct mdr_echo *);
 uint64_t mdr_echo_decode(struct mdr_echo *, char *, uint64_t);

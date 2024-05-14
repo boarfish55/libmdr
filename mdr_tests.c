@@ -162,19 +162,19 @@ main()
 	    buf_echo, sizeof(buf_echo));
 	printf("mdr_pack_hdr=%lu\n", r);
 
-	r = mdr_pack(&echo, "u64", 111);
+	r = mdr_packf(&echo, "u64", 111);
 	printf("mdr_pack(u64)=%lu\n", r);
 
-	r = mdr_pack(&echo, "i8", 111);
+	r = mdr_packf(&echo, "i8", 111);
 	printf("mdr_pack(i8)=%lu\n", r);
 
-	r = mdr_pack(&echo, "u16", 111);
+	r = mdr_packf(&echo, "u16", 111);
 	printf("mdr_pack(u16)=%lu\n", r);
 
-	r = mdr_pack(&echo, "b", "allo", 4);
+	r = mdr_packf(&echo, "b", "allo", 4);
 	printf("mdr_pack(b4)=%lu\n", r);
 
-	r = mdr_pack(&echo, "s", "string");
+	r = mdr_packf(&echo, "s", "string");
 	printf("mdr_pack(b4)=%lu\n", r);
 
 
@@ -182,7 +182,7 @@ main()
 	    sizeof(buf_echo2));
 	printf("mdr_pack_hdr=%lu\n", r);
 
-	r = mdr_pack(&echo2, "u64:i8:u16:b:s", 111, 111, 111,
+	r = mdr_packf(&echo2, "u64:i8:u16:b:s", 111, 111, 111,
 	    "allo", 4, "string");
 	printf("mdr_pack(u64)=%lu\n", r);
 
@@ -194,7 +194,7 @@ main()
 	printf("mdr_unpack_hdr=%lu\n", r);
 	dlen = sizeof(dbytes);
 	dstr_len = sizeof(dstr);
-	r = mdr_unpack(&decho, "u64:i8:u16:b:s", &u64, &i8, &u16, 
+	r = mdr_unpackf(&decho, "u64:i8:u16:b:s", &u64, &i8, &u16,
 	    dbytes, &dlen, dstr, &dstr_len);
 
 	printf("u64: 111 == %lu\n", u64);
