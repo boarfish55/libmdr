@@ -2,6 +2,7 @@
 #define MDR_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 /*
  * Minimal Data Representation
@@ -58,14 +59,16 @@ struct mdr_echo {
 	char       echo[1024];
 };
 
-void     *mdr_buf(struct mdr *);
-void      mdr_free(struct mdr *);
-uint64_t  mdr_size(struct mdr *);
-size_t    mdr_hdr_size(uint32_t);
+#define MDR_FAIL UINT64_MAX
 
-int       mdr_reset(struct mdr *);
-size_t    mdr_tell(struct mdr *);
-size_t    mdr_pending(struct mdr *);
+void      *mdr_buf(struct mdr *);
+void       mdr_free(struct mdr *);
+uint64_t   mdr_size(struct mdr *);
+size_t     mdr_hdr_size(uint32_t);
+
+int        mdr_reset(struct mdr *);
+ptrdiff_t  mdr_tell(struct mdr *);
+uint64_t   mdr_pending(struct mdr *);
 
 uint32_t mdr_flags(struct mdr *);
 uint32_t mdr_namespace(struct mdr *);

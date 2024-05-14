@@ -68,7 +68,10 @@ mdr_update_size(struct mdr *m)
 void
 mdr_free(struct mdr *m)
 {
-	free(m->buf);
+	if (m == NULL)
+		return;
+	if (m->dyn)
+		free(m->buf);
 	bzero(m, sizeof(struct mdr));
 }
 
@@ -103,17 +106,17 @@ mdr_size(struct mdr *m)
 	return be64toh(*m->size);
 }
 
-size_t
+ptrdiff_t
 mdr_tell(struct mdr *m)
 {
 	if (m == NULL) {
 		errno = EINVAL;
-		return UINT64_MAX;
+		return -1;
 	}
 	return m->pos - m->buf;
 }
 
-size_t
+uint64_t
 mdr_pending(struct mdr *m)
 {
 	if (m == NULL) {
