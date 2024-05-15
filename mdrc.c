@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <err.h>
 #include <getopt.h>
 #include <limits.h>
@@ -24,11 +25,15 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 	int             finish = 0;
 	const char     *p, *prev;
 	char           *end;
-	const char     *bytes;
+	char            bytes[1024];
+	const char     *bytes_p;
 	const char    **a;
-	uint64_t        bytes_sz;
+	char            b;
 	uint64_t        bits;
-	unsigned long   l;
+	uint64_t        u64;
+	int64_t         i64;
+	int             i;
+
 	/*
 	 * A uint64 can render up to 20 digits, plus one for the 'b'
 	 * prefix and the terminating NUL byte.
@@ -55,13 +60,33 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 			errx(1, "invalid format spec");
 
 		if (strcmp(spbuf, "b") == 0) {
-			bytes = *a++;
-			bytes_sz = strtoull(*a, &end, 10);
-			if (bytes_sz == ULLONG_MAX || *end != '\0')
-				errx(1, "invalid value");
-			if (mdr_pack_bytes(m, bytes, bytes_sz) == MDR_FAIL)
+			for (i = 0, bytes_p = *a++;
+			    *bytes_p != '\0' && i < sizeof(bytes); i++) {
+				if (*bytes_p++ != 'x')
+					errx(1, "invalid value");
+
+				b = tolower(*bytes_p++);
+				if (!((b >= '0' && b <= '9') ||
+				    (b >= 'a' && b <= 'f')))
+					errx(1, "invalid value");
+
+				if (b >= '0' && b <= '9')
+					bytes[i] = (b - '0') << 4;
+				else
+					bytes[i] = (b - 'a' + 10) << 4;
+
+				b = tolower(*bytes_p++);
+				if (!((b >= '0' && b <= '9') ||
+				    (b >= 'a' && b <= 'f')))
+					errx(1, "invalid value");
+
+				if (b >= '0' && b <= '9')
+					bytes[i] |= (b - '0');
+				else
+					bytes[i] |= (b - 'a' + 10);
+			}
+			if (mdr_pack_bytes(m, bytes, i) == MDR_FAIL)
 				err(1, "mdr_pack_bytes");
-			a++;
 		} else if (strcmp(spbuf, "s") == 0) {
 			if (mdr_pack_string(m, *a++) == MDR_FAIL)
 				err(1, "mdr_pack_string");
@@ -73,13 +98,68 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 			    == ULLONG_MAX || *end != '\0')
 				errx(1, "invalid format spec");
 
+			if (spbuf[0] == 'i') {
+				i64 = strtoll(*a, &end, 10);
+				if (i64 == LLONG_MAX ||
+				    i64 == LLONG_MIN || *end != '\0')
+					err(1, "invalid value");
+			} else {
+				u64 = strtoull(*a, &end, 10);
+				if (u64 == ULLONG_MAX || *end != '\0')
+					err(1, "invalid value");
+			}
+
 			switch (bits) {
 			case 8:
-				l = strtoul(*a, &end, 10);
-				if (l == ULONG_MAX || *end != '\0')
-					errx(1, "invalid value");
-				if (mdr_pack_uint8(m, l) == MDR_FAIL)
-					errx(1, "invalid value");
+				if (spbuf[0] == 'i') {
+					if (i64 > INT8_MAX || i64 < INT8_MIN)
+						errx(1, "invalid value");
+					if (mdr_pack_int8(m, i64) == MDR_FAIL)
+						err(1, "mdr_pack_uint8");
+				} else {
+					if (u64 > UINT8_MAX)
+						errx(1, "invalid value");
+					if (mdr_pack_uint8(m, u64) == MDR_FAIL)
+						err(1, "mdr_pack_uint8");
+				}
+				a++;
+				break;
+			case 16:
+				if (spbuf[0] == 'i') {
+					if (i64 > INT16_MAX || i64 < INT16_MIN)
+						errx(1, "invalid value");
+					if (mdr_pack_int16(m, i64) == MDR_FAIL)
+						err(1, "mdr_pack_uint16");
+				} else {
+					if (u64 > UINT16_MAX)
+						errx(1, "invalid value");
+					if (mdr_pack_uint16(m, u64) == MDR_FAIL)
+						err(1, "mdr_pack_uint16");
+				}
+				a++;
+				break;
+			case 32:
+				if (spbuf[0] == 'i') {
+					if (i64 > INT32_MAX || i64 < INT32_MIN)
+						errx(1, "invalid value");
+					if (mdr_pack_int32(m, i64) == MDR_FAIL)
+						err(1, "mdr_pack_uint32");
+				} else {
+					if (u64 > UINT32_MAX)
+						errx(1, "invalid value");
+					if (mdr_pack_uint32(m, u64) == MDR_FAIL)
+						err(1, "mdr_pack_uint32");
+				}
+				a++;
+				break;
+			case 64:
+				if (spbuf[0] == 'i') {
+					if (mdr_pack_uint64(m, i64) == MDR_FAIL)
+						err(1, "mdr_pack_uint64");
+				} else {
+					if (mdr_pack_int64(m, u64) == MDR_FAIL)
+						err(1, "mdr_pack_uint64");
+				}
 				a++;
 				break;
 			default:
@@ -168,15 +248,13 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	printf("namespace: %u, id: %u, version: %u\n",
-	    namespace, id, version);
-
 	r = mdr_pack_hdr(&m, 0, namespace, id, version, NULL, 0);
 	if (r == MDR_FAIL)
 		err(1, "mdr_pack_hdr");
 
 	pack(&m, format, (const char **)argv + optind, argc - optind);
 	// TODO send...
+	mdr_print(&m);
 
 	mdr_free(&m);
 
