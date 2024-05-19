@@ -1,6 +1,8 @@
 CC := cc
-CFLAGS := -Wall -g $(shell pkg-config --cflags libbsd-overlay)
-LDFLAGS := $(shell pkg-config --libs libbsd-overlay)
+CFLAGS := -Wall -g -fstack-protector-strong \
+	$(shell pkg-config --cflags libbsd-overlay libssl libcrypto)
+LDFLAGS := $(shell pkg-config --libs libbsd-overlay libssl libcrypto) \
+	-Wl,-z,relro -Wl,-z,now
 
 all: mdrc mdr_tests
 

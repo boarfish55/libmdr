@@ -5,11 +5,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <openssl/err.h>
+#include <openssl/ssl.h>
 #include "mdr.h"
 
 const char *program = "mdrc";
 
 int debug = 0;
+int insecure = 0;
 
 void
 usage()
@@ -173,6 +176,92 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 	}
 }
 
+void
+ssl_err()
+{
+	ERR_print_errors_fp(stderr);
+	exit(1);
+}
+
+void
+do_tls(struct mdr *m, const char *target)
+{
+	SSL_CTX        *ctx;
+	BIO            *b;
+	SSL            *ssl;
+	int             r, len;
+	char           *buf;
+	size_t          buf_sz;
+
+	if (mdr_size(m) >= INT_MAX)
+		errx(1, "payload too large for sending");
+
+	if ((ctx = SSL_CTX_new(TLS_method())) == NULL)
+		ssl_err();
+
+	if (insecure)
+		SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
+	else
+		SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+
+	if (!SSL_CTX_set_default_verify_paths(ctx))
+		ssl_err();
+
+	if ((b = BIO_new_ssl_connect(ctx)) == NULL)
+		ssl_err();
+
+	BIO_get_ssl(b, &ssl);
+	if (ssl == NULL)
+		ssl_err();
+
+	SSL_set_mode(ssl, SSL_MODE_AUTO_RETRY);
+
+	BIO_set_conn_hostname(b, target);
+
+	if (BIO_do_connect(b) <= 0)
+		ssl_err();
+
+	if (BIO_do_handshake(b) <= 0)
+		ssl_err();
+
+	if ((r = BIO_write(b, mdr_buf(m), mdr_size(m))) == -1)
+		ssl_err();
+	else if (r < mdr_size(m))
+		errx(1, "short write: %d < %lu", r, mdr_size(m));
+	mdr_free(m);
+
+	buf_sz = 4096;
+	if ((buf = malloc(buf_sz)) == NULL)
+		err(1, "malloc");
+	for (len = 0;;) {
+		r = BIO_read(b, buf + len, buf_sz - len);
+		if (r == -1 && !BIO_should_retry(b))
+			ssl_err();
+		len += r;
+		if (mdr_unpack_hdr(m, buf, len) == MDR_FAIL) {
+			if (errno == EAGAIN)
+				continue;
+			else
+				err(1, "mdr_unpack_hdr");
+		}
+		if (!mdr_pending(m))
+			break;
+		if (buf_sz >= mdr_size(m))
+			continue;
+		if (mdr_size(m) >= INT_MAX)
+			errx(1, "payload too large for receiving");
+		buf = realloc(buf, mdr_size(m));
+		if (buf == NULL)
+			err(1, "realloc");
+		buf_sz = mdr_size(m);
+	}
+	BIO_free_all(b);
+	printf("\nReceived:\n");
+	mdr_print(m);
+	free(buf);
+	SSL_CTX_free(ctx);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -183,15 +272,22 @@ main(int argc, char **argv)
 	char          *msgid, *p;
 	char          *format, *spec, *end;
 	int            count, r;
+	const char    *tls_target = NULL;
 	struct mdr     m;
 
-	while ((opt = getopt(argc, argv, "hd")) != -1) {
+	while ((opt = getopt(argc, argv, "hdit:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
 			exit(0);
 		case 'd':
 			debug = 1;
+			break;
+		case 't':
+			tls_target = optarg;
+			break;
+		case 'i':
+			insecure = 1;
 			break;
 		default:
 			usage();
@@ -253,12 +349,15 @@ main(int argc, char **argv)
 		err(1, "mdr_pack_hdr");
 
 	pack(&m, format, (const char **)argv + optind, argc - optind);
-	// TODO send...
+
+	if (tls_target == NULL) {
+		mdr_print(&m);
+		mdr_free(&m);
+		return 0;
+	}
+
+	printf("Sent:\n");
 	mdr_print(&m);
-
-	mdr_free(&m);
-
-	// TODO: unpack hdr then dump payload in hex
-
+	do_tls(&m, tls_target);
 	return 0;
 }

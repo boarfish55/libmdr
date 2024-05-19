@@ -123,7 +123,9 @@ mdr_pending(struct mdr *m)
 		errno = EINVAL;
 		return UINT64_MAX;
 	}
-	return mdr_size(m) - mdr_tail_bytes(m) - mdr_tell(m);
+	if (m->buf_sz >= (mdr_size(m) - mdr_tail_bytes(m)))
+		return 0;
+	return mdr_size(m) - mdr_tail_bytes(m) - m->buf_sz;
 }
 
 int
@@ -607,7 +609,7 @@ mdr_print(struct mdr *m)
 			printf(" ");
 		printf(" %02x", (unsigned char)*b);
 	}
-	printf("\n\n");
+	printf("\n");
 }
 
 uint64_t
