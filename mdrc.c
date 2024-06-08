@@ -17,7 +17,7 @@ int insecure = 0;
 void
 usage()
 {
-	printf("%s: [-dh] "
+	printf("%s: [-dhi] [-t <tls target>] "
 	    "<send namespace:id:version> <format> <args>\n",
 	    program);
 }
