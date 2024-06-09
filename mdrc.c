@@ -17,7 +17,7 @@ int insecure = 0;
 void
 usage()
 {
-	printf("%s: [-dhi] [-t <tls target>] "
+	printf("%s: [-dhi] [-t <tls target>] [-k <key> -c <cert>]"
 	    "<send namespace:id:version> <format> <args>\n",
 	    program);
 }
@@ -184,7 +184,8 @@ ssl_err()
 }
 
 void
-do_tls(struct mdr *m, const char *target)
+do_tls(struct mdr *m, const char *target, const char *key_path,
+    const char *crt_path)
 {
 	SSL_CTX        *ctx;
 	BIO            *b;
@@ -206,6 +207,15 @@ do_tls(struct mdr *m, const char *target)
 
 	if (!SSL_CTX_set_default_verify_paths(ctx))
 		ssl_err();
+
+	if (key_path != NULL && crt_path != NULL) {
+		if (SSL_CTX_use_PrivateKey_file(ctx, key_path,
+		    SSL_FILETYPE_PEM) != 1)
+			ssl_err();
+		if (SSL_CTX_use_certificate_file(ctx, crt_path,
+		    SSL_FILETYPE_PEM) != 1)
+			ssl_err();
+	}
 
 	if ((b = BIO_new_ssl_connect(ctx)) == NULL)
 		ssl_err();
@@ -273,9 +283,11 @@ main(int argc, char **argv)
 	char          *format, *spec, *end;
 	int            count, r;
 	const char    *tls_target = NULL;
+	const char    *key_path = NULL;
+	const char    *crt_path = NULL;
 	struct mdr     m;
 
-	while ((opt = getopt(argc, argv, "hdit:")) != -1) {
+	while ((opt = getopt(argc, argv, "hdit:k:c:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -285,6 +297,12 @@ main(int argc, char **argv)
 			break;
 		case 't':
 			tls_target = optarg;
+			break;
+		case 'k':
+			key_path = optarg;
+			break;
+		case 'c':
+			crt_path = optarg;
 			break;
 		case 'i':
 			insecure = 1;
@@ -358,6 +376,6 @@ main(int argc, char **argv)
 
 	printf("Sent:\n");
 	mdr_print(&m);
-	do_tls(&m, tls_target);
+	do_tls(&m, tls_target, key_path, crt_path);
 	return 0;
 }
