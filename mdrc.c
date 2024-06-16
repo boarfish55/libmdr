@@ -13,11 +13,12 @@ const char *program = "mdrc";
 
 int debug = 0;
 int insecure = 0;
+int repeat = 1;
 
 void
 usage()
 {
-	printf("%s: [-dhi] [-t <tls target>] [-k <key> -c <cert>]"
+	printf("%s: [-dhi] [-n <repeat>] [-t <tls target>] [-k <key> -c <cert>]"
 	    "<send namespace:id:version> <format> <args>\n",
 	    program);
 }
@@ -190,9 +191,10 @@ do_tls(struct mdr *m, const char *target, const char *key_path,
 	SSL_CTX        *ctx;
 	BIO            *b;
 	SSL            *ssl;
-	int             r, len;
+	int             i, r, len;
 	char           *buf;
 	size_t          buf_sz;
+	struct mdr      reply;
 
 	if (mdr_size(m) >= INT_MAX)
 		errx(1, "payload too large for sending");
@@ -234,41 +236,48 @@ do_tls(struct mdr *m, const char *target, const char *key_path,
 	if (BIO_do_handshake(b) <= 0)
 		ssl_err();
 
-	if ((r = BIO_write(b, mdr_buf(m), mdr_size(m))) == -1)
-		ssl_err();
-	else if (r < mdr_size(m))
-		errx(1, "short write: %d < %lu", r, mdr_size(m));
-	mdr_free(m);
+	for (i = 0; i < repeat; i++) {
+		if (i > 0)
+			printf("\n");
+		printf("Sent:\n");
+		mdr_print(m);
 
-	buf_sz = 4096;
-	if ((buf = malloc(buf_sz)) == NULL)
-		err(1, "malloc");
-	for (len = 0;;) {
-		r = BIO_read(b, buf + len, buf_sz - len);
-		if (r == -1 && !BIO_should_retry(b))
+		if ((r = BIO_write(b, mdr_buf(m), mdr_size(m))) == -1)
 			ssl_err();
-		len += r;
-		if (mdr_unpack_hdr(m, buf, len) == MDR_FAIL) {
-			if (errno == EAGAIN)
+		else if (r < mdr_size(m))
+			errx(1, "short write: %d < %lu", r, mdr_size(m));
+
+		buf_sz = 4096;
+		if ((buf = malloc(buf_sz)) == NULL)
+			err(1, "malloc");
+		for (len = 0;;) {
+			r = BIO_read(b, buf + len, buf_sz - len);
+			if (r == -1 && !BIO_should_retry(b))
+				ssl_err();
+			len += r;
+			if (mdr_unpack_hdr(&reply, buf, len) == MDR_FAIL) {
+				if (errno == EAGAIN)
+					continue;
+				else
+					err(1, "mdr_unpack_hdr");
+			}
+			if (!mdr_pending(&reply))
+				break;
+			if (buf_sz >= mdr_size(&reply))
 				continue;
-			else
-				err(1, "mdr_unpack_hdr");
+			if (mdr_size(&reply) >= INT_MAX)
+				errx(1, "payload too large for receiving");
+			buf = realloc(buf, mdr_size(&reply));
+			if (buf == NULL)
+				err(1, "realloc");
+			buf_sz = mdr_size(&reply);
 		}
-		if (!mdr_pending(m))
-			break;
-		if (buf_sz >= mdr_size(m))
-			continue;
-		if (mdr_size(m) >= INT_MAX)
-			errx(1, "payload too large for receiving");
-		buf = realloc(buf, mdr_size(m));
-		if (buf == NULL)
-			err(1, "realloc");
-		buf_sz = mdr_size(m);
+		printf("\nReceived:\n");
+		mdr_print(&reply);
+		free(buf);
 	}
+	mdr_free(m);
 	BIO_free_all(b);
-	printf("\nReceived:\n");
-	mdr_print(m);
-	free(buf);
 	SSL_CTX_free(ctx);
 }
 
@@ -287,7 +296,7 @@ main(int argc, char **argv)
 	const char    *crt_path = NULL;
 	struct mdr     m;
 
-	while ((opt = getopt(argc, argv, "hdit:k:c:")) != -1) {
+	while ((opt = getopt(argc, argv, "hdit:k:c:n:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -303,6 +312,9 @@ main(int argc, char **argv)
 			break;
 		case 'c':
 			crt_path = optarg;
+			break;
+		case 'n':
+			repeat = atoi(optarg);
 			break;
 		case 'i':
 			insecure = 1;
@@ -374,8 +386,6 @@ main(int argc, char **argv)
 		return 0;
 	}
 
-	printf("Sent:\n");
-	mdr_print(&m);
 	do_tls(&m, tls_target, key_path, crt_path);
 	return 0;
 }
