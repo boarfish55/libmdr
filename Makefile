@@ -1,19 +1,23 @@
-CC := cc
-CFLAGS := -Wall -g -fstack-protector-strong \
-	$(shell pkg-config --cflags libbsd-overlay libssl libcrypto)
-LDFLAGS := $(shell pkg-config --libs libbsd-overlay libssl libcrypto) \
-	-Wl,-z,relro -Wl,-z,now
+CC = cc
+CFLAGS = -Wall -Wno-format -g
+LIBS = -lcrypto -lssl
+SRCS = mdr.c mdrc.c mdr_tests.c
+OBJS = mdr.o
 
-all: mdrc mdr_tests
+all: depend mdrc mdr_tests
 
-mdr.o: mdr.c mdr.h
-	$(CC) $(CFLAGS) -c mdr.c -o mdr.o
+depend: ${SRCS}
+	mkdep ${CFLAGS} ${SRCS}
 
-mdr_tests: mdr.o mdr_tests.c
-	$(CC) $(CFLAGS) mdr_tests.c mdr.o $(LDFLAGS) -o mdr_tests
+.SUFFIXES: .c .o
+.c.o:
+	${CC} ${CFLAGS} -c $<
 
-mdrc: mdr.o mdrc.c
-	$(CC) $(CFLAGS) mdrc.c mdr.o $(LDFLAGS) -o mdrc
+mdr_tests: mdr_tests.c ${OBJS}
+	${CC} ${CFLAGS} mdr_tests.c $(LIBS) ${OBJS} -o mdr_tests
+
+mdrc: mdrc.c ${OBJS}
+	${CC} ${CFLAGS} mdrc.c $(LIBS) ${OBJS} -o mdrc
 
 tests: mdr_tests
 	test -x /usr/bin/valgrind \
@@ -22,4 +26,4 @@ tests: mdr_tests
 		|| ./mdr_tests
 
 clean:
-	rm -f mdr.o mdr_tests
+	rm -f *.o mdr_tests mdrc *.core .depend

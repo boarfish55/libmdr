@@ -2,3 +2,4 @@
 *.o
 mdr_tests
 mdrc
+.depend
