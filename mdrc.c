@@ -19,7 +19,7 @@ void
 usage()
 {
 	printf("%s: [-dhi] [-n <repeat>] [-t <tls target>] [-k <key> -c <cert>]"
-	    "<send namespace:id:version> <format> <args>\n",
+	    " <send namespace:id:version> <format> <args>\n",
 	    program);
 }
 
