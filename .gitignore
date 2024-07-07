@@ -2,4 +2,6 @@
 *.o
 mdr_tests
 mdrc
+mdrd
 .depend
+.deps
