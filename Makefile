@@ -6,9 +6,9 @@ SRCS = mdr.c mdrc.c mdr_tests.c config_vars.c idxheap.c tlsev.c util.c xlog.c
 
 MDRD_OBJS = config_vars.o idxheap.o mdr.o tlsev.o util.o xlog.o
 
-all: depend mdrc mdr_tests mdrd
+all: .depend mdrc mdr_tests mdrd
 
-depend: ${SRCS}
+.depend: ${SRCS}
 	mkdep ${CFLAGS} ${SRCS}
 
 .SUFFIXES: .c .o
