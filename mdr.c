@@ -569,12 +569,10 @@ mdr_unpack_from_fd(struct mdr *m, int fd, char *buf, size_t buf_sz)
 	}
 
 	r = readall(fd, buf, mdr_hdr_size(0));
-	if (r == -1) {
+	if (r == -1)
 		return -1;
-	} else if (r == 0) {
-		errno = EPIPE;
-		return -1;
-	}
+	else if (r == 0)
+		return 0;
 
 	if (mdr_unpack_hdr(m, buf, buf_sz) == MDR_FAIL)
 		return MDR_FAIL;

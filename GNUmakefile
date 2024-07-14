@@ -12,7 +12,8 @@ DEPFLAGS = -MMD -MP -MF $(DEPDIR)/$@.d
 MDRC_SRCS = mdr.c mdrc.c
 MDRC_OBJS = $(MDRC_SRCS:.c=.o)
 
-MDRD_SRCS = mdr.c mdrd.c idxheap.c tlsev.c util.c config_vars.c xlog.c
+MDRD_SRCS = mdr.c mdrd.c mdr_mdrd.c idxheap.c tlsev.c util.c config_vars.c \
+	xlog.c
 MDRD_OBJS = $(MDRD_SRCS:.c=.o)
 
 MDRTESTS_SRCS = mdr.c mdr_tests.c

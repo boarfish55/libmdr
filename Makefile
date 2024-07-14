@@ -2,9 +2,10 @@ CC = cc
 CFLAGS = -Wall -Wno-format -g
 LIBS = -lcrypto -lssl
 
-SRCS = mdr.c mdrc.c mdr_tests.c config_vars.c idxheap.c tlsev.c util.c xlog.c
+SRCS = mdr.c mdrc.c mdr_mdrd.c mdr_tests.c config_vars.c idxheap.c tlsev.c \
+	util.c xlog.c
 
-MDRD_OBJS = config_vars.o idxheap.o mdr.o tlsev.o util.o xlog.o
+MDRD_OBJS = config_vars.o idxheap.o mdr.o mdr_mdrd.o tlsev.o util.o xlog.o
 
 all: .depend mdrc mdr_tests mdrd
 

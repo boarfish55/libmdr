@@ -24,10 +24,6 @@
 #include "tlsev.h"
 #include "xlog.h"
 
-#define MDR_NS_MDRD 0x00000002
-
-#define MDR_ID_MDRD_BEMSG     0x0001
-
 const char *program = "mdrd";
 X509_STORE *store = NULL;
 EVP_PKEY   *priv_key = NULL;
@@ -259,6 +255,7 @@ pack_bemsg(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 
 	return 0;
 }
+
 /*
  *  The verification callback can be used to customise the operation of
  *  certificate verification, for instance by overriding error conditions or
@@ -417,12 +414,18 @@ backend_cb(int fd)
 	uint64_t      msg_buf_sz = sizeof(msg_buf);
 	struct tlsev *t;
 	uint64_t      id;
-	int           tlsfd;
+	int           tlsfd, r;
 
-	if (mdr_unpack_from_fd(&reply, fd,
-	    reply_buf, sizeof(reply_buf)) == MDR_FAIL) {
+	if ((r = mdr_unpack_from_fd(&reply, fd,
+	    reply_buf, sizeof(reply_buf))) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: mdr_unpack_from_fd", __func__);
+		goto unpack_fail;
+	}
+
+	if (r == 0) {
+		xlog(LOG_ERR, NULL,
+		    "%s: mdr_unpack_from_fd: EOF from backend", __func__);
 		goto unpack_fail;
 	}
 
