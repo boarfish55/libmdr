@@ -386,6 +386,7 @@ tlsev_close(struct tlsev_listener *l, struct tlsev *t)
 	if (t->peer_cert != NULL)
 		X509_free(t->peer_cert);
 	tlsev_free(t);
+	l->active_clients--;
 	return r;
 }
 
@@ -546,13 +547,18 @@ tlsev_reply(struct tlsev *t, const char *buf, int len)
 	if (epoll_ctl(t->listener->epollfd, EPOLL_CTL_MOD, t->fd, &ev) == -1) {
 		xlog_strerror(LOG_ERR, errno, "epoll_ctl");
 		del_epoll_fd(t->listener->epollfd, t->fd);
-		if (tlsev_close(t->listener, t) != -1)
-			t->listener->active_clients--;
+		tlsev_close(t->listener, t);
 		return -1;
 	}
 #endif
 	t->wpending = 1;
 	return r;
+}
+
+int
+tlsev_drain(struct tlsev *t)
+{
+	t->drain = 1;
 }
 
 static int
@@ -672,8 +678,7 @@ tlsev_run(struct tlsev_listener *l)
 #ifndef __OpenBSD__
 				del_epoll_fd(l->epollfd, t->fd);
 #endif
-				if (tlsev_close(l, t) != -1)
-					l->active_clients--;
+				tlsev_close(l, t);
 				t = idxheap_peek(&l->tlsev_store, 0);
 			}
 			continue;
@@ -766,7 +771,7 @@ tlsev_run(struct tlsev_listener *l)
 
 					/* Descriptor is valid, don't remove */
 					cleanup = 0;
-					if (!l->fd_callbacks[i].cb(evfd))
+					if (l->fd_callbacks[i].cb(evfd) <= 0)
 						tlsev_del_fd_cb(l, i);
 				}
 
@@ -817,8 +822,7 @@ tlsev_run(struct tlsev_listener *l)
 #ifndef __OpenBSD__
 					del_epoll_fd(l->epollfd, t->fd);
 #endif
-					if (tlsev_close(l, t) != -1)
-						l->active_clients--;
+					tlsev_close(l, t);
 					continue;
 				}
 
@@ -829,8 +833,7 @@ tlsev_run(struct tlsev_listener *l)
 #ifndef __OpenBSD__
 					del_epoll_fd(l->epollfd, t->fd);
 #endif
-					if (tlsev_close(l, t) != -1)
-						l->active_clients--;
+					tlsev_close(l, t);
 					continue;
 				}
 
@@ -849,8 +852,7 @@ tlsev_run(struct tlsev_listener *l)
 					xlog_strerror(LOG_ERR, errno,
 					    "epoll_ctl");
 					del_epoll_fd(l->epollfd, t->fd);
-					if (tlsev_close(l, t) != -1)
-						l->active_clients--;
+					tlsev_close(l, t);
 					continue;
 				}
 #endif
@@ -864,21 +866,23 @@ tlsev_run(struct tlsev_listener *l)
 #ifndef __OpenBSD__
 					del_epoll_fd(l->epollfd, t->fd);
 #endif
-					if (tlsev_close(l, t) != -1)
-						l->active_clients--;
+					tlsev_close(l, t);
 					continue;
 				}
 
 				if (r == 0)
 					t->wpending = 0;
 #ifdef __OpenBSD__
-				if (r == 0)
+				if (t->wpending == 0) {
 					EV_SET(&l->ch[l->chn++], t->fd,
 					    EVFILT_WRITE, EV_DELETE, 0, 0, 0);
+					if (t->drain)
+						tlsev_close(l, t);
+				}
 #else
 				ev.data.fd = t->fd;
 				ev.events = EPOLLIN;
-				if (r > 0)
+				if (t->wpending > 0)
 					ev.events |= EPOLLOUT;
 
 				if (epoll_ctl(l->epollfd, EPOLL_CTL_MOD,
@@ -886,9 +890,9 @@ tlsev_run(struct tlsev_listener *l)
 					xlog_strerror(LOG_ERR, errno,
 					    "epoll_ctl");
 					del_epoll_fd(l->epollfd, t->fd);
-					if (tlsev_close(l, t) != -1)
-						l->active_clients--;
-				}
+					tlsev_close(l, t);
+				} else if (t->drain)
+					tlsev_close(l, t);
 #endif
 			}
 		}

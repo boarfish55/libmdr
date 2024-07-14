@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include "config_vars.h"
 #include "mdr.h"
+#include "mdr_mdrd.h"
 #include "util.h"
 #include "tlsev.h"
 #include "xlog.h"
@@ -213,7 +214,7 @@ struct config_vars certainty_config_vars[] = {
 void load_keys();
 
 static int
-pack_bemsg(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
+pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 {
 	size_t                    cert_len;
 	unsigned char            *cert_buf;
@@ -225,7 +226,7 @@ pack_bemsg(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 	}
 
 	if (mdr_pack_hdr(m, MDR_F_TAIL_BYTES, MDR_NS_MDRD,
-	    MDR_ID_MDRD_BEMSG, 0, NULL, 4096) == MDR_FAIL) {
+	    MDR_ID_MDRD_BEREQ, 0, NULL, 4096) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack_hdr", __func__);
 		return -1;
 	}
@@ -389,7 +390,7 @@ daemon_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		return -1;
 	}
 
-	if ((status = pack_bemsg(&bemsg, tlsev_id(t), tlsev_fd(t), &cb_data->msg,
+	if ((status = pack_bereq(&bemsg, tlsev_id(t), tlsev_fd(t), &cb_data->msg,
 	    tlsev_peer_cert(t))) == 0) {
 		if ((status = writeall(backend_wfd, mdr_buf(&bemsg),
 		    mdr_size(&bemsg))) == -1) {
@@ -415,36 +416,49 @@ backend_cb(int fd)
 	struct tlsev *t;
 	uint64_t      id;
 	int           tlsfd, r;
+	uint32_t      resp_status, resp_flags;
 
 	if ((r = mdr_unpack_from_fd(&reply, fd,
 	    reply_buf, sizeof(reply_buf))) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: mdr_unpack_from_fd", __func__);
-		goto unpack_fail;
+		goto fail;
 	}
 
 	if (r == 0) {
 		xlog(LOG_ERR, NULL,
 		    "%s: mdr_unpack_from_fd: EOF from backend", __func__);
-		goto unpack_fail;
+		goto fail;
 	}
 
-	if (mdr_id(&reply) != MDR_ID_MDRD_BEMSG) {
+	if (mdr_id(&reply) != MDR_ID_MDRD_BERESP) {
 		xlog(LOG_ERR, NULL,
 		    "%s: unexpected message ID from backend", __func__);
-		goto unpack_fail;
+		goto fail;
 	}
 
 	if (mdr_unpack_uint64(&reply, &id) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: mdr_unpack_uint64", __func__);
-		goto unpack_fail;
+		goto fail;
 	}
 
 	if (mdr_unpack_int32(&reply, &tlsfd) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
-		    "%s: mdr_unpack_uint64", __func__);
-		goto unpack_fail;
+		    "%s: mdr_unpack_int32", __func__);
+		goto fail;
+	}
+
+	if (mdr_unpack_uint32(&reply, &resp_status) == MDR_FAIL) {
+		xlog_strerror(LOG_ERR, errno,
+		    "%s: mdr_unpack_uint32", __func__);
+		goto fail;
+	}
+
+	if (mdr_unpack_uint32(&reply, &resp_flags) == MDR_FAIL) {
+		xlog_strerror(LOG_ERR, errno,
+		    "%s: mdr_unpack_uint32", __func__);
+		goto fail;
 	}
 
 	if ((t = tlsev_get(&listener, tlsfd)) == NULL) {
@@ -460,21 +474,54 @@ backend_cb(int fd)
 		return 1;
 	}
 
-	if (mdr_unpack_mdr(&reply, &msg, msg_buf, &msg_buf_sz) == MDR_FAIL) {
-		xlog_strerror(LOG_ERR, errno,
-		    "%s: mdr_unpack_uint64", __func__);
-		goto unpack_fail;
+	switch (resp_status) {
+	case MDRD_ST_OK:
+		if (resp_flags & MDRD_BERESP_F_MSG) {
+			if (mdr_unpack_mdr(&reply, &msg, msg_buf,
+			    &msg_buf_sz) == MDR_FAIL) {
+				xlog_strerror(LOG_ERR, errno,
+				    "%s: mdr_unpack_uint64", __func__);
+				goto fail;
+			}
+
+			if (msg_buf_sz > sizeof(msg_buf)) {
+				xlog(LOG_ERR, NULL,
+				    "%s: received oversized reply from backend",
+				    __func__);
+				return 1;
+			}
+		}
+		break;
+	case MDRD_ST_DENIED:
+		if (mdrd_pack_error(&msg, msg_buf, sizeof(msg_buf),
+		    resp_status, "access denied") == MDR_FAIL) {
+			xlog(LOG_ERR, NULL, "%s: failed to pack error for "
+			    "client after resp_status %u",
+			    __func__, resp_status);
+			goto fail;
+		}
+		break;
+	case MDRD_ST_CERTFAIL:
+		if (mdrd_pack_error(&msg, msg_buf, sizeof(msg_buf),
+		    resp_status, "certificate validation failed") == MDR_FAIL) {
+			xlog(LOG_ERR, NULL, "%s: failed to pack error for "
+			    "client after resp_status %u",
+			    __func__, resp_status);
+			goto fail;
+		}
+		break;
+	default:
+		xlog(LOG_ERR, NULL, "%s: unknown mdr status from backend: %u",
+		    __func__, resp_status);
+		goto fail;
 	}
 
-	if (msg_buf_sz > sizeof(msg_buf)) {
-		xlog(LOG_ERR, NULL,
-		    "%s: received oversized reply from backend", __func__);
-		return 1;
-	}
+	if (tlsev_reply(t, mdr_buf(&msg), mdr_size(&msg)) <= 0 ||
+	    resp_flags & MDRD_BERESP_F_CLOSE)
+		tlsev_drain(t);
 
-	return tlsev_reply(t, mdr_buf(&msg), mdr_size(&msg));
-
-unpack_fail:
+	return 1;
+fail:
 	tlsev_shutdown(&listener);
 	shutdown_triggered = 1;
 	return 0;

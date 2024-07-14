@@ -61,6 +61,7 @@ struct tlsev {
 	BIO                   *r;
 	BIO                   *w;
 	int                    wpending;
+	int                    drain;
 	struct timespec        timeout_at;
 
 	struct sockaddr_in6    peer_addr;
@@ -85,6 +86,7 @@ void                 tlsev_shutdown(struct tlsev_listener *);
 X509                *tlsev_peer_cert(struct tlsev *);
 struct sockaddr_in6 *tlsev_peer(struct tlsev *);
 int                  tlsev_reply(struct tlsev *, const char *, int);
+int                  tlsev_drain(struct tlsev *);
 uint64_t             tlsev_id(struct tlsev *);
 int                  tlsev_fd(struct tlsev *);
 struct tlsev *       tlsev_get(struct tlsev_listener *, int);
