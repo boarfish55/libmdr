@@ -23,8 +23,8 @@ tlsev_timeout_cmp(const void *k1, const void *k2)
 {
 	struct timespec *t1, *t2;
 
-	t1 = &((struct tlsev *)k1)->timeout_at;
-	t2 = &((struct tlsev *)k2)->timeout_at;
+	t1 = &((struct tlsev *)k1)->last_used_at;
+	t2 = &((struct tlsev *)k2)->last_used_at;
 
 	if (t1->tv_sec < t2->tv_sec ||
 	    (t1->tv_sec == t2->tv_sec && t1->tv_nsec < t2->tv_nsec))
@@ -75,7 +75,8 @@ del_epoll_fd(int epollfd, int fd)
 
 int
 tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
-    size_t lsock_len, int socket_timeout, int max_clients, int ssl_data_idx,
+    size_t lsock_len, int socket_timeout, int socket_timeout_short,
+    int max_clients, int ssl_data_idx,
     int (*in_cb)(struct tlsev *, const char *, size_t, void **),
     void (*in_cb_data_free)(void *))
 {
@@ -91,6 +92,8 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 	}
 	if (socket_timeout < 0)
 		socket_timeout = 0;
+	if (socket_timeout_short < 0)
+		socket_timeout_short = 0;
 	if (max_clients < 0)
 		max_clients = 1000;
 	else if (max_clients > MAX_EVENTS)
@@ -100,6 +103,7 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 	l->ctx = ctx;
 	l->lsock_len = lsock_len;
 	l->socket_timeout = socket_timeout;
+	l->socket_timeout_short = socket_timeout_short;
 	l->tlsev_data_idx = ssl_data_idx;
 	l->next_id = 1;
 	l->in_cb = in_cb;
@@ -354,8 +358,7 @@ tlsev_create(struct tlsev_listener *l, int fd, SSL_CTX *ctx,
 	SSL_set_bio(t->ssl, t->r, t->w);
 	SSL_set_accept_state(t->ssl);
 
-	clock_gettime(CLOCK_MONOTONIC, &t->timeout_at);
-	t->timeout_at.tv_sec += l->socket_timeout;
+	clock_gettime(CLOCK_MONOTONIC, &t->last_used_at);
 
 	if (idxheap_insert(&l->tlsev_store, t) == -1) {
 		tlsev_free(t);
@@ -405,8 +408,7 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 	ssize_t n;
 	int     r;
 
-	clock_gettime(CLOCK_MONOTONIC, &t->timeout_at);
-	t->timeout_at.tv_sec += l->socket_timeout;
+	clock_gettime(CLOCK_MONOTONIC, &t->last_used_at);
 	if (idxheap_update(&l->tlsev_store, t) == NULL)
 		xlog(LOG_ERR, NULL, "%s: idxheap_update: returned NULL "
 		    "for fd %d", __func__, t->fd);
@@ -472,8 +474,7 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 	int     r, pending;
 	char    buf[4096];
 
-	clock_gettime(CLOCK_MONOTONIC, &t->timeout_at);
-	t->timeout_at.tv_sec += l->socket_timeout;
+	clock_gettime(CLOCK_MONOTONIC, &t->last_used_at);
 	if (idxheap_update(&l->tlsev_store, t) == NULL)
 		xlog(LOG_ERR, NULL, "%s: idxheap_update: returned NULL "
 		    "for fd %d", __func__, t->fd);
@@ -555,7 +556,7 @@ tlsev_reply(struct tlsev *t, const char *buf, int len)
 	return r;
 }
 
-int
+void
 tlsev_drain(struct tlsev *t)
 {
 	t->drain = 1;
@@ -610,13 +611,13 @@ tlsev_run(struct tlsev_listener *l)
 	uint8_t              evtype;
 	int                  nev;
 #ifdef __OpenBSD__
-	struct timespec      timeout = {1, 0};
+	struct timespec      kev_timeout = {1, 0};
 #else
 	struct epoll_event   ev;
 #endif
 	struct xerr          e;
 	int                  fd, evfd;
-	int                  n, r;
+	int                  n, r, timeout;
 	size_t               i;
 	struct sockaddr_in6  peer;
 	socklen_t            peerlen = sizeof(peer);
@@ -638,7 +639,7 @@ tlsev_run(struct tlsev_listener *l)
 		}
 #ifdef __OpenBSD__
 		nev = kevent(l->kq, l->ch, l->chn,
-		    l->events, l->max_events, &timeout);
+		    l->events, l->max_events, &kev_timeout);
 		l->chn = 0;
 #else
 		nev = epoll_wait(l->epollfd, l->events, l->max_events, 1000);
@@ -666,15 +667,20 @@ tlsev_run(struct tlsev_listener *l)
 
 		if (nev == 0) {
 			clock_gettime(CLOCK_MONOTONIC, &now);
+			timeout = (l->active_clients < l->max_clients)
+			    ? l->socket_timeout : l->socket_timeout_short;
 
 			t = idxheap_peek(&l->tlsev_store, 0);
 			while (t != NULL) {
-				if (now.tv_sec < t->timeout_at.tv_sec ||
-				    (now.tv_sec == t->timeout_at.tv_sec &&
-				     now.tv_nsec <= t->timeout_at.tv_nsec))
+				if (now.tv_sec <
+				    t->last_used_at.tv_sec + timeout ||
+				    (now.tv_sec ==
+				     t->last_used_at.tv_sec + timeout &&
+				     now.tv_nsec <= t->last_used_at.tv_nsec))
 					break;
 				xlog(LOG_NOTICE, NULL, "timeout reached for "
-				    "fd %d; closing socket", t->fd);
+				    "fd %d after %ds; closing socket", t->fd,
+				    now.tv_sec - t->last_used_at.tv_sec);
 #ifndef __OpenBSD__
 				del_epoll_fd(l->epollfd, t->fd);
 #endif
