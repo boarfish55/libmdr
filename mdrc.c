@@ -18,7 +18,8 @@ int repeat = 1;
 void
 usage()
 {
-	printf("%s: [-dhi] [-n <repeat>] [-t <tls target>] [-k <key> -c <cert>]"
+	printf("%s: [-dhi] [-n <repeat>] [-t <tls target|->] "
+	    "[-k <key> -c <cert>]"
 	    " <send namespace:id:version> <format> <args>\n",
 	    program);
 }
@@ -188,13 +189,13 @@ void
 do_tls(struct mdr *m, const char *target, const char *key_path,
     const char *crt_path)
 {
-	SSL_CTX        *ctx;
-	BIO            *b;
-	SSL            *ssl;
-	int             i, r, len;
-	char           *buf;
-	size_t          buf_sz;
-	struct mdr      reply;
+	SSL_CTX    *ctx;
+	BIO        *b;
+	SSL        *ssl;
+	int         i, r, len;
+	char       *buf;
+	size_t      buf_sz;
+	struct mdr  reply;
 
 	if (mdr_size(m) >= INT_MAX)
 		errx(1, "payload too large for sending");
@@ -240,7 +241,7 @@ do_tls(struct mdr *m, const char *target, const char *key_path,
 		if (i > 0)
 			printf("\n");
 		printf("Sent:\n");
-		mdr_print(m);
+		mdr_print(stdout, m);
 
 		if ((r = BIO_write(b, mdr_buf(m), mdr_size(m))) == -1)
 			ssl_err();
@@ -273,12 +274,80 @@ do_tls(struct mdr *m, const char *target, const char *key_path,
 			buf_sz = mdr_size(&reply);
 		}
 		printf("\nReceived:\n");
-		mdr_print(&reply);
+		mdr_print(stdout, &reply);
 		free(buf);
 	}
 	mdr_free(m);
 	BIO_free_all(b);
 	SSL_CTX_free(ctx);
+}
+
+void
+do_stdin()
+{
+	int         r, len;
+	char       *buf;
+	size_t      buf_sz;
+	struct mdr  reply;
+
+	for (;;) {
+		buf_sz = 4096;
+		if ((buf = malloc(buf_sz)) == NULL)
+			err(1, "malloc");
+		for (len = 0;;) {
+			r = read(0, buf + len, buf_sz - len);
+			if (r == -1)
+				err(1, "read");
+
+			if (r == 0) {
+				free(buf);
+				return;
+			}
+
+			len += r;
+			if (mdr_unpack_hdr(&reply, buf, len) == MDR_FAIL) {
+				if (errno == EAGAIN)
+					continue;
+				else
+					err(1, "mdr_unpack_hdr");
+			}
+			if (!mdr_pending(&reply))
+				break;
+			if (buf_sz >= mdr_size(&reply))
+				continue;
+			if (mdr_size(&reply) >= INT_MAX)
+				errx(1, "payload too large for receiving");
+			buf = realloc(buf, mdr_size(&reply));
+			if (buf == NULL)
+				err(1, "realloc");
+			buf_sz = mdr_size(&reply);
+		}
+		printf("\nReceived:\n");
+		mdr_print(stdout, &reply);
+		free(buf);
+	}
+}
+
+void
+do_stdout(struct mdr *m)
+{
+	int i, r;
+
+	if (mdr_size(m) >= INT_MAX)
+		errx(1, "payload too large for sending");
+
+	for (i = 0; i < repeat; i++) {
+		if (i > 0)
+			printf("\n");
+		fprintf(stderr, "Sent:\n");
+		mdr_print(stderr, m);
+
+		if ((r = write(1, mdr_buf(m), mdr_size(m))) == -1)
+			err(1, "write");
+		else if (r < mdr_size(m))
+			errx(1, "short write: %d < %lu", r, mdr_size(m));
+	}
+	mdr_free(m);
 }
 
 int
@@ -291,7 +360,7 @@ main(int argc, char **argv)
 	char          *msgid, *p;
 	char          *format, *spec, *end;
 	int            count, r;
-	const char    *tls_target = NULL;
+	const char    *target = NULL;
 	const char    *key_path = NULL;
 	const char    *crt_path = NULL;
 	struct mdr     m;
@@ -305,7 +374,7 @@ main(int argc, char **argv)
 			debug = 1;
 			break;
 		case 't':
-			tls_target = optarg;
+			target = optarg;
 			break;
 		case 'k':
 			key_path = optarg;
@@ -328,6 +397,11 @@ main(int argc, char **argv)
 	if (optind >= argc) {
 		usage();
 		exit(1);
+	}
+
+	if (strcmp(argv[optind], "-") == 0) {
+		do_stdin();
+		return 0;
 	}
 
 	msgid = argv[optind++];
@@ -380,12 +454,15 @@ main(int argc, char **argv)
 
 	pack(&m, format, (const char **)argv + optind, argc - optind);
 
-	if (tls_target == NULL) {
-		mdr_print(&m);
+	if (target == NULL) {
+		mdr_print(stdout, &m);
 		mdr_free(&m);
+		return 0;
+	} else if (strcmp(target, "-") == 0) {
+		do_stdout(&m);
 		return 0;
 	}
 
-	do_tls(&m, tls_target, key_path, crt_path);
+	do_tls(&m, target, key_path, crt_path);
 	return 0;
 }
