@@ -38,6 +38,7 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 	uint64_t        u64;
 	int64_t         i64;
 	int             i;
+	struct mdr      m2;
 
 	/*
 	 * A uint64 can render up to 20 digits, plus one for the 'b'
@@ -64,7 +65,37 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 		    : sizeof(spbuf)) >= sizeof(spbuf))
 			errx(1, "invalid format spec");
 
-		if (strcmp(spbuf, "b") == 0) {
+		if (strcmp(spbuf, "m") == 0) {
+			for (i = 0, bytes_p = *a++;
+			    *bytes_p != '\0' && i < sizeof(bytes); i++) {
+				if (*bytes_p++ != 'x')
+					errx(1, "invalid value");
+
+				b = tolower(*bytes_p++);
+				if (!((b >= '0' && b <= '9') ||
+				    (b >= 'a' && b <= 'f')))
+					errx(1, "invalid value");
+
+				if (b >= '0' && b <= '9')
+					bytes[i] = (b - '0') << 4;
+				else
+					bytes[i] = (b - 'a' + 10) << 4;
+
+				b = tolower(*bytes_p++);
+				if (!((b >= '0' && b <= '9') ||
+				    (b >= 'a' && b <= 'f')))
+					errx(1, "invalid value");
+
+				if (b >= '0' && b <= '9')
+					bytes[i] |= (b - '0');
+				else
+					bytes[i] |= (b - 'a' + 10);
+			}
+			if (mdr_unpack_hdr(&m2, bytes, i) == MDR_FAIL)
+				err(1, "mdr_unpack_hdr");
+			if (mdr_pack_mdr(m, &m2) == MDR_FAIL)
+				err(1, "mdr_pack_mdr");
+		} else if (strcmp(spbuf, "b") == 0) {
 			for (i = 0, bytes_p = *a++;
 			    *bytes_p != '\0' && i < sizeof(bytes); i++) {
 				if (*bytes_p++ != 'x')

@@ -37,6 +37,48 @@ test_long_str()
 }
 
 void
+test_pack_mdr()
+{
+	uint64_t   r, len;
+	char       buf[64], buf2[64];
+	char       str[32] = "hey hey hey";
+	struct mdr echo, echo2, decode;
+
+	printf("%s\n", __func__);
+
+	/* Create inner mdr, containing a string */
+	r = mdr_pack_hdr(&echo2, 0, MDR_NS_ECHO, MDR_ID_ECHO, 0,
+	    buf2, sizeof(buf2));
+	printf("mdr_pack_hdr=%lu\n", r);
+	r = mdr_pack_string(&echo2, str);
+	printf("mdr_pack_string=%lu\n", r);
+
+	r = mdr_pack_hdr(&echo, 0, MDR_NS_ECHO, MDR_ID_ECHO, 0,
+	    buf, sizeof(buf));
+	printf("mdr_pack_hdr=%lu\n", r);
+
+	r = mdr_pack_mdr(&echo, &echo2);
+	printf("mdr_pack_mdr=%lu\n", r);
+	printf("mdr_size=%lu\n", mdr_size(&echo));
+
+	r = mdr_unpack_hdr(&decode, mdr_buf(&echo), mdr_size(&echo));
+	printf("mdr_unpack_hdr=%lu\n", r);
+
+	len = sizeof(buf2);
+	bzero(buf2, len);
+	bzero(&echo2, sizeof(echo2));
+	r = mdr_unpack_mdr(&decode, &echo2, buf2, &len);
+	printf("mdr_unpack_mdr=%lu\n", r);
+
+	bzero(str, sizeof(str));
+	len = sizeof(str);
+	r = mdr_unpack_string(&echo2, str, &len);
+	printf("mdr_unpack_string(s)=%.*s (%lu fits in %lu)\n",
+	    (int)((len < sizeof(str)) ? len - 1 : sizeof(str) - 1),
+	    str, len, sizeof(str));
+}
+
+void
 test_long_tail_bytes()
 {
 	uint64_t   r, lena, lenb;
@@ -143,6 +185,7 @@ test_echo()
 	    r, e_dst.echo, strlen(e_dst.echo));
 	mdr_free(&e_src.m);
 }
+
 int
 main()
 {
@@ -176,7 +219,6 @@ main()
 
 	r = mdr_packf(&echo, "s", "string");
 	printf("mdr_pack(b4)=%lu\n", r);
-
 
 	r = mdr_pack_hdr(&echo2, 0, MDR_NS_ECHO, MDR_ID_ECHO, 0, buf_echo2,
 	    sizeof(buf_echo2));
@@ -234,6 +276,9 @@ main()
 	test_long_tail_bytes();
 
 	test_limits();
+
+	printf("\n");
+	test_pack_mdr();
 
 	return 0;
 }
