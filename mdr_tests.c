@@ -19,7 +19,7 @@ test_long_str()
 		str[i] = 'a';
 	str[i] = '\0';
 
-	r = mdr_pack_hdr(&echo, 0, MDR_NS_ECHO, MDR_ID_ECHO, 0, NULL, 0);
+	r = mdr_pack_hdr(&echo, NULL, 0, 0, MDR_NS_ECHO, MDR_ID_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
 	r = mdr_pack_string(&echo, str);
@@ -47,14 +47,14 @@ test_pack_mdr()
 	printf("%s\n", __func__);
 
 	/* Create inner mdr, containing a string */
-	r = mdr_pack_hdr(&echo2, 0, MDR_NS_ECHO, MDR_ID_ECHO, 0,
-	    buf2, sizeof(buf2));
+	r = mdr_pack_hdr(&echo2, buf2, sizeof(buf2), 0, MDR_NS_ECHO,
+	    MDR_ID_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 	r = mdr_pack_string(&echo2, str);
 	printf("mdr_pack_string=%lu\n", r);
 
-	r = mdr_pack_hdr(&echo, 0, MDR_NS_ECHO, MDR_ID_ECHO, 0,
-	    buf, sizeof(buf));
+	r = mdr_pack_hdr(&echo, buf, sizeof(buf), 0, MDR_NS_ECHO,
+	    MDR_ID_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
 	r = mdr_pack_mdr(&echo, &echo2);
@@ -67,7 +67,7 @@ test_pack_mdr()
 	len = sizeof(buf2);
 	bzero(buf2, len);
 	bzero(&echo2, sizeof(echo2));
-	r = mdr_unpack_mdr(&decode, &echo2, buf2, &len);
+	r = mdr_unpack_mdr(&decode, &echo2);
 	printf("mdr_unpack_mdr=%lu\n", r);
 
 	bzero(str, sizeof(str));
@@ -99,8 +99,8 @@ test_long_tail_bytes()
 		strb[i] = 'b';
 	strb[i] = '\0';
 
-	r = mdr_pack_hdr(&echo, MDR_F_TAIL_BYTES, MDR_NS_ECHO, MDR_ID_ECHO,
-	    0, buf, sizeof(buf));
+	r = mdr_pack_hdr(&echo, buf, sizeof(buf), MDR_F_TAIL_BYTES,
+	    MDR_NS_ECHO, MDR_ID_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
 	r = mdr_pack_tail_bytes(&echo, sizeof(stra));
@@ -134,8 +134,8 @@ test_limits()
 
 	printf("%s\n", __func__);
 
-	r = mdr_pack_hdr(&echo, MDR_F_TAIL_BYTES, MDR_NS_ECHO,
-	    MDR_ID_ECHO, 0, NULL, 0);
+	r = mdr_pack_hdr(&echo, NULL, 0, MDR_F_TAIL_BYTES, MDR_NS_ECHO,
+	    MDR_ID_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
 	n = (PTRDIFF_MAX -
@@ -166,24 +166,27 @@ test_limits()
 void
 test_echo()
 {
-	int             i;
-	struct mdr_echo e_src, e_dst;
-	uint64_t        r;
+	int        i;
+	struct mdr src, dst;
+	char       str[1024];
+	size_t     str_sz;
+	uint64_t   r;
 
 	printf("%s\n", __func__);
 
-	bzero(&e_src, sizeof(e_src));
-	for (i = 0; i < sizeof(e_src.echo) - 1; i++)
-		e_src.echo[i] = 'a';
+	bzero(str, sizeof(str));
+	for (i = 0; i < sizeof(str) - 1; i++)
+		str[i] = 'a';
 
-	printf("mdr_echo_encode=%lu\n", mdr_echo_encode(&e_src));
+	printf("mdr_pack_echo=%lu\n", mdr_pack_echo(&src, str));
 
-	bzero(&e_dst, sizeof(e_dst));
+	bzero(str, sizeof(str));
 
-	r = mdr_echo_decode(&e_dst, mdr_buf(&e_src.m), mdr_size(&e_src.m));
-	printf("mdr_echo_decode=%lu => %s (%ld)\n",
-	    r, e_dst.echo, strlen(e_dst.echo));
-	mdr_free(&e_src.m);
+	str_sz = sizeof(str);
+	r = mdr_unpack_echo(&dst, mdr_buf(&src), mdr_size(&src),
+	    str, &str_sz);
+	printf("mdr_unpack_echo=%lu => %s (%ld)\n", r, str, str_sz);
+	mdr_free(&src);
 }
 
 int
@@ -201,32 +204,32 @@ main()
 	char       dstr[1024];
 	uint64_t   dstr_len;
 
-	r = mdr_pack_hdr(&echo, 0, MDR_NS_ECHO, MDR_ID_ECHO, 0,
-	    buf_echo, sizeof(buf_echo));
+	r = mdr_pack_hdr(&echo, buf_echo, sizeof(buf_echo), 0,
+	    MDR_NS_ECHO, MDR_ID_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
 	r = mdr_packf(&echo, "u64", 111);
-	printf("mdr_pack(u64)=%lu\n", r);
+	printf("mdr_packf(u64)=%lu\n", r);
 
 	r = mdr_packf(&echo, "i8", -111);
-	printf("mdr_pack(i8)=%lu\n", r);
+	printf("mdr_packf(i8)=%lu\n", r);
 
 	r = mdr_packf(&echo, "u16", 111);
-	printf("mdr_pack(u16)=%lu\n", r);
+	printf("mdr_packf(u16)=%lu\n", r);
 
 	r = mdr_packf(&echo, "b", "allo", 4);
-	printf("mdr_pack(b4)=%lu\n", r);
+	printf("mdr_packf(b4)=%lu\n", r);
 
 	r = mdr_packf(&echo, "s", "string");
-	printf("mdr_pack(b4)=%lu\n", r);
+	printf("mdr_packf(b4)=%lu\n", r);
 
-	r = mdr_pack_hdr(&echo2, 0, MDR_NS_ECHO, MDR_ID_ECHO, 0, buf_echo2,
-	    sizeof(buf_echo2));
+	r = mdr_pack_hdr(&echo2, buf_echo2, sizeof(buf_echo2), 0,
+	    MDR_NS_ECHO, MDR_ID_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
 	r = mdr_packf(&echo2, "u64:i8:u16:b:s", 111, -111, 111,
 	    "allo", 4, "string");
-	printf("mdr_pack(u64)=%lu\n", r);
+	printf("mdr_packf(u64)=%lu\n", r);
 
 	printf("memcmp(buf, buf2)==%d\n",
 	    memcmp(buf_echo, buf_echo2, mdr_size(&echo2)));
@@ -238,14 +241,15 @@ main()
 	r = mdr_unpackf(&decho, "u64:i8:u16:b:s", &u64, &i8, &u16,
 	    dbytes, &dlen, dstr, &dstr_len);
 
-	printf("u64: 111 == %lu\n", u64);
-	printf("i8: -111 == %d\n", i8);
-	printf("u16: 111 == %u\n", u16);
-	printf("dbytes: allo == [%.*s] (%d)\n", (int)dlen, dbytes, (int)dlen);
-	printf("dstr: string == %s\n", dstr);
+	printf("unpackf:u64: 111 == %lu\n", u64);
+	printf("unpackf:i8: -111 == %d\n", i8);
+	printf("unpackf:u16: 111 == %u\n", u16);
+	printf("unpackf:dbytes: allo == [%.*s] (%d)\n",
+	    (int)dlen, dbytes, (int)dlen);
+	printf("unpackf:dstr: string == %s\n", dstr);
 
-	r = mdr_pack_hdr(&echo3, 0, MDR_NS_ECHO, MDR_ID_ECHO, 0,
-	    buf_echo3, sizeof(buf_echo3));
+	r = mdr_pack_hdr(&echo3, buf_echo3, sizeof(buf_echo3), 0,
+	    MDR_NS_ECHO, MDR_ID_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
 	r = mdr_pack_bytes(&echo3, str5, strlen(str5));

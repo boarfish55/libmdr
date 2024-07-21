@@ -9,8 +9,8 @@ port: 9790
 listen_backlog: 1024
 prefork: 4
 max_clients: 1000
-socket_timeout: 10
-socket_timeout_short: 2
+socket_timeout_min: 2
+socket_timeout_max: 10
 max_payload_size: 16384
 allowed_mdr_namespaces: 2
 

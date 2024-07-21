@@ -84,8 +84,8 @@ struct {
 	128,
 	4,
 	1000,
-	10,
 	2,
+	10,
 	16384,
 	"2",
 	"/bin/cat",
@@ -233,8 +233,8 @@ pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 		return -1;
 	}
 
-	if (mdr_pack_hdr(m, MDR_F_TAIL_BYTES, MDR_NS_MDRD,
-	    MDR_ID_MDRD_BEREQ, 0, NULL, 4096) == MDR_FAIL) {
+	if (mdr_pack_hdr(m, NULL, 4096, MDR_F_TAIL_BYTES, MDR_NS_MDRD,
+	    MDR_ID_MDRD_BEREQ, 0) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack_hdr", __func__);
 		return -1;
 	}
@@ -420,7 +420,6 @@ backend_cb(int fd)
 	struct mdr    reply, msg;
 	char          reply_buf[certainty_conf.max_payload_size + 4096];
 	char          msg_buf[certainty_conf.max_payload_size];
-	uint64_t      msg_buf_sz = sizeof(msg_buf);
 	struct tlsev *t;
 	uint64_t      id;
 	int           tlsfd, r;
@@ -485,18 +484,10 @@ backend_cb(int fd)
 	switch (resp_status) {
 	case MDRD_ST_OK:
 		if (resp_flags & MDRD_BERESP_F_MSG) {
-			if (mdr_unpack_mdr(&reply, &msg, msg_buf,
-			    &msg_buf_sz) == MDR_FAIL) {
+			if (mdr_unpack_mdr(&reply, &msg) == MDR_FAIL) {
 				xlog_strerror(LOG_ERR, errno,
 				    "%s: mdr_unpack_uint64", __func__);
 				goto fail;
-			}
-
-			if (msg_buf_sz > sizeof(msg_buf)) {
-				xlog(LOG_ERR, NULL,
-				    "%s: received oversized reply from backend",
-				    __func__);
-				return 1;
 			}
 		}
 		break;

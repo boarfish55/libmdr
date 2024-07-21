@@ -479,7 +479,7 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	r = mdr_pack_hdr(&m, 0, namespace, id, version, NULL, 0);
+	r = mdr_pack_hdr(&m, NULL, 0, 0, namespace, id, version);
 	if (r == MDR_FAIL)
 		err(1, "mdr_pack_hdr");
 
