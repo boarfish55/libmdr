@@ -20,8 +20,8 @@ struct tlsev_listener {
 	SSL_CTX               *ctx;
 	int                   *lsock;
 	size_t                 lsock_len;
-	int                    socket_timeout;
-	int                    socket_timeout_short;
+	int                    socket_timeout_min;
+	int                    socket_timeout_max;
 	int                    tlsev_data_idx;
 	uint64_t               next_id;
 	struct idxheap         tlsev_store;

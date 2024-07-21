@@ -75,7 +75,7 @@ del_epoll_fd(int epollfd, int fd)
 
 int
 tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
-    size_t lsock_len, int socket_timeout, int socket_timeout_short,
+    size_t lsock_len, int socket_timeout_min, int socket_timeout_max,
     int max_clients, int ssl_data_idx,
     int (*in_cb)(struct tlsev *, const char *, size_t, void **),
     void (*in_cb_data_free)(void *))
@@ -90,10 +90,12 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 		errno = EINVAL;
 		return -1;
 	}
-	if (socket_timeout < 0)
-		socket_timeout = 0;
-	if (socket_timeout_short < 0)
-		socket_timeout_short = 0;
+	if (socket_timeout_min < 0)
+		socket_timeout_min = 0;
+	if (socket_timeout_max < 0)
+		socket_timeout_max = 0;
+	if (socket_timeout_max < socket_timeout_min)
+		socket_timeout_max = socket_timeout_min;
 	if (max_clients < 0)
 		max_clients = 1000;
 	else if (max_clients > MAX_EVENTS)
@@ -102,8 +104,8 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 	bzero(l, sizeof(struct tlsev_listener));
 	l->ctx = ctx;
 	l->lsock_len = lsock_len;
-	l->socket_timeout = socket_timeout;
-	l->socket_timeout_short = socket_timeout_short;
+	l->socket_timeout_min = socket_timeout_min;
+	l->socket_timeout_max = socket_timeout_max;
 	l->tlsev_data_idx = ssl_data_idx;
 	l->next_id = 1;
 	l->in_cb = in_cb;
@@ -667,8 +669,10 @@ tlsev_run(struct tlsev_listener *l)
 
 		if (nev == 0) {
 			clock_gettime(CLOCK_MONOTONIC, &now);
-			timeout = (l->active_clients < l->max_clients)
-			    ? l->socket_timeout : l->socket_timeout_short;
+
+			timeout = l->socket_timeout_max -
+			    ((l->socket_timeout_max - l->socket_timeout_min) *
+			    l->active_clients / l->max_clients);
 
 			t = idxheap_peek(&l->tlsev_store, 0);
 			while (t != NULL) {

@@ -61,8 +61,8 @@ struct {
 	uint64_t listen_backlog;
 	uint64_t prefork;
 	uint64_t max_clients;
-	uint64_t socket_timeout;
-	uint64_t socket_timeout_short;
+	uint64_t socket_timeout_min;
+	uint64_t socket_timeout_max;
 
 	uint64_t max_payload_size;
 	char     allowed_mdr_namespaces[LINE_MAX];
@@ -163,16 +163,16 @@ struct config_vars certainty_config_vars[] = {
 		sizeof(certainty_conf.max_clients)
 	},
 	{
-		"socket_timeout",
+		"socket_timeout_min",
 		CONFIG_VARS_ULONG,
-		&certainty_conf.socket_timeout,
-		sizeof(certainty_conf.socket_timeout)
+		&certainty_conf.socket_timeout_min,
+		sizeof(certainty_conf.socket_timeout_min)
 	},
 	{
-		"socket_timeout_short",
+		"socket_timeout_max",
 		CONFIG_VARS_ULONG,
-		&certainty_conf.socket_timeout_short,
-		sizeof(certainty_conf.socket_timeout_short)
+		&certainty_conf.socket_timeout_max,
+		sizeof(certainty_conf.socket_timeout_max)
 	},
 	{
 		"max_payload_size",
@@ -636,9 +636,9 @@ run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
 	free(backend_argv);
 
 	if (tlsev_init(&listener, ctx, lsock, lsock_len,
-	    certainty_conf.socket_timeout, certainty_conf.socket_timeout_short,
-	    certainty_conf.max_clients, ssl_data_idx, &daemon_in_cb,
-	    &free_daemon_in_cb_data) == -1) {
+	    certainty_conf.socket_timeout_min,
+	    certainty_conf.socket_timeout_max, certainty_conf.max_clients,
+	    ssl_data_idx, &daemon_in_cb, &free_daemon_in_cb_data) == -1) {
 		xlog_strerror(LOG_ERR, errno, "tlsev_init");
 		return 1;
 	}
@@ -740,10 +740,13 @@ main(int argc, char **argv)
 	if (certainty_conf.listen_backlog < 1)
 		errx(1, "invalid listen backlog size specified");
 
-	if (certainty_conf.socket_timeout >= INT_MAX)
-		errx(1, "invalid socket timeout");
-	if (certainty_conf.socket_timeout_short >= INT_MAX)
-		errx(1, "invalid short socket timeout");
+	if (certainty_conf.socket_timeout_min >= INT_MAX)
+		errx(1, "invalid min socket timeout");
+	if (certainty_conf.socket_timeout_max >= INT_MAX)
+		errx(1, "invalid max socket timeout");
+	if (certainty_conf.socket_timeout_min >
+	    certainty_conf.socket_timeout_max)
+		errx(1, "socket timeout min > max");
 
 	sigemptyset(&act.sa_mask);
 	act.sa_flags = 0;
