@@ -72,11 +72,11 @@ struct {
 	char *backend_gid;
 	char  backend_promises[LINE_MAX];
 	char  backend_unveils[LINE_MAX];
-} certainty_conf = {
-	"_certainty",
-	"_certainty",
+} mdrd_conf = {
+	"_mdrd",
+	"_mdrd",
 	0,
-	"/var/run/certainty.pid",
+	"/var/run/mdrd.pid",
 	"ca/overnet.pem",
 	"ca/overnet.crl",
 	"ca/private/overnet_key.pem",
@@ -89,132 +89,132 @@ struct {
 	16384,
 	"2",
 	"/bin/cat",
-	"_certainty",
-	"_certainty",
+	"_mdrd",
+	"_mdrd",
 	"stdio rpath flock",
 	"/bin:/usr/bin"
 };
 
-struct config_vars certainty_config_vars[] = {
+struct config_vars mdrd_config_vars[] = {
 	{
 		"uid",
 		CONFIG_VARS_PWNAM,
-		&certainty_conf.uid,
+		&mdrd_conf.uid,
 		0
 	},
 	{
 		"gid",
 		CONFIG_VARS_GRNAM,
-		&certainty_conf.gid,
+		&mdrd_conf.gid,
 		0
 	},
 	{
 		"enable_coredumps",
 		CONFIG_VARS_BOOLINT,
-		&certainty_conf.enable_coredumps,
-		sizeof(certainty_conf.enable_coredumps)
+		&mdrd_conf.enable_coredumps,
+		sizeof(mdrd_conf.enable_coredumps)
 	},
 	{
 		"pid_file",
 		CONFIG_VARS_STRING,
-		certainty_conf.pid_file,
-		sizeof(certainty_conf.pid_file)
+		mdrd_conf.pid_file,
+		sizeof(mdrd_conf.pid_file)
 	},
 	{
 		"ca_file",
 		CONFIG_VARS_STRING,
-		certainty_conf.ca_file,
-		sizeof(certainty_conf.ca_file)
+		mdrd_conf.ca_file,
+		sizeof(mdrd_conf.ca_file)
 	},
 	{
 		"crl_file",
 		CONFIG_VARS_STRING,
-		certainty_conf.crl_file,
-		sizeof(certainty_conf.crl_file)
+		mdrd_conf.crl_file,
+		sizeof(mdrd_conf.crl_file)
 	},
 	{
 		"key_file",
 		CONFIG_VARS_STRING,
-		certainty_conf.key_file,
-		sizeof(certainty_conf.key_file)
+		mdrd_conf.key_file,
+		sizeof(mdrd_conf.key_file)
 	},
 	{
 		"port",
 		CONFIG_VARS_ULONG,
-		&certainty_conf.port,
-		sizeof(certainty_conf.port)
+		&mdrd_conf.port,
+		sizeof(mdrd_conf.port)
 	},
 	{
 		"listen_backlog",
 		CONFIG_VARS_ULONG,
-		&certainty_conf.listen_backlog,
-		sizeof(certainty_conf.listen_backlog)
+		&mdrd_conf.listen_backlog,
+		sizeof(mdrd_conf.listen_backlog)
 	},
 	{
 		"prefork",
 		CONFIG_VARS_ULONG,
-		&certainty_conf.prefork,
-		sizeof(certainty_conf.prefork)
+		&mdrd_conf.prefork,
+		sizeof(mdrd_conf.prefork)
 	},
 	{
 		"max_clients",
 		CONFIG_VARS_ULONG,
-		&certainty_conf.max_clients,
-		sizeof(certainty_conf.max_clients)
+		&mdrd_conf.max_clients,
+		sizeof(mdrd_conf.max_clients)
 	},
 	{
 		"socket_timeout_min",
 		CONFIG_VARS_ULONG,
-		&certainty_conf.socket_timeout_min,
-		sizeof(certainty_conf.socket_timeout_min)
+		&mdrd_conf.socket_timeout_min,
+		sizeof(mdrd_conf.socket_timeout_min)
 	},
 	{
 		"socket_timeout_max",
 		CONFIG_VARS_ULONG,
-		&certainty_conf.socket_timeout_max,
-		sizeof(certainty_conf.socket_timeout_max)
+		&mdrd_conf.socket_timeout_max,
+		sizeof(mdrd_conf.socket_timeout_max)
 	},
 	{
 		"max_payload_size",
 		CONFIG_VARS_ULONG,
-		&certainty_conf.max_payload_size,
-		sizeof(certainty_conf.max_payload_size)
+		&mdrd_conf.max_payload_size,
+		sizeof(mdrd_conf.max_payload_size)
 	},
 	{
 		"allowed_mdr_namespaces",
 		CONFIG_VARS_STRING,
-		&certainty_conf.allowed_mdr_namespaces,
-		sizeof(certainty_conf.allowed_mdr_namespaces)
+		&mdrd_conf.allowed_mdr_namespaces,
+		sizeof(mdrd_conf.allowed_mdr_namespaces)
 	},
 	{
 		"backend",
 		CONFIG_VARS_STRING,
-		&certainty_conf.backend,
-		sizeof(certainty_conf.backend)
+		&mdrd_conf.backend,
+		sizeof(mdrd_conf.backend)
 	},
 	{
 		"backend_uid",
 		CONFIG_VARS_PWNAM,
-		&certainty_conf.backend_uid,
+		&mdrd_conf.backend_uid,
 		0
 	},
 	{
 		"backend_gid",
 		CONFIG_VARS_GRNAM,
-		&certainty_conf.backend_gid,
+		&mdrd_conf.backend_gid,
 		0
 	},
 	{
 		"backend_promises",
 		CONFIG_VARS_STRING,
-		&certainty_conf.backend_promises,
-		sizeof(certainty_conf.backend_promises)
+		&mdrd_conf.backend_promises,
+		sizeof(mdrd_conf.backend_promises)
 	},
 	{
 		"backend_unveils",
 		CONFIG_VARS_STRING,
-		&certainty_conf.backend_unveils,
-		sizeof(certainty_conf.backend_unveils)
+		&mdrd_conf.backend_unveils,
+		sizeof(mdrd_conf.backend_unveils)
 	},
 	CONFIG_VARS_LAST
 };
@@ -381,7 +381,7 @@ daemon_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 	cb_data->len += n;
 
 	if (mdr_unpack_all(&cb_data->msg, cb_data->buf,
-	    cb_data->len, certainty_conf.max_payload_size) == MDR_FAIL) {
+	    cb_data->len, mdrd_conf.max_payload_size) == MDR_FAIL) {
 		if (errno == EAGAIN)
 			return 0;
 		xlog_strerror(LOG_ERR, errno, "%s: mdr_unpack_all", __func__);
@@ -418,8 +418,8 @@ int
 backend_cb(int fd)
 {
 	struct mdr    reply, msg;
-	char          reply_buf[certainty_conf.max_payload_size + 4096];
-	char          msg_buf[certainty_conf.max_payload_size];
+	char          reply_buf[mdrd_conf.max_payload_size + 4096];
+	char          msg_buf[mdrd_conf.max_payload_size];
 	struct tlsev *t;
 	uint64_t      id;
 	int           tlsfd, r;
@@ -533,7 +533,7 @@ load_keys()
 	int          pkey_sz;
 	X509_LOOKUP *lookup;
 
-	if ((f = fopen(certainty_conf.key_file, "r")) == NULL)
+	if ((f = fopen(mdrd_conf.key_file, "r")) == NULL)
 		err(1, "fopen");
 	if ((priv_key = PEM_read_PrivateKey(f, NULL, NULL, NULL)) == NULL) {
 		ERR_print_errors_fp(stderr);
@@ -549,7 +549,7 @@ load_keys()
 	if (mlock(priv_key, pkey_sz) == -1)
 		err(1, "mlock");
 
-	if ((f = fopen(certainty_conf.ca_file, "r")) == NULL)
+	if ((f = fopen(mdrd_conf.ca_file, "r")) == NULL)
 		err(1, "fopen");
 	if ((ca_crt = PEM_read_X509(f, NULL, NULL, NULL)) == NULL) {
 		ERR_print_errors_fp(stderr);
@@ -563,12 +563,12 @@ load_keys()
 		ERR_print_errors_fp(stderr);
 		exit(1);
 	}
-	if (!X509_load_cert_file(lookup, certainty_conf.ca_file,
+	if (!X509_load_cert_file(lookup, mdrd_conf.ca_file,
 	    X509_FILETYPE_PEM)) {
 		ERR_print_errors_fp(stderr);
 		exit(1);
 	}
-	if (!X509_load_crl_file(lookup, certainty_conf.crl_file,
+	if (!X509_load_crl_file(lookup, mdrd_conf.crl_file,
 	    X509_FILETYPE_PEM)) {
 		ERR_print_errors_fp(stderr);
 		exit(1);
@@ -587,7 +587,7 @@ load_keys()
 void
 cleanup()
 {
-	config_vars_free(certainty_config_vars);
+	config_vars_free(mdrd_config_vars);
 	if (ca_crt != NULL) {
 		X509_free(ca_crt);
 		ca_crt = NULL;
@@ -609,7 +609,7 @@ run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
 	struct xerr          e;
 	char               **backend_argv;
 
-	backend_argv = cmdargv(certainty_conf.backend);
+	backend_argv = cmdargv(mdrd_conf.backend);
 	if (backend_argv == NULL) {
 		xlog_strerror(LOG_ERR, errno, "cmdargv");
 		return 1;
@@ -618,8 +618,8 @@ run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
 	bzero(&backend_reader, sizeof(backend_reader));
 	backend_reader.cb = &backend_cb;
 	if (spawnproc_exec(&sproc, backend_argv, &backend_wfd,
-	    &backend_reader.fd, certainty_conf.backend_uid,
-	    certainty_conf.backend_gid, xerrz(&e)) == -1) {
+	    &backend_reader.fd, mdrd_conf.backend_uid,
+	    mdrd_conf.backend_gid, xerrz(&e)) == -1) {
 		free(backend_argv);
 		xlog(LOG_ERR, &e, __func__);
 		return 1;
@@ -627,8 +627,8 @@ run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
 	free(backend_argv);
 
 	if (tlsev_init(&listener, ctx, lsock, lsock_len,
-	    certainty_conf.socket_timeout_min,
-	    certainty_conf.socket_timeout_max, certainty_conf.max_clients,
+	    mdrd_conf.socket_timeout_min,
+	    mdrd_conf.socket_timeout_max, mdrd_conf.max_clients,
 	    ssl_data_idx, &daemon_in_cb, &free_daemon_in_cb_data) == -1) {
 		xlog_strerror(LOG_ERR, errno, "tlsev_init");
 		return 1;
@@ -680,7 +680,7 @@ get_listen_socket(int domain, int type, unsigned short port)
 		}
 	}
 
-	if (listen(fd, certainty_conf.listen_backlog) == -1) {
+	if (listen(fd, mdrd_conf.listen_backlog) == -1) {
 		xlog_strerror(LOG_ERR, errno, "listen");
 		return -1;
 	}
@@ -725,21 +725,21 @@ main(int argc, char **argv)
 		}
 	}
 
-	if (config_vars_read(config_file_path, certainty_config_vars) == -1)
+	if (config_vars_read(config_file_path, mdrd_config_vars) == -1)
 		err(1, "config_vars_read");
 
-	if (certainty_conf.port < 1 || certainty_conf.port > 65535)
+	if (mdrd_conf.port < 1 || mdrd_conf.port > 65535)
 		errx(1, "invalid listen port specified");
 
-	if (certainty_conf.listen_backlog < 1)
+	if (mdrd_conf.listen_backlog < 1)
 		errx(1, "invalid listen backlog size specified");
 
-	if (certainty_conf.socket_timeout_min >= INT_MAX)
+	if (mdrd_conf.socket_timeout_min >= INT_MAX)
 		errx(1, "invalid min socket timeout");
-	if (certainty_conf.socket_timeout_max >= INT_MAX)
+	if (mdrd_conf.socket_timeout_max >= INT_MAX)
 		errx(1, "invalid max socket timeout");
-	if (certainty_conf.socket_timeout_min >
-	    certainty_conf.socket_timeout_max)
+	if (mdrd_conf.socket_timeout_min >
+	    mdrd_conf.socket_timeout_max)
 		errx(1, "socket timeout min > max");
 
 	sigemptyset(&act.sa_mask);
@@ -751,50 +751,50 @@ main(int argc, char **argv)
 	}
 
 	if (!foreground) {
-		if (daemonize(program, certainty_conf.pid_file,
+		if (daemonize(program, mdrd_conf.pid_file,
 		    0, 0, &e) == -1) {
 			xerr_print(&e);
 			exit(1);
 		}
 	}
 
-	if (spawnproc_init(&sproc, certainty_conf.backend_promises,
-	    certainty_conf.backend_unveils) == -1)
+	if (spawnproc_init(&sproc, mdrd_conf.backend_promises,
+	    mdrd_conf.backend_unveils) == -1)
 		err(1, "spawnproc_init");
 
 	load_keys();
 
-	if (!certainty_conf.enable_coredumps &&
+	if (!mdrd_conf.enable_coredumps &&
 	    setrlimit(RLIMIT_CORE, &zero_core) == -1)
 			err(1, "setrlimit");
 
 	if (geteuid() == 0) {
-		if (drop_privileges(certainty_conf.gid,
-		    certainty_conf.uid, &e) == -1) {
+		if (drop_privileges(mdrd_conf.gid,
+		    mdrd_conf.uid, &e) == -1) {
 			xlog(LOG_ERR, &e, __func__);
 			exit(1);
 		}
 	}
 #ifdef __OpenBSD__
-	backend_argv = cmdargv(certainty_conf.backend);
+	backend_argv = cmdargv(mdrd_conf.backend);
 	if (backend_argv == NULL) {
 		xlog_strerror(LOG_ERR, errno, "cmdargv");
 		exit(1);
 	}
 	if (unveil(backend_argv[0], "x") == -1) {
 		xlog_strerror(LOG_ERR, errno,
-		    "unveil: %s", certainty_conf.backend);
+		    "unveil: %s", mdrd_conf.backend);
 		exit(1);
 	}
 	free(backend_argv);
-	if (unveil(certainty_conf.ca_file, "r") == -1) {
+	if (unveil(mdrd_conf.ca_file, "r") == -1) {
 		xlog_strerror(LOG_ERR, errno,
-		    "unveil: %s", certainty_conf.ca_file);
+		    "unveil: %s", mdrd_conf.ca_file);
 		exit(1);
 	}
-	if (unveil(certainty_conf.crl_file, "r") == -1) {
+	if (unveil(mdrd_conf.crl_file, "r") == -1) {
 		xlog_strerror(LOG_ERR, errno,
-		    "unveil: %s", certainty_conf.crl_file);
+		    "unveil: %s", mdrd_conf.crl_file);
 		exit(1);
 	}
 	if (pledge("stdio rpath cpath recvfd inet dns proc", "") == -1) {
@@ -803,7 +803,7 @@ main(int argc, char **argv)
 	}
 #endif
 	allowed_mdr_namespaces_count = config_vars_split_uint32(
-	    certainty_conf.allowed_mdr_namespaces, NULL, 0);
+	    mdrd_conf.allowed_mdr_namespaces, NULL, 0);
 	if (allowed_mdr_namespaces_count == -1)
 		err(1, "config_vars_split_uint32");
 	if (allowed_mdr_namespaces_count > 0) {
@@ -812,11 +812,11 @@ main(int argc, char **argv)
 		if (allowed_mdr_namespaces == NULL)
 			err(1, "malloc");
 		config_vars_split_uint32(
-		    certainty_conf.allowed_mdr_namespaces,
+		    mdrd_conf.allowed_mdr_namespaces,
 		    allowed_mdr_namespaces, allowed_mdr_namespaces_count);
 	}
 
-	for (aclstart = certainty_conf.allowed_mdr_namespaces;
+	for (aclstart = mdrd_conf.allowed_mdr_namespaces;
 	    aclstart != NULL && *aclstart != '\0'; aclstart = aclend) {
 		aclend = strchr(aclstart, ';');
 		if (aclend == NULL) {
@@ -852,7 +852,7 @@ main(int argc, char **argv)
 	}
 
 	lsock[lsock_len] = get_listen_socket(AF_INET6, SOCK_STREAM,
-	    certainty_conf.port);
+	    mdrd_conf.port);
 	if (lsock[lsock_len] == -1)
 		exit(1);
 	lsock_len++;
@@ -863,17 +863,17 @@ main(int argc, char **argv)
 	 * family.
 	 */
 	lsock[lsock_len] = get_listen_socket(AF_INET, SOCK_STREAM,
-	    certainty_conf.port);
+	    mdrd_conf.port);
 	if (lsock[lsock_len] == -1)
 		exit(1);
 	lsock_len++;
 #endif
 	ssl_data_idx = SSL_get_ex_new_index(0, "tlsev_idx", NULL, NULL, NULL);
 
-	if (certainty_conf.prefork <= 0 || foreground)
+	if (mdrd_conf.prefork <= 0 || foreground)
 		exit(run(ctx, lsock, lsock_len));
 
-	for (n_children = 0; n_children < certainty_conf.prefork;
+	for (n_children = 0; n_children < mdrd_conf.prefork;
 	    n_children++) {
 		if ((pid = fork()) == -1) {
 			xlog_strerror(LOG_ERR, errno, "fork");
