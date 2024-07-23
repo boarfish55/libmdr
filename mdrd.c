@@ -691,18 +691,21 @@ get_listen_socket(int domain, int type, unsigned short port)
 int
 main(int argc, char **argv)
 {
-	int               opt;
-	SSL_CTX          *ctx;
-	struct xerr       e;
-	int               lsock[2];
-	size_t            lsock_len = 0;
-	int               n_children, i;
-	int               wstatus;
-	pid_t             pid;
-	struct sigaction  act;
-	struct rlimit     zero_core = {0, 0};
-	char             *aclend, *aclstart;
-	char              acl[11];
+	int                opt;
+	SSL_CTX           *ctx;
+	struct xerr        e;
+	int                lsock[2];
+	size_t             lsock_len = 0;
+	int                n_children, i;
+	int                wstatus;
+	pid_t              pid;
+	struct sigaction   act;
+	struct rlimit      zero_core = {0, 0};
+	char              *aclend, *aclstart;
+	char               acl[11];
+#ifdef __OpenBSD__
+	char             **backend_argv;
+#endif
 
 	while ((opt = getopt(argc, argv, "c:hfd")) != -1) {
 		switch (opt) {
@@ -773,11 +776,17 @@ main(int argc, char **argv)
 		}
 	}
 #ifdef __OpenBSD__
-	if (unveil(certainty_conf.backend, "x") == -1) {
-		xlog_strerror(LOG_ERR, errno,
-		    "unveil: %s", certainty_conf.ca_file);
+	backend_argv = cmdargv(certainty_conf.backend);
+	if (backend_argv == NULL) {
+		xlog_strerror(LOG_ERR, errno, "cmdargv");
 		exit(1);
 	}
+	if (unveil(backend_argv[0], "x") == -1) {
+		xlog_strerror(LOG_ERR, errno,
+		    "unveil: %s", certainty_conf.backend);
+		exit(1);
+	}
+	free(backend_argv);
 	if (unveil(certainty_conf.ca_file, "r") == -1) {
 		xlog_strerror(LOG_ERR, errno,
 		    "unveil: %s", certainty_conf.ca_file);

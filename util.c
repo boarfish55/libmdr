@@ -214,6 +214,12 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises,
 	    sigaction(SIGTERM, &act, NULL) == -1)
 		return -1;
 #ifdef __OpenBSD__
+	if (unveil("/usr/libexec/ld.so", "r") == -1)
+		return -1;
+	if (unveil("/usr/lib", "r") == -1)
+		return -1;
+	if (unveil("/dev/null", "rw") == -1)
+		return -1;
 	bpstart = binpaths;
 	bpend = NULL;
 	for (bpstart = binpaths; bpstart != NULL; bpstart = bpend) {
