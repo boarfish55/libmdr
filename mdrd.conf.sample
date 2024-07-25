@@ -18,4 +18,4 @@ backend: /home/plalonde/prog/mdr/mdrd_backend_echo
 backend_uid: plalonde
 backend_gid: plalonde
 backend_promises: stdio
-backend_unveils: /bin:/home/plalonde
+backend_unveils: x=/bin:x=/home/plalonde:rw=/dev/null

@@ -169,7 +169,8 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises,
 	pid_t              pid;
 #ifdef __OpenBSD__
 	const char        *bpstart, *bpend;
-	char               binpath[PATH_MAX];
+	char               perms[PATH_MAX];
+	char              *path;
 #endif
 	char              *buf, *a, *start, *user, *group;
 	char             **argv, **tmp;
@@ -222,17 +223,26 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises,
 		return -1;
 	bpstart = binpaths;
 	bpend = NULL;
+	// TODO: the unveil conf string is limited to PATH_MAX; refactor
+	// config_vars to allow for much longer config lines then adjust
+	// here
 	for (bpstart = binpaths; bpstart != NULL; bpstart = bpend) {
 		bpend = strchr(bpstart, ':');
 		if (bpend == NULL) {
-			strlcpy(binpath, bpstart, sizeof(binpath));
+			strlcpy(perms, bpstart, sizeof(perms));
 		} else {
-			strlcpy(binpath, bpstart,
-			    (bpend - bpstart + 1 >= sizeof(binpath))
-			    ? sizeof(binpath) : bpend - bpstart + 1);
+			strlcpy(perms, bpstart,
+			    (bpend - bpstart + 1 >= sizeof(perms))
+			    ? sizeof(perms) : bpend - bpstart + 1);
 			bpend++;
 		}
-		if (unveil(binpath, "x") == -1)
+		if ((path = strchr(perms, '=')) == NULL) {
+			errno = EINVAL;
+			return -1;
+		} else {
+			*path++ = '\0';
+		}
+		if (unveil(path, perms) == -1)
 			return -1;
 	}
 	if (pledge("stdio rpath id proc exec sendfd", execpromises) == -1)
@@ -540,43 +550,57 @@ spawn(char *const argv[], int *in, int *out, const char *user,
 }
 
 char **
-cmdargv(char *command)
+cmdargv(const char *command)
 {
-	char **argv;
-	char  *p;
-	int    in_arg;
-	int    n = 0, i;
+	char       **argv;
+	const char  *p;
+	char        *argp;
+	int          in_arg;
+	int          n = 0, i, len;
 
-	for (in_arg = 0, p = command; *p != '\0'; p++) {
+	for (in_arg = 0, p = command, len = 0; *p != '\0'; p++) {
 		if (!in_arg && *p != ' ') {
 			n++;
+			len++;
 			in_arg = 1;
 			continue;
 		}
 
 		if (*p == ' ') {
-			in_arg = 0;
+			if (in_arg == 1) {
+				len++;
+				in_arg = 0;
+			}
 			continue;
 		}
+
+		len++;
 	}
 
-	argv = malloc(sizeof(char *) * (n + 1));
+	len++;
+	argv = malloc(sizeof(char *) * (n + 1) + len);
 	if (argv == NULL)
 		return NULL;
-	argv[n] = NULL;
+	bzero(argv, sizeof(char *) * (n + 1) + len);
 
-	for (in_arg = 0, i = 0, p = command; i < n; p++) {
+	argp = ((char *)argv) + sizeof(char *) * (n + 1);
+	for (in_arg = 0, i = 0, p = command; *p != '\0'; p++) {
 		if (!in_arg && *p != ' ') {
-			argv[i++] = p;
+			argv[i++] = argp;
+			*argp++ = *p;
 			in_arg = 1;
 			continue;
 		}
 
 		if (*p == ' ') {
-			in_arg = 0;
-			*p = '\0';
+			if (in_arg == 1) {
+				argp++;
+				in_arg = 0;
+			}
 			continue;
 		}
+
+		*argp++ = *p;
 	}
 	return argv;
 }

@@ -756,6 +756,8 @@ main(int argc, char **argv)
 			xerr_print(&e);
 			exit(1);
 		}
+	} else {
+		xlog_init(program, NULL, NULL, 1);
 	}
 
 	if (spawnproc_init(&sproc, mdrd_conf.backend_promises,
@@ -783,7 +785,7 @@ main(int argc, char **argv)
 	}
 	if (unveil(backend_argv[0], "x") == -1) {
 		xlog_strerror(LOG_ERR, errno,
-		    "unveil: %s", mdrd_conf.backend);
+		    "unveil: %s", backend_argv[0]);
 		exit(1);
 	}
 	free(backend_argv);
