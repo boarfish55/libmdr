@@ -528,8 +528,9 @@ mdr_vpackf(struct mdr *m, const char *spec, va_list ap)
 				return MDR_FAIL;
 			}
 
-			if ((bits = strtoull(spbuf + 1, &end, 10))
-			    == ULLONG_MAX || *end != '\0') {
+			errno = 0;
+			bits = strtoull(spbuf + 1, &end, 10);
+			if (errno || *end != '\0') {
 				errno = EINVAL;
 				return MDR_FAIL;
 			}
@@ -1032,8 +1033,9 @@ mdr_vunpackf(struct mdr *m, const char *spec, va_list ap)
 				return MDR_FAIL;
 			}
 
-			if ((bits = strtoull(spbuf + 1, &end, 10))
-			    == ULLONG_MAX || *end != '\0') {
+			errno = 0;
+			bits = strtoull(spbuf + 1, &end, 10);
+			if (errno || *end != '\0') {
 				errno = EINVAL;
 				return MDR_FAIL;
 			}

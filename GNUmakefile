@@ -6,13 +6,14 @@ CFLAGS := -Wall -g -fstack-protector-strong \
 LDFLAGS := $(shell pkg-config --libs libbsd-overlay libbsd-ctor \
 	libssl libcrypto) \
 	-Wl,-z,relro -Wl,-z,now
+YACC := byacc
 
 DEPFLAGS = -MMD -MP -MF $(DEPDIR)/$@.d
 
 MDRC_SRCS = mdr.c mdrc.c
 MDRC_OBJS = $(MDRC_SRCS:.c=.o)
 
-MDRD_SRCS = mdr.c mdrd.c mdr_mdrd.c idxheap.c tlsev.c util.c config_vars.c \
+MDRD_SRCS = mdr.c mdrd.c mdr_mdrd.c idxheap.c tlsev.c util.c flatconf.c \
 	xlog.c
 MDRD_OBJS = $(MDRD_SRCS:.c=.o)
 
@@ -27,6 +28,9 @@ all: mdrc mdr_tests mdrd mdrd_backend_echo
 .c.o:
 	@mkdir -p $(DEPDIR)
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(DEPFLAGS) -c $<
+
+flatconf.c: flatconf.y flatconf.h
+	$(YACC) -o flatconf.c flatconf.y
 
 mdr.o: mdr.c mdr.h
 	$(CC) $(CFLAGS) -c mdr.c -o mdr.o
@@ -50,6 +54,6 @@ tests: mdr_tests
 		|| ./mdr_tests
 
 clean:
-	rm -f *.o mdr_tests mdrc mdrd mdrd_backend_echo
+	rm -f *.o mdr_tests mdrc mdrd mdrd_backend_echo flatconf.c
 
 -include $(DEPDIR)/*

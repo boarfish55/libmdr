@@ -18,7 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "config_vars.h"
+#include "flatconf.h"
 #include "mdr.h"
 #include "mdr_mdrd.h"
 #include "util.h"
@@ -63,15 +63,15 @@ struct {
 	uint64_t max_clients;
 	uint64_t socket_timeout_min;
 	uint64_t socket_timeout_max;
-
 	uint64_t max_payload_size;
-	char     allowed_mdr_namespaces[LINE_MAX];
 
-	char  backend[PATH_MAX];
-	char *backend_uid;
-	char *backend_gid;
-	char  backend_promises[LINE_MAX];
-	char  backend_unveils[LINE_MAX];
+	uint64_t **allowed_mdr_namespaces;
+
+	char   backend[PATH_MAX];
+	char  *backend_uid;
+	char  *backend_gid;
+	char   backend_promises[LINE_MAX];
+	char **backend_unveils;
 } mdrd_conf = {
 	"_mdrd",
 	"_mdrd",
@@ -87,136 +87,136 @@ struct {
 	2,
 	10,
 	16384,
-	"2",
+	NULL,
 	"/bin/cat",
 	"_mdrd",
 	"_mdrd",
 	"stdio rpath flock",
-	"/bin:/usr/bin"
+	NULL
 };
 
-struct config_vars mdrd_config_vars[] = {
+struct flatconf flatconf_vars[] = {
 	{
 		"uid",
-		CONFIG_VARS_PWNAM,
+		FLATCONF_ALLOCSTRING,
 		&mdrd_conf.uid,
 		0
 	},
 	{
 		"gid",
-		CONFIG_VARS_GRNAM,
+		FLATCONF_ALLOCSTRING,
 		&mdrd_conf.gid,
 		0
 	},
 	{
 		"enable_coredumps",
-		CONFIG_VARS_BOOLINT,
+		FLATCONF_BOOLINT,
 		&mdrd_conf.enable_coredumps,
 		sizeof(mdrd_conf.enable_coredumps)
 	},
 	{
 		"pid_file",
-		CONFIG_VARS_STRING,
+		FLATCONF_STRING,
 		mdrd_conf.pid_file,
 		sizeof(mdrd_conf.pid_file)
 	},
 	{
 		"ca_file",
-		CONFIG_VARS_STRING,
+		FLATCONF_STRING,
 		mdrd_conf.ca_file,
 		sizeof(mdrd_conf.ca_file)
 	},
 	{
 		"crl_file",
-		CONFIG_VARS_STRING,
+		FLATCONF_STRING,
 		mdrd_conf.crl_file,
 		sizeof(mdrd_conf.crl_file)
 	},
 	{
 		"key_file",
-		CONFIG_VARS_STRING,
+		FLATCONF_STRING,
 		mdrd_conf.key_file,
 		sizeof(mdrd_conf.key_file)
 	},
 	{
 		"port",
-		CONFIG_VARS_ULONG,
+		FLATCONF_ULONG,
 		&mdrd_conf.port,
 		sizeof(mdrd_conf.port)
 	},
 	{
 		"listen_backlog",
-		CONFIG_VARS_ULONG,
+		FLATCONF_ULONG,
 		&mdrd_conf.listen_backlog,
 		sizeof(mdrd_conf.listen_backlog)
 	},
 	{
 		"prefork",
-		CONFIG_VARS_ULONG,
+		FLATCONF_ULONG,
 		&mdrd_conf.prefork,
 		sizeof(mdrd_conf.prefork)
 	},
 	{
 		"max_clients",
-		CONFIG_VARS_ULONG,
+		FLATCONF_ULONG,
 		&mdrd_conf.max_clients,
 		sizeof(mdrd_conf.max_clients)
 	},
 	{
 		"socket_timeout_min",
-		CONFIG_VARS_ULONG,
+		FLATCONF_ULONG,
 		&mdrd_conf.socket_timeout_min,
 		sizeof(mdrd_conf.socket_timeout_min)
 	},
 	{
 		"socket_timeout_max",
-		CONFIG_VARS_ULONG,
+		FLATCONF_ULONG,
 		&mdrd_conf.socket_timeout_max,
 		sizeof(mdrd_conf.socket_timeout_max)
 	},
 	{
 		"max_payload_size",
-		CONFIG_VARS_ULONG,
+		FLATCONF_ULONG,
 		&mdrd_conf.max_payload_size,
 		sizeof(mdrd_conf.max_payload_size)
 	},
 	{
 		"allowed_mdr_namespaces",
-		CONFIG_VARS_STRING,
+		FLATCONF_ALLOCULONGLIST,
 		&mdrd_conf.allowed_mdr_namespaces,
-		sizeof(mdrd_conf.allowed_mdr_namespaces)
+		0
 	},
 	{
 		"backend",
-		CONFIG_VARS_STRING,
+		FLATCONF_STRING,
 		&mdrd_conf.backend,
 		sizeof(mdrd_conf.backend)
 	},
 	{
 		"backend_uid",
-		CONFIG_VARS_PWNAM,
+		FLATCONF_ALLOCSTRING,
 		&mdrd_conf.backend_uid,
 		0
 	},
 	{
 		"backend_gid",
-		CONFIG_VARS_GRNAM,
+		FLATCONF_ALLOCSTRING,
 		&mdrd_conf.backend_gid,
 		0
 	},
 	{
 		"backend_promises",
-		CONFIG_VARS_STRING,
+		FLATCONF_STRING,
 		&mdrd_conf.backend_promises,
 		sizeof(mdrd_conf.backend_promises)
 	},
 	{
 		"backend_unveils",
-		CONFIG_VARS_STRING,
+		FLATCONF_ALLOCSTRINGLIST,
 		&mdrd_conf.backend_unveils,
-		sizeof(mdrd_conf.backend_unveils)
+		0
 	},
-	CONFIG_VARS_LAST
+	FLATCONF_LAST
 };
 
 void load_keys();
@@ -388,11 +388,13 @@ daemon_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		return -1;
 	}
 
-	for (i = 0; i < allowed_mdr_namespaces_count; i++) {
-		if (mdr_namespace(&cb_data->msg) == allowed_mdr_namespaces[i])
+	for (i = 0; mdrd_conf.allowed_mdr_namespaces &&
+	    mdrd_conf.allowed_mdr_namespaces[i] != NULL; i++) {
+		if (mdr_namespace(&cb_data->msg) ==
+		    *mdrd_conf.allowed_mdr_namespaces[i])
 			break;
 	}
-	if (i >= allowed_mdr_namespaces_count) {
+	if (mdrd_conf.allowed_mdr_namespaces[i] == NULL) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: namespace not allowed", __func__);
 		return -1;
@@ -587,7 +589,7 @@ load_keys()
 void
 cleanup()
 {
-	config_vars_free(mdrd_config_vars);
+	flatconf_free(flatconf_vars);
 	if (ca_crt != NULL) {
 		X509_free(ca_crt);
 		ca_crt = NULL;
@@ -595,10 +597,6 @@ cleanup()
 	if (priv_key != NULL) {
 		EVP_PKEY_free(priv_key);
 		priv_key = NULL;
-	}
-	if (allowed_mdr_namespaces != NULL) {
-		free(allowed_mdr_namespaces);
-		allowed_mdr_namespaces = NULL;
 	}
 }
 
@@ -701,8 +699,6 @@ main(int argc, char **argv)
 	pid_t              pid;
 	struct sigaction   act;
 	struct rlimit      zero_core = {0, 0};
-	char              *aclend, *aclstart;
-	char               acl[11];
 #ifdef __OpenBSD__
 	char             **backend_argv;
 #endif
@@ -725,8 +721,17 @@ main(int argc, char **argv)
 		}
 	}
 
-	if (config_vars_read(config_file_path, mdrd_config_vars) == -1)
-		err(1, "config_vars_read");
+	switch (flatconf_read(config_file_path, flatconf_vars, NULL)) {
+	case 0:
+		/* Success */
+		break;
+	case 1:
+		errx(1, "flatconf: configuration is not valid");
+	case 2:
+		errx(1, "flatconf: memory exchaused by parser");
+	default:
+		err(1, "flatconf_read");
+	}
 
 	if (mdrd_conf.port < 1 || mdrd_conf.port > 65535)
 		errx(1, "invalid listen port specified");
@@ -804,33 +809,6 @@ main(int argc, char **argv)
 		exit(1);
 	}
 #endif
-	allowed_mdr_namespaces_count = config_vars_split_uint32(
-	    mdrd_conf.allowed_mdr_namespaces, NULL, 0);
-	if (allowed_mdr_namespaces_count == -1)
-		err(1, "config_vars_split_uint32");
-	if (allowed_mdr_namespaces_count > 0) {
-		allowed_mdr_namespaces = malloc(sizeof(uint32_t) *
-		    allowed_mdr_namespaces_count + 1);
-		if (allowed_mdr_namespaces == NULL)
-			err(1, "malloc");
-		config_vars_split_uint32(
-		    mdrd_conf.allowed_mdr_namespaces,
-		    allowed_mdr_namespaces, allowed_mdr_namespaces_count);
-	}
-
-	for (aclstart = mdrd_conf.allowed_mdr_namespaces;
-	    aclstart != NULL && *aclstart != '\0'; aclstart = aclend) {
-		aclend = strchr(aclstart, ';');
-		if (aclend == NULL) {
-			strlcpy(acl, aclstart, sizeof(acl));
-		} else {
-			strlcpy(acl, aclstart,
-			    (aclend - aclstart + 1 >= sizeof(acl))
-			    ? sizeof(acl) : aclend - aclstart + 1);
-			aclend++;
-		}
-	}
-
 	if ((ctx = SSL_CTX_new(TLS_method())) == NULL) {
 		xlog(LOG_ERR, NULL, "SSL_CTX_new: %s",
 		    ERR_error_string(ERR_get_error(), NULL));

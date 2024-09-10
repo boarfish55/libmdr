@@ -131,18 +131,20 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 			if (strlen(spbuf) < 2)
 				errx(1, "invalid format spec");
 
-			if ((bits = strtoull(spbuf + 1, &end, 10))
-			    == ULLONG_MAX || *end != '\0')
+			errno = 0;
+			bits = strtoull(spbuf + 1, &end, 10);
+			if (errno || *end != '\0')
 				errx(1, "invalid format spec");
 
 			if (spbuf[0] == 'i') {
+				errno = 0;
 				i64 = strtoll(*a, &end, 10);
-				if (i64 == LLONG_MAX ||
-				    i64 == LLONG_MIN || *end != '\0')
+				if (errno || *end != '\0')
 					err(1, "invalid value");
 			} else {
+				errno = 0;
 				u64 = strtoull(*a, &end, 10);
-				if (u64 == ULLONG_MAX || *end != '\0')
+				if (errno || *end != '\0')
 					err(1, "invalid value");
 			}
 
@@ -442,16 +444,24 @@ main(int argc, char **argv)
 		usage();
 		exit(1);
 	}
-	if ((l = strtoul(p, &end, 10)) == ULONG_MAX || *end != '\0')
+
+	errno = 0;
+	l = strtoul(p, &end, 10);
+	if (errno || *end != '\0')
 		err(1, "invalid namespace");
+
 	namespace = l;
 
 	if ((p = strtok(NULL, ":")) == NULL) {
 		usage();
 		exit(1);
 	}
-	if ((l = strtoul(p, &end, 10)) == ULONG_MAX || *end != '\0')
+
+	errno = 0;
+	l = strtoul(p, &end, 10);
+	if (errno || *end != '\0')
 		err(1, "invalid id");
+
 	if (l > UINT16_MAX)
 		errx(1, "id out of range");
 	id = l;
@@ -460,8 +470,12 @@ main(int argc, char **argv)
 		usage();
 		exit(1);
 	}
-	if ((l = strtoul(p, &end, 10)) == ULONG_MAX || *end != '\0')
+
+	errno = 0;
+	l = strtoul(p, &end, 10);
+	if (errno || *end != '\0')
 		err(1, "invalid version");
+
 	if (l > UINT16_MAX)
 		errx(1, "version out of range");
 	version = l;

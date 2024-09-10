@@ -162,15 +162,13 @@ spawnproc_reap(int sig)
 }
 
 int
-spawnproc_init(struct spawnproc *sp, const char *execpromises,
-    const char *binpaths)
+spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 {
 	int                sv[2], r;
 	pid_t              pid;
 #ifdef __OpenBSD__
-	const char        *bpstart, *bpend;
-	char               perms[PATH_MAX];
 	char              *path;
+	int                i;
 #endif
 	char              *buf, *a, *start, *user, *group;
 	char             **argv, **tmp;
@@ -221,28 +219,14 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises,
 		return -1;
 	if (unveil("/dev/null", "rw") == -1)
 		return -1;
-	bpstart = binpaths;
-	bpend = NULL;
-	// TODO: the unveil conf string is limited to PATH_MAX; refactor
-	// config_vars to allow for much longer config lines then adjust
-	// here
-	for (bpstart = binpaths; bpstart != NULL; bpstart = bpend) {
-		bpend = strchr(bpstart, ':');
-		if (bpend == NULL) {
-			strlcpy(perms, bpstart, sizeof(perms));
-		} else {
-			strlcpy(perms, bpstart,
-			    (bpend - bpstart + 1 >= sizeof(perms))
-			    ? sizeof(perms) : bpend - bpstart + 1);
-			bpend++;
-		}
-		if ((path = strchr(perms, '=')) == NULL) {
+	for (i = 0; perms && perms[i] != NULL; i++) {
+		if ((path = strchr(perms[i], '=')) == NULL) {
 			errno = EINVAL;
 			return -1;
 		} else {
 			*path++ = '\0';
 		}
-		if (unveil(path, perms) == -1)
+		if (unveil(path, perms[i]) == -1)
 			return -1;
 	}
 	if (pledge("stdio rpath id proc exec sendfd", execpromises) == -1)

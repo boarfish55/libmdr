@@ -9,3 +9,4 @@ ca/
 client1/
 client2/
 mdrd_backend_echo
+flatconf.c
