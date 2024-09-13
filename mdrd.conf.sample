@@ -17,9 +17,9 @@ allowed_mdr_namespaces = [ 1 ]
 backend = "/home/plalonde/prog/mdr/mdrd_backend_echo"
 backend_uid = plalonde
 backend_gid = plalonde
-backend_promises = "stdio"
+backend_promises = "stdio rpath"
 backend_unveils = [
-	"x=/bin"
-	"x=/home/plalonde"
-	"rw=/dev/null"
+	"x=/home/plalonde/prog/mdr/mdrd_backend_echo"
+	"r=/home/plalonde/prog/mdr/ca/overnet.pem"
+	"r=/home/plalonde/prog/mdr/ca/overnet.crl"
 ]

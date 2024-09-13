@@ -603,26 +603,7 @@ cleanup()
 int
 run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
 {
-	int                  status;
-	struct xerr          e;
-	char               **backend_argv;
-
-	backend_argv = cmdargv(mdrd_conf.backend);
-	if (backend_argv == NULL) {
-		xlog_strerror(LOG_ERR, errno, "cmdargv");
-		return 1;
-	}
-
-	bzero(&backend_reader, sizeof(backend_reader));
-	backend_reader.cb = &backend_cb;
-	if (spawnproc_exec(&sproc, backend_argv, &backend_wfd,
-	    &backend_reader.fd, mdrd_conf.backend_uid,
-	    mdrd_conf.backend_gid, xerrz(&e)) == -1) {
-		free(backend_argv);
-		xlog(LOG_ERR, &e, __func__);
-		return 1;
-	}
-	free(backend_argv);
+	int status;
 
 	if (tlsev_init(&listener, ctx, lsock, lsock_len,
 	    mdrd_conf.socket_timeout_min,
@@ -699,9 +680,7 @@ main(int argc, char **argv)
 	pid_t              pid;
 	struct sigaction   act;
 	struct rlimit      zero_core = {0, 0};
-#ifdef __OpenBSD__
 	char             **backend_argv;
-#endif
 
 	while ((opt = getopt(argc, argv, "c:hfd")) != -1) {
 		switch (opt) {
@@ -782,18 +761,18 @@ main(int argc, char **argv)
 			exit(1);
 		}
 	}
-#ifdef __OpenBSD__
+
 	backend_argv = cmdargv(mdrd_conf.backend);
 	if (backend_argv == NULL) {
 		xlog_strerror(LOG_ERR, errno, "cmdargv");
 		exit(1);
 	}
+#ifdef __OpenBSD__
 	if (unveil(backend_argv[0], "x") == -1) {
 		xlog_strerror(LOG_ERR, errno,
 		    "unveil: %s", backend_argv[0]);
 		exit(1);
 	}
-	free(backend_argv);
 	if (unveil(mdrd_conf.ca_file, "r") == -1) {
 		xlog_strerror(LOG_ERR, errno,
 		    "unveil: %s", mdrd_conf.ca_file);
@@ -850,11 +829,27 @@ main(int argc, char **argv)
 #endif
 	ssl_data_idx = SSL_get_ex_new_index(0, "tlsev_idx", NULL, NULL, NULL);
 
-	if (mdrd_conf.prefork <= 0 || foreground)
+	if (mdrd_conf.prefork <= 0 || foreground) {
+		if (spawnproc_exec(&sproc, backend_argv, &backend_wfd,
+		    &backend_reader.fd, mdrd_conf.backend_uid,
+		    mdrd_conf.backend_gid, xerrz(&e)) == -1) {
+			xlog(LOG_ERR, &e, __func__);
+			exit(1);
+		}
 		exit(run(ctx, lsock, lsock_len));
+	}
+
+	backend_reader.cb = &backend_cb;
 
 	for (n_children = 0; n_children < mdrd_conf.prefork;
 	    n_children++) {
+		if (spawnproc_exec(&sproc, backend_argv, &backend_wfd,
+		    &backend_reader.fd, mdrd_conf.backend_uid,
+		    mdrd_conf.backend_gid, xerrz(&e)) == -1) {
+			xlog(LOG_ERR, &e, __func__);
+			exit(1);
+		}
+
 		if ((pid = fork()) == -1) {
 			xlog_strerror(LOG_ERR, errno, "fork");
 			exit(1);
@@ -862,6 +857,9 @@ main(int argc, char **argv)
 			setproctitle("listener");
 			exit(run(ctx, lsock, lsock_len));
 		}
+
+		close(backend_reader.fd);
+		close(backend_wfd);
 	}
 
 	setproctitle("parent");
@@ -878,6 +876,14 @@ main(int argc, char **argv)
 				xlog(LOG_WARNING, NULL,
 				    "child %d killed by signal %d",
 				    pid, WTERMSIG(wstatus));
+
+			if (spawnproc_exec(&sproc, backend_argv, &backend_wfd,
+			    &backend_reader.fd, mdrd_conf.backend_uid,
+			    mdrd_conf.backend_gid, xerrz(&e)) == -1) {
+				xlog(LOG_ERR, &e, __func__);
+				exit(1);
+			}
+
 			if ((pid = fork()) == -1) {
 				xlog_strerror(LOG_ERR, errno, "fork");
 			} else if (pid == 0) {
@@ -886,6 +892,9 @@ main(int argc, char **argv)
 			} else {
 				n_children++;
 			}
+
+			close(backend_reader.fd);
+			close(backend_wfd);
 			continue;
 		}
 

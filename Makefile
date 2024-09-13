@@ -2,10 +2,11 @@ CC = cc
 CFLAGS = -Wall -Wno-format -g
 LIBS = -lcrypto -lssl
 
-SRCS = mdr.c mdrc.c mdr_mdrd.c mdr_tests.c config_vars.c idxheap.c tlsev.c \
+SRCS = mdr.c mdrc.c mdr_mdrd.c mdr_tests.c flatconf.c idxheap.c tlsev.c \
 	util.c xlog.c
 
-MDRD_OBJS = config_vars.o idxheap.o mdr.o mdr_mdrd.o tlsev.o util.o xlog.o
+MDRD_OBJS = flatconf.o idxheap.o mdr.o mdr_mdrd.o tlsev.o util.o xlog.o
+YACC=yacc
 
 all: .depend mdrc mdr_tests mdrd mdrd_backend_echo
 
@@ -15,6 +16,9 @@ all: .depend mdrc mdr_tests mdrd mdrd_backend_echo
 .SUFFIXES: .c .o
 .c.o:
 	${CC} ${CFLAGS} -c $<
+
+flatconf.c: flatconf.y flatconf.h
+	$(YACC) -o flatconf.c flatconf.y
 
 mdr_tests: mdr_tests.c mdr.o
 	${CC} ${CFLAGS} mdr_tests.c $(LIBS) mdr.o -o mdr_tests
@@ -35,4 +39,4 @@ tests: mdr_tests
 		|| ./mdr_tests
 
 clean:
-	rm -f *.o mdr_tests mdrc mdrd mdrd_backend_echo *.core .depend
+	rm -f *.o mdr_tests mdrc mdrd mdrd_backend_echo flatconf.c *.core .depend

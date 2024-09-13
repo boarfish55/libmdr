@@ -65,12 +65,8 @@ statements :
 	|
 	;
 stmt :
-	WORD '=' value NL
-	{ if (!flatconf_set_var($1)) YYERROR; }
-	| WORD '=' '[' stringlist ']' NL
-	{ if (!flatconf_set_var($1)) YYERROR; }
-	| WORD '=' '[' posintlist ']' NL
-	{ if (!flatconf_set_var($1)) YYERROR; }
+	WORD '=' value { if (!flatconf_set_var($1)) YYERROR; } NL
+	| WORD '=' '[' values ']' { if (!flatconf_set_var($1)) YYERROR; } NL
 	| NL
 	| ERROR
 	{ YYABORT; }
@@ -85,20 +81,11 @@ value :
 	| STRING
 	{ if (!flatconf_append_value(STRING)) YYERROR; }
 	;
-stringlist :
-	string stringlist
-	| NL stringlist
+values :
+	value values
+	| NL values
 	|
 	;
-string :
-	STRING { if (!flatconf_append_value(STRING)) YYERROR; }
-posintlist :
-	posint posintlist
-	| NL posintlist
-	|
-	;
-posint :
-	POSITIVE_INT { if (!flatconf_append_value(POSITIVE_INT)) YYERROR; }
 %%
 
 static int
@@ -390,7 +377,7 @@ flatconf_get_allocstringlist(void *dst, size_t *sz)
 
 	for (n = 0, v = flatconf_values; v != NULL; v = v->next, n++) {
 		if (v->type != STRING && v->type != WORD) {
-			yyerror("expected string value");
+			yyerror("expected string value in list");
 			return 0;
 		}
 		sum += strlen(v->value) + 1;
@@ -433,7 +420,7 @@ flatconf_get_alloculonglist(void *dst, size_t *sz)
 
 	for (n = 0, v = flatconf_values; v != NULL; v = v->next, n++) {
 		if (v->type != POSITIVE_INT) {
-			yyerror("expected positive integer value");
+			yyerror("expected positive integer value in list");
 			return 0;
 		}
 		sum += sizeof(uint64_t);
