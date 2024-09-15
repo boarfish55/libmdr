@@ -21,6 +21,13 @@
 X509_STORE     *store;
 X509_STORE_CTX *ctx;
 
+void
+usage()
+{
+	fprintf(stderr, "Usage: mdrd_backend_echo <CA file> <CRL file>\n");
+	exit(1);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -33,6 +40,9 @@ main(int argc, char **argv)
 	struct sigaction  act;
 	X509_STORE_CTX   *ctx;
 	X509_LOOKUP      *lookup;
+
+	if (argc < 3)
+		usage();
 
 	/*
 	 * We're disabling TERM/INT because we instead rely on
@@ -61,13 +71,13 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	if (!X509_load_cert_file(lookup, "/home/plalonde/prog/mdr/ca/overnet.pem",
+	if (!X509_load_cert_file(lookup, argv[1],
 	    X509_FILETYPE_PEM)) {
 		ERR_print_errors_fp(stderr);
 		exit(1);
 	}
 
-	if (!X509_load_crl_file(lookup, "/home/plalonde/prog/mdr/ca/overnet.crl", X509_FILETYPE_PEM)) {
+	if (!X509_load_crl_file(lookup, argv[2], X509_FILETYPE_PEM)) {
 		ERR_print_errors_fp(stderr);
 		exit(1);
 	}

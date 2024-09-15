@@ -38,5 +38,9 @@ tests: mdr_tests
 		--track-origins=yes --show-leak-kinds=all -s ./mdr_tests \
 		|| ./mdr_tests
 
+install: all
+	install -o root -g wheel -m 0555 mdrd_backend_echo /usr/local/bin/
+	install -o root -g wheel -m 0555 mdrd /usr/local/bin/
+
 clean:
 	rm -f *.o mdr_tests mdrc mdrd mdrd_backend_echo flatconf.c *.core .depend

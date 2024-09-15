@@ -22,7 +22,8 @@ daemonize(const char *program, const char *pid_path, int nochdir, int noclose, s
 	char  pid_line[32];
 	int   null_fd;
 
-	if ((pid_fd = open(pid_path, O_CREAT|O_WRONLY|O_CLOEXEC, 0644)) == -1)
+	if ((pid_fd = open(pid_path,
+	    O_CREAT|O_WRONLY|O_TRUNC|O_CLOEXEC, 0644)) == -1)
 		return XERRF(e, XLOG_ERRNO, errno, "open %s", pid_path);
 
 	if (flock(pid_fd, LOCK_EX|LOCK_NB) == -1) {
@@ -213,11 +214,12 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 	    sigaction(SIGTERM, &act, NULL) == -1)
 		return -1;
 #ifdef __OpenBSD__
-	if (unveil("/usr/libexec/ld.so", "r") == -1)
-		return -1;
-	if (unveil("/usr/lib", "r") == -1)
-		return -1;
-	if (unveil("/dev/null", "rw") == -1)
+	if (unveil("/dev/null", "rw") == -1 ||
+	    unveil("/etc/group", "r") == -1 ||
+	    unveil("/etc/passwd", "r") == -1 ||
+	    unveil("/etc/pwd.db", "r") == -1 ||
+	    unveil("/usr/libexec/ld.so", "r") == -1 ||
+	    unveil("/usr/lib", "r") == -1)
 		return -1;
 	for (i = 0; perms && perms[i] != NULL; i++) {
 		if ((path = strchr(perms[i], '=')) == NULL) {

@@ -829,6 +829,7 @@ main(int argc, char **argv)
 #endif
 	ssl_data_idx = SSL_get_ex_new_index(0, "tlsev_idx", NULL, NULL, NULL);
 
+	backend_reader.cb = &backend_cb;
 	if (mdrd_conf.prefork <= 0 || foreground) {
 		if (spawnproc_exec(&sproc, backend_argv, &backend_wfd,
 		    &backend_reader.fd, mdrd_conf.backend_uid,
@@ -838,8 +839,6 @@ main(int argc, char **argv)
 		}
 		exit(run(ctx, lsock, lsock_len));
 	}
-
-	backend_reader.cb = &backend_cb;
 
 	for (n_children = 0; n_children < mdrd_conf.prefork;
 	    n_children++) {
