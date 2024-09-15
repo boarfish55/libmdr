@@ -21,6 +21,5 @@ ssize_t writeall(int, const void *, size_t);
 void   close_x(int, const char *, const char *, int);
 int    spawn(char *const[], int *, int *, const char *,
            const char *, struct xerr *);
-char **cmdargv(const char *);
 
 #endif

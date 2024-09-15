@@ -14,7 +14,11 @@ socket_timeout_max = 10
 max_payload_size = 16384
 allowed_mdr_namespaces = [ 1 ]
 
-backend = "/home/plalonde/prog/mdr/mdrd_backend_echo /home/plalonde/prog/mdr/ca/overnet.pem /home/plalonde/prog/mdr/ca/overnet.crl"
+backend_argv = [
+	"/home/plalonde/prog/mdr/mdrd_backend_echo"
+	"/home/plalonde/prog/mdr/ca/overnet.pem"
+	"/home/plalonde/prog/mdr/ca/overnet.crl"
+]
 backend_uid = plalonde
 backend_gid = plalonde
 backend_promises = "stdio rpath"

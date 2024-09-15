@@ -67,7 +67,7 @@ struct {
 
 	uint64_t **allowed_mdr_namespaces;
 
-	char   backend[PATH_MAX];
+	char **backend_argv;
 	char  *backend_uid;
 	char  *backend_gid;
 	char   backend_promises[LINE_MAX];
@@ -88,7 +88,7 @@ struct {
 	10,
 	16384,
 	NULL,
-	"/bin/cat",
+	NULL,
 	"_mdrd",
 	"_mdrd",
 	"stdio rpath flock",
@@ -187,10 +187,10 @@ struct flatconf flatconf_vars[] = {
 		0
 	},
 	{
-		"backend",
-		FLATCONF_STRING,
-		&mdrd_conf.backend,
-		sizeof(mdrd_conf.backend)
+		"backend_argv",
+		FLATCONF_ALLOCSTRINGLIST,
+		&mdrd_conf.backend_argv,
+		sizeof(mdrd_conf.backend_argv)
 	},
 	{
 		"backend_uid",
@@ -680,7 +680,6 @@ main(int argc, char **argv)
 	pid_t              pid;
 	struct sigaction   act;
 	struct rlimit      zero_core = {0, 0};
-	char             **backend_argv;
 
 	while ((opt = getopt(argc, argv, "c:hfd")) != -1) {
 		switch (opt) {
@@ -762,11 +761,6 @@ main(int argc, char **argv)
 		}
 	}
 
-	backend_argv = cmdargv(mdrd_conf.backend);
-	if (backend_argv == NULL) {
-		xlog_strerror(LOG_ERR, errno, "cmdargv");
-		exit(1);
-	}
 #ifdef __OpenBSD__
 	if (unveil(backend_argv[0], "x") == -1) {
 		xlog_strerror(LOG_ERR, errno,
@@ -831,8 +825,8 @@ main(int argc, char **argv)
 
 	backend_reader.cb = &backend_cb;
 	if (mdrd_conf.prefork <= 0 || foreground) {
-		if (spawnproc_exec(&sproc, backend_argv, &backend_wfd,
-		    &backend_reader.fd, mdrd_conf.backend_uid,
+		if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
+		    &backend_wfd, &backend_reader.fd, mdrd_conf.backend_uid,
 		    mdrd_conf.backend_gid, xerrz(&e)) == -1) {
 			xlog(LOG_ERR, &e, __func__);
 			exit(1);
@@ -842,8 +836,8 @@ main(int argc, char **argv)
 
 	for (n_children = 0; n_children < mdrd_conf.prefork;
 	    n_children++) {
-		if (spawnproc_exec(&sproc, backend_argv, &backend_wfd,
-		    &backend_reader.fd, mdrd_conf.backend_uid,
+		if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
+		    &backend_wfd, &backend_reader.fd, mdrd_conf.backend_uid,
 		    mdrd_conf.backend_gid, xerrz(&e)) == -1) {
 			xlog(LOG_ERR, &e, __func__);
 			exit(1);
@@ -876,9 +870,10 @@ main(int argc, char **argv)
 				    "child %d killed by signal %d",
 				    pid, WTERMSIG(wstatus));
 
-			if (spawnproc_exec(&sproc, backend_argv, &backend_wfd,
-			    &backend_reader.fd, mdrd_conf.backend_uid,
-			    mdrd_conf.backend_gid, xerrz(&e)) == -1) {
+			if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
+			    &backend_wfd, &backend_reader.fd,
+			    mdrd_conf.backend_uid, mdrd_conf.backend_gid,
+			    xerrz(&e)) == -1) {
 				xlog(LOG_ERR, &e, __func__);
 				exit(1);
 			}
