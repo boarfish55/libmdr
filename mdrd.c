@@ -190,7 +190,7 @@ struct flatconf flatconf_vars[] = {
 		"backend_argv",
 		FLATCONF_ALLOCSTRINGLIST,
 		&mdrd_conf.backend_argv,
-		sizeof(mdrd_conf.backend_argv)
+		0
 	},
 	{
 		"backend_uid",
@@ -711,6 +711,9 @@ main(int argc, char **argv)
 		err(1, "flatconf_read");
 	}
 
+	if (mdrd_conf.backend_argv == NULL)
+		errx(1, "no backend_argv specified");
+
 	if (mdrd_conf.port < 1 || mdrd_conf.port > 65535)
 		errx(1, "invalid listen port specified");
 
@@ -762,9 +765,9 @@ main(int argc, char **argv)
 	}
 
 #ifdef __OpenBSD__
-	if (unveil(backend_argv[0], "x") == -1) {
+	if (unveil(mdrd_conf.backend_argv[0], "x") == -1) {
 		xlog_strerror(LOG_ERR, errno,
-		    "unveil: %s", backend_argv[0]);
+		    "unveil: %s", mdrd_conf.backend_argv[0]);
 		exit(1);
 	}
 	if (unveil(mdrd_conf.ca_file, "r") == -1) {
