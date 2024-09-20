@@ -233,7 +233,7 @@ pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 		return -1;
 	}
 
-	if (mdr_pack_hdr(m, NULL, 4096, MDR_F_TAIL_BYTES, MDR_NS_MDRD,
+	if (mdr_pack_hdr(m, NULL, 4096, 0, MDR_NS_MDRD,
 	    MDR_ID_MDRD_BEREQ, 0) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack_hdr", __func__);
 		return -1;
@@ -254,12 +254,11 @@ pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 		return -1;
 	}
 
-	if (mdr_pack_tail_bytes(m, cert_len) == MDR_FAIL) {
+	if (mdr_pack_space(m, (char **)&cert_buf, cert_len) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
-		    "%s: mdr_pack_tail_bytes", __func__);
+		    "%s: mdr_pack_space", __func__);
 		return -1;
 	}
-	cert_buf = mdr_buf(m) + mdr_tell(m);
 	i2d_X509(peer_cert, &cert_buf);
 
 	return 0;
