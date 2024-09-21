@@ -234,29 +234,12 @@ pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 	}
 
 	if (mdr_pack_hdr(m, NULL, 4096, 0, MDR_NS_MDRD,
-	    MDR_ID_MDRD_BEREQ, 0) == MDR_FAIL) {
-		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack_hdr", __func__);
-		return -1;
-	}
-
-	if (mdr_pack_uint64(m, id) == MDR_FAIL) {
-		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack_uint64", __func__);
-		return -1;
-	}
-
-	if (mdr_pack_int32(m, fd) == MDR_FAIL) {
-		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack_int32", __func__);
-		return -1;
-	}
-
-	if (mdr_pack_mdr(m, msg) == MDR_FAIL) {
-		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack_mdr", __func__);
-		return -1;
-	}
-
-	if (mdr_pack_space(m, (char **)&cert_buf, cert_len) == MDR_FAIL) {
-		xlog_strerror(LOG_ERR, errno,
-		    "%s: mdr_pack_space", __func__);
+	    MDR_ID_MDRD_BEREQ, 0) == MDR_FAIL ||
+	    mdr_pack_uint64(m, id) == MDR_FAIL ||
+	    mdr_pack_int32(m, fd) == MDR_FAIL ||
+	    mdr_pack_mdr(m, msg) == MDR_FAIL ||
+	    mdr_pack_space(m, (char **)&cert_buf, cert_len) == MDR_FAIL) {
+		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack", __func__);
 		return -1;
 	}
 	i2d_X509(peer_cert, &cert_buf);
@@ -447,25 +430,28 @@ backend_cb(int fd)
 
 	if (mdr_unpack_uint64(&reply, &id) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
-		    "%s: mdr_unpack_uint64", __func__);
+		    "%s: failed to unpack message client connection ID",
+		    __func__);
 		goto fail;
 	}
 
 	if (mdr_unpack_int32(&reply, &tlsfd) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
-		    "%s: mdr_unpack_int32", __func__);
+		    "%s: failed to unpack client file descriptor", __func__);
 		goto fail;
 	}
 
 	if (mdr_unpack_uint32(&reply, &resp_status) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
-		    "%s: mdr_unpack_uint32", __func__);
+		    "%s: failed to unpack response status from backend",
+		    __func__);
 		goto fail;
 	}
 
 	if (mdr_unpack_uint32(&reply, &resp_flags) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
-		    "%s: mdr_unpack_uint32", __func__);
+		    "%s: failed to unpack response flags from backend",
+		    __func__);
 		goto fail;
 	}
 
