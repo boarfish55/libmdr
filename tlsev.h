@@ -76,9 +76,9 @@ struct tlsev {
 
 int                  tlsev_init(struct tlsev_listener *, SSL_CTX *, int *,
                          size_t, int, int, int, int,
-			 int (*in_cb)(struct tlsev *, const char *,
-			 size_t, void **),
-			 void (*in_cb_data_free)(void *));
+                         int (*in_cb)(struct tlsev *, const char *,
+                         size_t, void **),
+                         void (*in_cb_data_free)(void *));
 int                  tlsev_add_fd_cb(struct tlsev_listener *,
                          struct tlsev_fd_cb *);
 void                 tlsev_destroy(struct tlsev_listener *);
