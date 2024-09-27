@@ -382,8 +382,8 @@ daemon_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		return -1;
 	}
 
-	if ((status = pack_bereq(&bemsg, tlsev_id(t), tlsev_fd(t), &cb_data->msg,
-	    tlsev_peer_cert(t))) == 0) {
+	if ((status = pack_bereq(&bemsg, tlsev_id(t), tlsev_fd(t),
+	    &cb_data->msg, tlsev_peer_cert(t))) == 0) {
 		if ((status = writeall(backend_wfd, mdr_buf(&bemsg),
 		    mdr_size(&bemsg))) == -1) {
 			xlog_strerror(LOG_ERR, errno, "%s: writeall", __func__);
