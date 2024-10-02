@@ -31,6 +31,33 @@ mdrd_unpack_bereq(struct mdr *m, uint64_t *id, int *fd, struct mdr *msg,
 }
 
 int
+mdrd_unpack_bereq_ref(struct mdr *m, uint64_t *id, int *fd, struct mdr *msg,
+    X509 **peer_cert)
+{
+	uint64_t             cert_len;
+	const unsigned char *p;
+
+	if (mdr_unpack_uint64(m, id) == MDR_FAIL ||
+	    mdr_unpack_int32(m, fd) == MDR_FAIL ||
+	    mdr_unpack_mdr_ref(m, msg) == MDR_FAIL ||
+	    mdr_unpack_bytes_ref(m, (const char **)&p, &cert_len) == MDR_FAIL)
+		return MDR_FAIL;
+
+	if (cert_len == 0) {
+		*peer_cert = NULL;
+		return 0;
+	}
+
+	*peer_cert = d2i_X509(NULL, &p, cert_len);
+	if (*peer_cert == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	return 0;
+}
+
+int
 mdrd_pack_beresp(struct mdr *m, char *buf, size_t sz, uint64_t id, int fd,
     uint32_t status, uint32_t flags, struct mdr *msg)
 {
