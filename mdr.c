@@ -88,6 +88,9 @@ mdr_copy(struct mdr *dst, char *buf, size_t buf_sz, const struct mdr *src)
 	memcpy(dst->pos, mdr_buf(src) + mdr_hdr_size(mdr_flags(src)),
 	    mdr_size(src) - mdr_hdr_size(mdr_flags(src)));
 
+	*dst->size = htobe64(mdr_size(dst) +
+	    (mdr_size(src) - mdr_hdr_size(mdr_flags(src))));
+
 	return 0;
 }
 
@@ -785,7 +788,7 @@ mdr_unpack_hdr(struct mdr *m, char *buf, size_t buf_sz)
 }
 
 void
-mdr_print(FILE *out, struct mdr *m)
+mdr_print(FILE *out, const struct mdr *m)
 {
 	const char *b;
 	int         i;
@@ -1073,6 +1076,22 @@ mdr_unpack_mdr_ref(struct mdr *m, struct mdr *dst)
 	m->pos += sz;
 
 	return mdr_tell(m);
+}
+
+ptrdiff_t
+mdr_unpack_mdr(struct mdr *m, struct mdr *dst, char *buf, size_t buf_sz)
+{
+	struct mdr ref;
+
+	if (mdr_unpack_mdr_ref(m, &ref) == MDR_FAIL)
+		return MDR_FAIL;
+
+	if (mdr_size(&ref) > buf_sz) {
+                errno = EOVERFLOW;
+                return MDR_FAIL;
+        }
+
+	return mdr_copy(dst, buf, buf_sz, &ref);
 }
 
 ptrdiff_t

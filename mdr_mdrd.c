@@ -8,21 +8,12 @@ mdrd_unpack_bereq(struct mdr *m, uint64_t *id, int *fd, struct mdr *msg,
     char *msg_buf, size_t msg_buf_sz, X509 **peer_cert)
 {
 	uint64_t             cert_len;
-	struct mdr           msg_ref;
 	const unsigned char *p;
 
 	if (mdr_unpack_uint64(m, id) == MDR_FAIL ||
 	    mdr_unpack_int32(m, fd) == MDR_FAIL ||
-	    mdr_unpack_mdr_ref(m, &msg_ref) == MDR_FAIL ||
+	    mdr_unpack_mdr(m, msg, msg_buf, msg_buf_sz) == MDR_FAIL ||
 	    mdr_unpack_bytes_ref(m, (const char **)&p, &cert_len) == MDR_FAIL)
-		return MDR_FAIL;
-
-	if (mdr_size(&msg_ref) > msg_buf_sz) {
-		errno = ERANGE;
-		return MDR_FAIL;
-	}
-
-	if (mdr_copy(msg, msg_buf, msg_buf_sz, &msg_ref) == MDR_FAIL)
 		return MDR_FAIL;
 
 	if (cert_len == 0) {

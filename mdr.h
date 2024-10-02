@@ -99,9 +99,10 @@ ptrdiff_t mdr_unpack_bytes_ref(struct mdr *, const char **, uint64_t *);
 ptrdiff_t mdr_unpack_tail_bytes(struct mdr *, uint64_t *);
 ptrdiff_t mdr_unpack_string(struct mdr *, char *, uint64_t *);
 ptrdiff_t mdr_unpack_mdr_ref(struct mdr *, struct mdr *);
+ptrdiff_t mdr_unpack_mdr(struct mdr *, struct mdr *, char *, size_t);
 ptrdiff_t mdr_unpackf(struct mdr *, const char *, ...);
 ptrdiff_t mdr_vunpackf(struct mdr *, const char *, va_list);
-void      mdr_print(FILE *, struct mdr *);
+void      mdr_print(FILE *, const struct mdr *);
 
 ptrdiff_t mdr_pack_echo(struct mdr *, const char *);
 ptrdiff_t mdr_unpack_echo(struct mdr *, char *, size_t, char *, size_t *);
