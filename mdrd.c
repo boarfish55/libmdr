@@ -471,9 +471,10 @@ backend_cb(int fd)
 	switch (resp_status) {
 	case MDRD_ST_OK:
 		if (resp_flags & MDRD_BERESP_F_MSG) {
-			if (mdr_unpack_mdr(&reply, &msg) == MDR_FAIL) {
+			if (mdr_unpack_mdr_ref(&reply, &msg) == MDR_FAIL) {
 				xlog_strerror(LOG_ERR, errno,
-				    "%s: mdr_unpack_uint64", __func__);
+				    "%s: reply from backend is invalid",
+				    __func__);
 				goto fail;
 			}
 		}

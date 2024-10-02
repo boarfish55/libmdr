@@ -25,7 +25,7 @@ test_long_str()
 	r = mdr_pack_string(&echo, str);
 	printf("mdr_pack_string=%lu\n", r);
 
-	r = mdr_unpack_hdr(&decode, mdr_buf(&echo), mdr_size(&echo));
+	r = mdr_unpack_hdr(&decode, (void *)mdr_buf(&echo), mdr_size(&echo));
 	printf("mdr_unpack_hdr=%lu\n", r);
 
 	len = sizeof(str2);
@@ -61,13 +61,13 @@ test_pack_mdr()
 	printf("mdr_pack_mdr=%lu\n", r);
 	printf("mdr_size=%lu\n", mdr_size(&echo));
 
-	r = mdr_unpack_hdr(&decode, mdr_buf(&echo), mdr_size(&echo));
+	r = mdr_unpack_hdr(&decode, (void *)mdr_buf(&echo), mdr_size(&echo));
 	printf("mdr_unpack_hdr=%lu\n", r);
 
 	len = sizeof(buf2);
 	bzero(buf2, len);
 	bzero(&echo2, sizeof(echo2));
-	r = mdr_unpack_mdr(&decode, &echo2);
+	r = mdr_unpack_mdr_ref(&decode, &echo2);
 	printf("mdr_unpack_mdr=%lu\n", r);
 
 	bzero(str, sizeof(str));
@@ -100,7 +100,7 @@ test_pack_space()
 
 	memcpy(dst, str, strlen(str));
 
-	r = mdr_unpack_hdr(&decode, mdr_buf(&echo), mdr_size(&echo));
+	r = mdr_unpack_hdr(&decode, (void *)mdr_buf(&echo), mdr_size(&echo));
 	printf("mdr_unpack_hdr=%lu\n", r);
 
 	r = mdr_unpack_bytes_ref(&decode, &src, &len);
@@ -117,7 +117,7 @@ test_pack_space()
 	r = mdr_pack_space(&echo, &dst, 0);
 	printf("mdr_pack_space=%lu\n", r);
 
-	r = mdr_unpack_hdr(&decode, mdr_buf(&echo), mdr_size(&echo));
+	r = mdr_unpack_hdr(&decode, (void *)mdr_buf(&echo), mdr_size(&echo));
 	r = mdr_unpack_bytes(&decode, str, &len);
 	printf("mdr_unpack_bytes=%lu => %lu\n", r, len);
 
@@ -126,7 +126,7 @@ test_pack_space()
 	memcpy(dst, str, strlen(str));
 
 	bzero(str, sizeof(str));
-	r = mdr_unpack(&decode, mdr_buf(&echo), mdr_size(&echo),
+	r = mdr_unpack(&decode, (void *)mdr_buf(&echo), mdr_size(&echo),
 	    "p", &str, &len);
 	printf("mdr_unpack_bytes_ref=%lu => %.*s\n", r, (int)len, src);
 }
@@ -164,7 +164,7 @@ test_long_tail_bytes()
 	memcpy(buf + r, stra, sizeof(stra));
 	memcpy(buf + r + sizeof(stra), strb, sizeof(strb));
 
-	r = mdr_unpack_hdr(&decode, mdr_buf(&echo), mdr_size(&echo));
+	r = mdr_unpack_hdr(&decode, (void *)mdr_buf(&echo), mdr_size(&echo));
 	printf("mdr_unpack_hdr=%lu\n", r);
 
 	r = mdr_unpack_tail_bytes(&decode, &lena);
@@ -236,7 +236,7 @@ test_echo()
 	bzero(str, sizeof(str));
 
 	str_sz = sizeof(str);
-	r = mdr_unpack_echo(&dst, mdr_buf(&src), mdr_size(&src),
+	r = mdr_unpack_echo(&dst, (void *)mdr_buf(&src), mdr_size(&src),
 	    str, &str_sz);
 	printf("mdr_unpack_echo=%lu => %s (%ld)\n", r, str, str_sz);
 	mdr_free(&src);

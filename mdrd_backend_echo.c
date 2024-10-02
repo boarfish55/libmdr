@@ -33,7 +33,7 @@ main(int argc, char **argv)
 {
 	int               r;
 	struct mdr        m, msg;
-	char              buf[32768];
+	char              buf[32768], msg_buf[16384];
 	uint64_t          id;
 	int               fd;
 	X509             *peer_cert = NULL;
@@ -90,8 +90,8 @@ main(int argc, char **argv)
 		    mdr_id(&m) != MDR_ID_MDRD_BEREQ)
 			errx(1, "invalid mdr namespace or id");
 
-		if (mdrd_unpack_bereq(&m, &id, &fd, &msg,
-		    &peer_cert) == MDR_FAIL) {
+		if (mdrd_unpack_bereq(&m, &id, &fd, &msg, msg_buf,
+		    sizeof(msg_buf), &peer_cert) == MDR_FAIL) {
 			if (errno == EAGAIN)
 				warnx("mdrd_unpack_bereq: missing bytes "
 				    "in payload");

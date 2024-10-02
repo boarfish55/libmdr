@@ -230,8 +230,8 @@ tlsev_add_fd_cb(struct tlsev_listener *l, struct tlsev_fd_cb *fd_cb)
 	}
 
 	if (l->fd_callbacks_used >= l->fd_callbacks_sz) {
-		tmp = realloc(l->fd_callbacks,
-		    sizeof(struct tlsev_fd_cb) * (l->fd_callbacks_sz + 1));
+		tmp = reallocarray(l->fd_callbacks,
+		    sizeof(struct tlsev_fd_cb), l->fd_callbacks_sz + 1);
 		if (tmp == NULL)
 			return -1;
 		if (tmp != l->fd_callbacks)
@@ -239,19 +239,20 @@ tlsev_add_fd_cb(struct tlsev_listener *l, struct tlsev_fd_cb *fd_cb)
 		l->fd_callbacks_sz++;
 		l->max_events++;
 #ifdef __OpenBSD__
-		tmp = realloc(l->ch, sizeof(struct kevent) * l->max_events);
+		tmp = reallocarray(l->ch, sizeof(struct kevent), l->max_events);
 		if (tmp == NULL)
 			return -1;
 		if (tmp != l->ch)
 			l->ch = (struct kevent *)tmp;
 
-		tmp = realloc(l->events, sizeof(struct kevent) * l->max_events);
+		tmp = reallocarray(l->events, sizeof(struct kevent),
+		    l->max_events);
 		if (tmp == NULL)
 			return -1;
 		if (tmp != l->events)
 			l->events = (struct kevent *)tmp;
 #else
-		tmp = realloc(l->events, sizeof(struct epoll_event) *
+		tmp = reallocarray(l->events, sizeof(struct epoll_event),
 		    l->max_events);
 		if (tmp == NULL)
 			return -1;
