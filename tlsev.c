@@ -369,7 +369,6 @@ tlsev_create(struct tlsev_listener *l, int fd, SSL_CTX *ctx,
 	bzero(t, sizeof(struct tlsev));
 	t->id = l->next_id++;
 	t->fd = fd;
-	t->rcvlowat = 1;
 	t->listener = l;
 	t->wpending = 0;
 	memcpy(&t->peer_addr, peer, sizeof(t->peer_addr));
@@ -394,10 +393,18 @@ tlsev_create(struct tlsev_listener *l, int fd, SSL_CTX *ctx,
 	SSL_set_bio(t->ssl, t->r, t->w);
 	SSL_set_accept_state(t->ssl);
 
+
 	if (l->use_rcv_lowat) {
+		/* The TLS header is 5 bytes */
+		t->rcvlowat = 5;
+
+		if (setsockopt(t->fd, SOL_SOCKET, SO_RCVLOWAT,
+		    &t->rcvlowat, sizeof(t->rcvlowat)) == -1)
+			return XERRF(e, XLOG_ERRNO, errno, "setsockopt");
 		BIO_set_callback_ex(t->r, &tlsev_bio_read_cb);
 		BIO_set_callback_arg(t->r, (char *)t);
-	}
+	} else
+		t->rcvlowat = 0;
 
 	clock_gettime(CLOCK_MONOTONIC, &t->last_used_at);
 
