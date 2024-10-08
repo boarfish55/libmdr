@@ -76,7 +76,7 @@ del_epoll_fd(int epollfd, int fd)
 int
 tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
     size_t lsock_len, int socket_timeout_min, int socket_timeout_max,
-    int max_clients, int ssl_data_idx,
+    int max_clients, int use_rcv_lowat, int ssl_data_idx,
     int (*in_cb)(struct tlsev *, const char *, size_t, void **),
     void (*in_cb_data_free)(void *))
 {
@@ -112,6 +112,7 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 	l->in_cb_data_free = in_cb_data_free;
 
 	l->max_clients = max_clients;
+	l->use_rcv_lowat = use_rcv_lowat;
 	l->accepting = 1;
 
 	for (n = 0; n < lsock_len; n++)
@@ -321,6 +322,37 @@ tlsev_fd(struct tlsev *t)
 	return t->fd;
 }
 
+static long
+tlsev_bio_read_cb(BIO *b, int oper, const char *data, size_t len, int argi,
+    long argl, int ret, size_t *read_bytes)
+{
+	int           want;
+	struct tlsev *t;
+
+	if (oper != (BIO_CB_READ|BIO_CB_RETURN))
+		return ret;
+
+	want = len - *read_bytes;
+	if (want < 1)
+		want = 1;
+
+	t = (struct tlsev *)BIO_get_callback_arg(b);
+
+	xlog(LOG_DEBUG, NULL, "%s: %lu/%lu bytes read/requested on fd %d",
+	    __func__, *read_bytes, len, (t == NULL) ? -1 : t->fd);
+
+	if (t != NULL && want != t->rcvlowat) {
+		xlog(LOG_DEBUG, NULL, "%s: updating SO_RCVLOWAT to %d on fd %d",
+		    __func__, want, t->fd);
+		t->rcvlowat = want;
+		if (setsockopt(t->fd, SOL_SOCKET, SO_RCVLOWAT,
+		    &want, sizeof(want)) == -1)
+			xlog_strerror(LOG_ERR, errno, "setsockopt: %d", t->fd);
+	}
+
+	return ret;
+}
+
 static int
 tlsev_create(struct tlsev_listener *l, int fd, SSL_CTX *ctx,
     struct sockaddr_in6 *peer, struct xerr *e)
@@ -337,6 +369,7 @@ tlsev_create(struct tlsev_listener *l, int fd, SSL_CTX *ctx,
 	bzero(t, sizeof(struct tlsev));
 	t->id = l->next_id++;
 	t->fd = fd;
+	t->rcvlowat = 1;
 	t->listener = l;
 	t->wpending = 0;
 	memcpy(&t->peer_addr, peer, sizeof(t->peer_addr));
@@ -360,6 +393,11 @@ tlsev_create(struct tlsev_listener *l, int fd, SSL_CTX *ctx,
 		SSL_set_ex_data(t->ssl, l->tlsev_data_idx, t);
 	SSL_set_bio(t->ssl, t->r, t->w);
 	SSL_set_accept_state(t->ssl);
+
+	if (l->use_rcv_lowat) {
+		BIO_set_callback_ex(t->r, &tlsev_bio_read_cb);
+		BIO_set_callback_arg(t->r, (char *)t);
+	}
 
 	clock_gettime(CLOCK_MONOTONIC, &t->last_used_at);
 
@@ -407,9 +445,15 @@ tlsev_get(struct tlsev_listener *l, int fd)
 static int
 tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 {
-	char    buf[4096];
 	ssize_t n;
 	int     r;
+
+	/*
+	 * TLS 1.2 records are 16KB max + expansions up to 2KB.
+	 * TLS 1.3 can go above this wih record size limit extension
+	 * but let's keep it reasonable.
+	 */
+	char    buf[20480];
 
 	clock_gettime(CLOCK_MONOTONIC, &t->last_used_at);
 	if (idxheap_update(&l->tlsev_store, t) == NULL)
@@ -421,6 +465,8 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		return XERRF(e, XLOG_ERRNO, errno, "read");
 	else if (n == 0)
 		return XERRF(e, XLOG_APP, XLOG_EOF, "read EOF");
+
+	xlog(LOG_DEBUG, NULL, "%s: %d bytes read on fd %d", __func__, n, t->fd);
 
 	if ((r = BIO_write(t->r, buf, n)) < 0)
 		return XERRF(e, XLOG_SSL, ERR_get_error(), "BIO_write");
@@ -460,13 +506,10 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 			return XERRF(e, XLOG_SSL, r, "SSL_read: %s",
 			    ERR_error_string(r, NULL));
 		}
-	} else {
-		if ((r = l->in_cb(t, buf, r,
-		    &t->in_cb_data)) == -1) {
-			return XERRF(e, XLOG_APP, XLOG_CALLBACK_ERR,
-			    "t->in_cb_data failed");
-		}
-	}
+	} else if ((r = l->in_cb(t, buf, r, &t->in_cb_data)) == -1)
+		return XERRF(e, XLOG_APP, XLOG_CALLBACK_ERR,
+		    "t->in_cb_data failed");
+
 	return 0;
 }
 
@@ -475,7 +518,7 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 {
 	ssize_t n;
 	int     r, pending;
-	char    buf[4096];
+	char    buf[20480];
 
 	clock_gettime(CLOCK_MONOTONIC, &t->last_used_at);
 	if (idxheap_update(&l->tlsev_store, t) == NULL)

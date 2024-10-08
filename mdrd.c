@@ -64,6 +64,7 @@ struct {
 	uint64_t socket_timeout_min;
 	uint64_t socket_timeout_max;
 	uint64_t max_payload_size;
+	int      use_rcv_lowat;
 
 	uint64_t **allowed_mdr_namespaces;
 
@@ -87,6 +88,7 @@ struct {
 	2,
 	10,
 	16384,
+	1,
 	NULL,
 	NULL,
 	"_mdrd",
@@ -179,6 +181,12 @@ struct flatconf flatconf_vars[] = {
 		FLATCONF_ULONG,
 		&mdrd_conf.max_payload_size,
 		sizeof(mdrd_conf.max_payload_size)
+	},
+	{
+		"use_rcv_lowat",
+		FLATCONF_BOOLINT,
+		&mdrd_conf.use_rcv_lowat,
+		sizeof(mdrd_conf.use_rcv_lowat)
 	},
 	{
 		"allowed_mdr_namespaces",
@@ -594,6 +602,7 @@ run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
 	if (tlsev_init(&listener, ctx, lsock, lsock_len,
 	    mdrd_conf.socket_timeout_min,
 	    mdrd_conf.socket_timeout_max, mdrd_conf.max_clients,
+	    mdrd_conf.use_rcv_lowat,
 	    ssl_data_idx, &daemon_in_cb, &free_daemon_in_cb_data) == -1) {
 		xlog_strerror(LOG_ERR, errno, "tlsev_init");
 		return 1;
@@ -729,7 +738,7 @@ main(int argc, char **argv)
 			exit(1);
 		}
 	} else {
-		xlog_init(program, NULL, NULL, 1);
+		xlog_init(program, (debug) ? "all" : NULL, NULL, 1);
 	}
 
 	if (spawnproc_init(&sproc, mdrd_conf.backend_promises,

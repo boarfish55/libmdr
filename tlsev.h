@@ -30,6 +30,7 @@ struct tlsev_listener {
 	int                    active_clients;
 	int                    accepting;
 	int                    max_clients;
+	int                    use_rcv_lowat;
 
 #ifdef __OpenBSD__
 	int                    kq;
@@ -62,6 +63,7 @@ struct tlsev {
 	BIO                   *r;
 	BIO                   *w;
 	int                    wpending;
+	int                    rcvlowat;
 	int                    drain;
 	struct timespec        last_used_at;
 
@@ -75,7 +77,7 @@ struct tlsev {
 };
 
 int                  tlsev_init(struct tlsev_listener *, SSL_CTX *, int *,
-                         size_t, int, int, int, int,
+                         size_t, int, int, int, int, int,
                          int (*in_cb)(struct tlsev *, const char *,
                          size_t, void **),
                          void (*in_cb_data_free)(void *));

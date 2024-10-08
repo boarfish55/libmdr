@@ -9,6 +9,12 @@ port = 9790
 listen_backlog = 1024
 prefork = 4
 max_clients = 1000
+
+# When receiving an incomplete TLS record, the SO_RCVLOWAT socket option
+# will be used on the socket to ensure all remaining bytes are buffered
+# before waking on read on that socket.
+use_rcv_lowat = true
+
 socket_timeout_min = 2
 socket_timeout_max = 10
 max_payload_size = 16384

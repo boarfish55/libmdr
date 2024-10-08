@@ -13,6 +13,7 @@
 const char *program = "mdrc";
 
 int debug = 0;
+int delay = 0;
 int insecure = 0;
 int repeat = 1;
 
@@ -223,13 +224,14 @@ void
 do_tls(struct mdr *m, const char *target, const char *key_path,
     const char *crt_path)
 {
-	SSL_CTX    *ctx;
-	BIO        *b;
-	SSL        *ssl;
-	int         i, r, len;
-	char       *buf;
-	size_t      buf_sz;
-	struct mdr  reply;
+	SSL_CTX         *ctx;
+	BIO             *b;
+	SSL             *ssl;
+	int              i, j, r, len;
+	char            *buf;
+	size_t           buf_sz;
+	struct mdr       reply;
+	struct timespec  delay_ns;
 
 	if (mdr_size(m) >= INT_MAX)
 		errx(1, "payload too large for sending");
@@ -277,10 +279,22 @@ do_tls(struct mdr *m, const char *target, const char *key_path,
 		printf("Sent:\n");
 		mdr_print(stdout, m);
 
-		if ((r = BIO_write(b, mdr_buf(m), mdr_size(m))) == -1)
-			ssl_err();
-		else if (r < mdr_size(m))
-			errx(1, "short write: %d < %lu", r, mdr_size(m));
+		if (delay == 0) {
+			if ((r = BIO_write(b, mdr_buf(m), mdr_size(m))) == -1)
+				ssl_err();
+			else if (r < mdr_size(m))
+				errx(1, "short write: %d < %lu", r, mdr_size(m));
+		} else {
+			for (j = 0; j < mdr_size(m); j++) {
+				delay_ns.tv_sec = delay / 1000;
+				delay_ns.tv_nsec = (delay % 1000) * 1000000;
+				if ((r = BIO_write(b, mdr_buf(m) + j, 1)) == -1)
+					ssl_err();
+				else if (r < 1)
+					errx(1, "short write: %d < 1", r);
+				nanosleep(&delay_ns, NULL);
+			}
+		}
 
 		buf_sz = 4096;
 		if ((buf = malloc(buf_sz)) == NULL)
@@ -399,13 +413,16 @@ main(int argc, char **argv)
 	const char    *crt_path = NULL;
 	struct mdr     m;
 
-	while ((opt = getopt(argc, argv, "hdit:k:c:n:")) != -1) {
+	while ((opt = getopt(argc, argv, "hdit:k:c:n:D:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
 			exit(0);
 		case 'd':
 			debug = 1;
+			break;
+		case 'D':
+			delay = atoi(optarg);
 			break;
 		case 't':
 			target = optarg;
