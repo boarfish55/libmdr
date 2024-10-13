@@ -16,8 +16,6 @@
 #include "tlsev.h"
 #include "idxheap.h"
 
-#define MAX_EVENTS 1000000000
-
 static int
 tlsev_timeout_cmp(const void *k1, const void *k2)
 {
@@ -98,8 +96,8 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 		socket_timeout_max = socket_timeout_min;
 	if (max_clients < 0)
 		max_clients = 1000;
-	else if (max_clients > MAX_EVENTS)
-		max_clients = MAX_EVENTS;
+	else if (max_clients > TLSEV_MAX_EVENTS)
+		max_clients = TLSEV_MAX_EVENTS;
 
 	bzero(l, sizeof(struct tlsev_listener));
 	l->ctx = ctx;
@@ -225,7 +223,7 @@ tlsev_add_fd_cb(struct tlsev_listener *l, struct tlsev_fd_cb *fd_cb)
 		return -1;
 	}
 
-	if (l->max_events >= MAX_EVENTS) {
+	if (l->max_events >= TLSEV_MAX_EVENTS) {
 		errno = EOVERFLOW;
 		return -1;
 	}
@@ -372,6 +370,7 @@ tlsev_create(struct tlsev_listener *l, int fd, SSL_CTX *ctx,
 	t->listener = l;
 	t->wpending = 0;
 	memcpy(&t->peer_addr, peer, sizeof(t->peer_addr));
+
 	if ((t->r = BIO_new(BIO_s_mem())) == NULL) {
 		free(t);
 		return XERRF(e, XLOG_SSL, ERR_get_error(), "BIO_new");
@@ -392,7 +391,6 @@ tlsev_create(struct tlsev_listener *l, int fd, SSL_CTX *ctx,
 		SSL_set_ex_data(t->ssl, l->tlsev_data_idx, t);
 	SSL_set_bio(t->ssl, t->r, t->w);
 	SSL_set_accept_state(t->ssl);
-
 
 	if (l->use_rcv_lowat) {
 		/* The TLS header is 5 bytes */
@@ -460,7 +458,7 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 	 * TLS 1.3 can go above this wih record size limit extension
 	 * but let's keep it reasonable.
 	 */
-	char    buf[20480];
+	char    buf[TLSEV_IO_SIZE];
 
 	clock_gettime(CLOCK_MONOTONIC, &t->last_used_at);
 	if (idxheap_update(&l->tlsev_store, t) == NULL)
@@ -475,7 +473,7 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 
 	xlog(LOG_DEBUG, NULL, "%s: %d bytes read on fd %d", __func__, n, t->fd);
 
-	if ((r = BIO_write(t->r, buf, n)) < 0)
+	if ((r = BIO_write(t->r, buf, n)) <= 0)
 		return XERRF(e, XLOG_SSL, ERR_get_error(), "BIO_write");
 
 	if (r < n)
@@ -502,6 +500,11 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		t->peer_cert = SSL_get_peer_certificate(t->ssl);
 	}
 
+	/*
+	 * Normally this should be enough to empty the BIO_s_mem since we
+	 * reuse a buffer of the same size and the TLS overhead will not be
+	 * here.
+	 */
 	if ((r = SSL_read(t->ssl, buf, sizeof(buf))) <= 0) {
 		r = SSL_get_error(t->ssl, r);
 		switch (r) {
@@ -525,47 +528,79 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 {
 	ssize_t n;
 	int     r, pending;
-	char    buf[20480];
+	char    buf[TLSEV_IO_SIZE];
 
 	clock_gettime(CLOCK_MONOTONIC, &t->last_used_at);
 	if (idxheap_update(&l->tlsev_store, t) == NULL)
 		xlog(LOG_ERR, NULL, "%s: idxheap_update: returned NULL "
 		    "for fd %d", __func__, t->fd);
 
-	if ((pending = BIO_pending(t->w)) < 0)
+	if ((pending = BIO_pending(t->w)) <= 0)
 		return XERRF(e, XLOG_SSL, ERR_get_error(), "BIO_pending");
 
 	if (t->retry_buf != NULL) {
-		n = write(t->fd, t->retry_buf, t->retry_len);
+		n = write(t->fd, t->retry_buf_pos, t->retry_len);
 		if (n == -1) {
 			return XERRF(e, XLOG_ERRNO, errno, "write");
 		} else if (n < t->retry_len) {
 			t->retry_len -= n;
-			memmove(t->retry_buf, t->retry_buf + n, t->retry_len);
+			t->retry_buf_pos += n;
 			return pending + t->retry_len;
 		} else {
 			t->retry_len = 0;
 			free(t->retry_buf);
 			t->retry_buf = NULL;
+			t->retry_buf_pos = NULL;
 		}
 	}
 
-	r = BIO_read(t->w, buf, (pending > sizeof(buf))
-	    ? sizeof(buf)
-	    : pending);
-	if (r < 0)
-		return XERRF(e, XLOG_SSL, ERR_get_error(), "BIO_read");
-	pending -= r;
+	/*
+	 * BIO_s_mem BIOs are not efficient with small reads followed by
+	 * writes. It is best to attempt to completely drain it before any
+	 * further writes happen.
+	 */
+	while (pending > 0) {
+		r = BIO_read(t->w, buf, (pending > sizeof(buf))
+		    ? sizeof(buf)
+		    : pending);
+		if (r <= 0)
+			return XERRF(e, XLOG_SSL, ERR_get_error(), "BIO_read");
+		pending -= r;
 
-	if (r > 0) {
 		n = write(t->fd, buf, r);
 		if (n == -1) {
 			return XERRF(e, XLOG_ERRNO, errno, "write");
 		} else if (n < r) {
-			if ((t->retry_buf = malloc(r - n)) == NULL)
-				return XERRF(e, XLOG_ERRNO, errno, "malloc");
+			/*
+			 * On a short write, our TCP output buffer is likely
+			 * full. Empty our BIO into retry_buf an try writing
+			 * later.
+			 */
+			if ((t->retry_buf = malloc(pending + (r - n))) == NULL)
+				return XERRF(e, XLOG_ERRNO, errno, "realloc");
+
+			t->retry_buf_pos = t->retry_buf;
 			memcpy(t->retry_buf, buf + n, r - n);
 			t->retry_len = r - n;
+
+			r = BIO_read(t->w, t->retry_buf + t->retry_len,
+			    pending);
+			if (r <= 0)
+				return XERRF(e, XLOG_SSL, ERR_get_error(),
+				    "BIO_read");
+			t->retry_len += r;
+			pending -= r;
+			/*
+			 * Normally at this point our t->w should be empty
+			 * so we can break.
+			 *
+			 * If for some reason it is not empty, we don't want
+			 * to loop and do another BIO_read so stop here anyway.
+			 *
+			 * This should never happen with BIO_s_mem but just
+			 * in case.
+			 */
+			break;
 		}
 	}
 
@@ -585,46 +620,34 @@ tlsev_reply(struct tlsev *t, const char *buf, int len)
 		return -1;
 	}
 
-	if (r == 0)
-		return 0;
-
-	if (t->wpending > 0)
-		return 0;
-
+	if (t->wpending == 0) {
 #ifdef __OpenBSD__
-	EV_SET(&t->listener->ch[t->listener->chn++], t->fd,
-	    EVFILT_WRITE, EV_ADD, 0, 0, 0);
+		EV_SET(&t->listener->ch[t->listener->chn++], t->fd,
+		    EVFILT_WRITE, EV_ADD, 0, 0, 0);
 #else
-	bzero(&ev, sizeof(ev));
-	ev.data.fd = t->fd;
-	ev.events = EPOLLIN|EPOLLOUT;
-	if (epoll_ctl(t->listener->epollfd, EPOLL_CTL_MOD, t->fd, &ev) == -1) {
-		xlog_strerror(LOG_ERR, errno, "epoll_ctl");
-		del_epoll_fd(t->listener->epollfd, t->fd);
-		tlsev_close(t->listener, t);
+		bzero(&ev, sizeof(ev));
+		ev.data.fd = t->fd;
+		ev.events = EPOLLIN|EPOLLOUT;
+		if (epoll_ctl(t->listener->epollfd, EPOLL_CTL_MOD, t->fd, &ev) == -1) {
+			xlog_strerror(LOG_ERR, errno, "epoll_ctl");
+			del_epoll_fd(t->listener->epollfd, t->fd);
+			tlsev_close(t->listener, t);
+			return -1;
+		}
+#endif
+	}
+	if ((t->wpending = BIO_pending(t->w)) == -1) {
+		xlog(LOG_ERR, NULL, "%s: SSL_write: %s", __func__,
+		    ERR_error_string(SSL_get_error(t->ssl, r), NULL));
 		return -1;
 	}
-#endif
-	t->wpending = 1;
-	return r;
+	return t->wpending;
 }
 
 void
 tlsev_drain(struct tlsev *t)
 {
 	t->drain = 1;
-}
-
-static int
-tlsev_bio_pending(struct tlsev *t, int *r, int *w, struct xerr *e)
-{
-	if (r != NULL && (*r = BIO_pending(t->r)) == -1)
-		return XERRF(e, XLOG_SSL, ERR_get_error(),
-		    "BIO_pending on read BIO");
-	if (w != NULL && (*w = BIO_pending(t->w)) == -1)
-		return XERRF(e, XLOG_SSL, ERR_get_error(),
-		    "BIO_pending on write BIO");
-	return 0;
 }
 
 static int
@@ -868,7 +891,96 @@ tlsev_run(struct tlsev_listener *l)
 			if (l->events[n].events & EPOLLOUT)
 				evtype |= TLSEV_WRITE;
 #endif
-			if (evtype & TLSEV_READ){
+
+			/*
+			 * We process writes before reads to keep our
+			 * buffers small if possible.
+			 */
+			if (evtype & TLSEV_WRITE) {
+				r = tlsev_out(l, t, xerrz(&e));
+				if (r == -1) {
+					xlog(LOG_ERR, &e, "write on fd %d",
+					    t->fd);
+#ifndef __OpenBSD__
+					del_epoll_fd(l->epollfd, t->fd);
+#endif
+					tlsev_close(l, t);
+					continue;
+				}
+
+				if (r == 0) {
+					/*
+					 * If reads were paused because we
+					 * had pending data, we can now
+					 * resume them.
+					 */
+					if (t->wpending > 0) {
+						t->wpending = 0;
+#ifdef __OpenBSD__
+						EV_SET(&l->ch[l->chn++], t->fd,
+						    EVFILT_READ, EV_ADD,
+						    0, 0, 0);
+#endif
+					}
+#ifdef __OpenBSD__
+					EV_SET(&l->ch[l->chn++], t->fd,
+					    EVFILT_WRITE, EV_DELETE, 0, 0, 0);
+#else
+					bzero(&ev, sizeof(ev));
+					ev.data.fd = t->fd;
+					ev.events = EPOLLIN;
+					if (epoll_ctl(l->epollfd, EPOLL_CTL_MOD,
+					    t->fd, &ev) == -1) {
+						xlog_strerror(LOG_ERR,
+						    errno, "epoll_ctl");
+						del_epoll_fd(l->epollfd, t->fd);
+						tlsev_close(l, t);
+						continue;
+					}
+#endif
+					if (t->drain)
+						tlsev_close(l, t);
+				} else {
+					/*
+					 * If after coming out of writing back
+					 * to the client we still have buffered
+					 * data that couldn't make it to the
+					 * socket buffer, and reads weren't
+					 * already blocked, block them now.
+					 */
+					if (t->wpending == 0) {
+#ifdef __OpenBSD__
+						EV_SET(&l->ch[l->chn++], t->fd,
+						    EVFILT_READ, EV_DELETE,
+						    0, 0, 0);
+#else
+						bzero(&ev, sizeof(ev));
+						ev.data.fd = t->fd;
+						ev.events = EPOLLOUT;
+						if (epoll_ctl(l->epollfd,
+						    EPOLL_CTL_MOD,
+						    t->fd, &ev) == -1) {
+							xlog_strerror(LOG_ERR,
+							    errno, "epoll_ctl");
+							del_epoll_fd(l->epollfd,
+							    t->fd);
+							tlsev_close(l, t);
+							continue;
+						}
+#endif
+						// TODO: count the times we
+						// paused reads
+					}
+					t->wpending = r;
+					/*
+					 * Make sure we don't process reads
+					 * below.
+					 */
+					continue;
+				}
+			}
+
+			if (evtype & TLSEV_READ) {
 				r = tlsev_in(l, t, xerrz(&e));
 				if (r == -1) {
 					if (xerr_is(&e, XLOG_APP,
@@ -887,10 +999,16 @@ tlsev_run(struct tlsev_listener *l)
 					continue;
 				}
 
-				if (t->wpending == 0 &&
-				    ((r = tlsev_bio_pending(t, NULL,
-				    &t->wpending, xerrz(&e))) == -1)) {
-					xlog(LOG_ERR, &e, "fd=%d", t->fd);
+				/*
+				 * Get how many bytes can be read from our
+				 * outgoing (write) BIO. Normally this shouldn't
+				 * increase after a read, unless we are
+				 * processing an SSL handshake (SSL_accept).
+				 */
+				if ((t->wpending = BIO_pending(t->w)) == -1) {
+					xlog(LOG_ERR, NULL, "BIO_pending "
+					    "failed (%d) on write BIO for "
+					    "fd=%d", ERR_get_error(), t->fd);
 #ifndef __OpenBSD__
 					del_epoll_fd(l->epollfd, t->fd);
 #endif
@@ -898,63 +1016,24 @@ tlsev_run(struct tlsev_listener *l)
 					continue;
 				}
 
+				if (t->wpending > 0) {
 #ifdef __OpenBSD__
-				if (t->wpending > 0)
 					EV_SET(&l->ch[l->chn++], t->fd,
 					    EVFILT_WRITE, EV_ADD, 0, 0, 0);
 #else
-				bzero(&ev, sizeof(ev));
-				ev.data.fd = t->fd;
-				ev.events = EPOLLIN;
-				if (t->wpending > 0)
-					ev.events |= EPOLLOUT;
-				if (epoll_ctl(l->epollfd, EPOLL_CTL_MOD,
-				    t->fd, &ev) == -1) {
-					xlog_strerror(LOG_ERR, errno,
-					    "epoll_ctl");
-					del_epoll_fd(l->epollfd, t->fd);
-					tlsev_close(l, t);
-					continue;
-				}
-#endif
-			}
-
-			if (evtype & TLSEV_WRITE) {
-				r = tlsev_out(l, t, xerrz(&e));
-				if (r == -1) {
-					xlog(LOG_ERR, &e, "write on fd %d",
-					    t->fd);
-#ifndef __OpenBSD__
-					del_epoll_fd(l->epollfd, t->fd);
-#endif
-					tlsev_close(l, t);
-					continue;
-				}
-
-				if (r == 0)
-					t->wpending = 0;
-#ifdef __OpenBSD__
-				if (t->wpending == 0) {
-					EV_SET(&l->ch[l->chn++], t->fd,
-					    EVFILT_WRITE, EV_DELETE, 0, 0, 0);
-					if (t->drain)
+					bzero(&ev, sizeof(ev));
+					ev.data.fd = t->fd;
+					ev.events = EPOLLIN|EPOLLOUT;
+					if (epoll_ctl(l->epollfd, EPOLL_CTL_MOD,
+					    t->fd, &ev) == -1) {
+						xlog_strerror(LOG_ERR, errno,
+						    "epoll_ctl");
+						del_epoll_fd(l->epollfd, t->fd);
 						tlsev_close(l, t);
-				}
-#else
-				ev.data.fd = t->fd;
-				ev.events = EPOLLIN;
-				if (t->wpending > 0)
-					ev.events |= EPOLLOUT;
-
-				if (epoll_ctl(l->epollfd, EPOLL_CTL_MOD,
-				    t->fd, &ev) == -1) {
-					xlog_strerror(LOG_ERR, errno,
-					    "epoll_ctl");
-					del_epoll_fd(l->epollfd, t->fd);
-					tlsev_close(l, t);
-				} else if (t->drain)
-					tlsev_close(l, t);
+						continue;
+					}
 #endif
+				}
 			}
 		}
 	}

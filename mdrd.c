@@ -325,7 +325,8 @@ struct daemon_in_cb_data {
 	struct mdr  msg;
 };
 
-void free_daemon_in_cb_data(void *data) {
+void
+free_daemon_in_cb_data(void *data) {
 	struct daemon_in_cb_data *cb_data = (struct daemon_in_cb_data *)data;
 	if (cb_data->buf != NULL)
 		free(cb_data->buf);
@@ -511,9 +512,17 @@ backend_cb(int fd)
 		goto fail;
 	}
 
-	if (tlsev_reply(t, mdr_buf(&msg), mdr_size(&msg)) <= 0 ||
+	if ((r = tlsev_reply(t, mdr_buf(&msg), mdr_size(&msg))) <= 0 ||
 	    resp_flags & MDRD_BERESP_F_CLOSE)
 		tlsev_drain(t);
+
+	/*
+	 * TODO: backend could overflow us here. We should cap how many
+	 * bytes pending we have and create a message to tell our backend
+	 * to stop pause message for this client.
+	 * This only matters in a "streaming" situation where we don't
+	 * have 1:1 requests/replies.
+	 */
 
 	return 1;
 fail:

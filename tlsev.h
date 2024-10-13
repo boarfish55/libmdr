@@ -9,6 +9,9 @@
 #include "idxheap.h"
 #include "xlog.h"
 
+#define TLSEV_IO_SIZE    32768
+#define TLSEV_MAX_EVENTS 1000000000
+
 struct tlsev;
 
 struct tlsev_fd_cb {
@@ -71,6 +74,7 @@ struct tlsev {
 	X509                  *peer_cert;
 
 	char                  *retry_buf;
+	char                  *retry_buf_pos;
 	int                    retry_len;
 
 	void                  *in_cb_data;
