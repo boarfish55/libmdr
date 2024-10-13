@@ -477,24 +477,17 @@ mdr_pack_space(struct mdr *m, char **dst, uint64_t bytes_sz)
 }
 
 ptrdiff_t
-mdr_pack_tail_bytes(struct mdr *m, uint64_t bytes_sz)
+mdr_add_tail_bytes(struct mdr *m, uint64_t bytes_sz)
 {
 	if (m == NULL || !(mdr_flags(m) & MDR_F_TAIL_BYTES)) {
 		errno = EINVAL;
 		return MDR_FAIL;
 	}
 
-	if (!mdr_can_fit(m, sizeof(uint64_t) + bytes_sz))
-		return MDR_FAIL;
-
-	if ((UINT64_MAX - (mdr_tell(m) + mdr_tail_bytes(m) +
-	    sizeof(uint64_t) + 1)) < bytes_sz) {
+	if (UINT64_MAX - mdr_tail_bytes(m) < bytes_sz) {
 		errno = EOVERFLOW;
 		return MDR_FAIL;
 	}
-
-	*(uint64_t *)m->pos = htobe64(bytes_sz);
-	m->pos += sizeof(uint64_t);
 
 	*m->tail_bytes = htobe64(mdr_tail_bytes(m) + bytes_sz);
 
@@ -549,7 +542,7 @@ mdr_vpackf(struct mdr *m, const char *spec, va_list ap)
 	 * Possible types in spec:
 	 *   u8, u16, u32, u64
 	 *   i8, i16, i32, i64
-	 *   b, s, m, t, p
+	 *   b, s, m, p
 	 */
 	for (p = spec, prev = spec; !finish; p++) {
 		if (*p == '\0')
@@ -582,10 +575,6 @@ mdr_vpackf(struct mdr *m, const char *spec, va_list ap)
 				return MDR_FAIL;
 		} else if (strcmp(spbuf, "s") == 0) {
 			if (mdr_pack_string(m, va_arg(ap, char *)) == MDR_FAIL)
-				return MDR_FAIL;
-		} else if (strcmp(spbuf, "t") == 0) {
-			if (mdr_pack_tail_bytes(m, va_arg(ap, uint64_t))
-			    == MDR_FAIL)
 				return MDR_FAIL;
 		} else if (spbuf[0] == 'u' || spbuf[0] == 'i') {
 			if (strlen(spbuf) < 2) {
@@ -777,6 +766,9 @@ mdr_unpack_hdr(struct mdr *m, char *buf, size_t buf_sz)
 	m->version = (uint16_t *)m->pos;
 	m->pos += sizeof(*m->version);
 
+	// TODO: should we blindly allow tail_bytes?
+	// Maybe this should be passed as an option
+	// or reject the payload.
 	if (mdr_flags(m) & MDR_F_TAIL_BYTES) {
 		m->tail_bytes = (uint64_t *)m->pos;
 		m->pos += sizeof(*m->tail_bytes);
@@ -1002,31 +994,6 @@ mdr_unpack_bytes_ref(struct mdr *m, const char **src, uint64_t *bytes_sz)
 }
 
 ptrdiff_t
-mdr_unpack_tail_bytes(struct mdr *m, uint64_t *bytes_sz)
-{
-	if (m == NULL || bytes_sz == NULL) {
-		errno = EINVAL;
-		return MDR_FAIL;
-	}
-
-	if (!(mdr_flags(m) & MDR_F_TAIL_BYTES)) {
-		errno = ENOENT;
-		return MDR_FAIL;
-	}
-
-	if (m->buf_sz - mdr_tell(m) < sizeof(uint64_t)) {
-		errno = ERANGE;
-		return MDR_FAIL;
-	}
-	*bytes_sz = be64toh(*(uint64_t *)m->pos);
-	m->pos += sizeof(uint64_t);
-
-	*m->tail_bytes = htobe64(mdr_tail_bytes(m) + *bytes_sz);
-
-	return mdr_tell(m);
-}
-
-ptrdiff_t
 mdr_unpack_string(struct mdr *m, char *bytes, uint64_t *bytes_sz)
 {
 	uint64_t b, r;
@@ -1118,7 +1085,7 @@ mdr_vunpackf(struct mdr *m, const char *spec, va_list ap)
 	 * Possible types in spec:
 	 *   u8, u16, u32, u64
 	 *   i8, i16, i32, i64
-	 *   b, s, m, t
+	 *   b, s, m
 	 */
 	for (p = spec, prev = spec; !finish; p++) {
 		if (*p == '\0')
@@ -1155,10 +1122,6 @@ mdr_vunpackf(struct mdr *m, const char *spec, va_list ap)
 			bytes = va_arg(ap, char *);
 			bytes_sz = va_arg(ap, uint64_t *);
 			if (mdr_unpack_string(m, bytes, bytes_sz) == MDR_FAIL)
-				return MDR_FAIL;
-		} else if (strcmp(spbuf, "t") == 0) {
-			if (mdr_unpack_tail_bytes(m, va_arg(ap, uint64_t *))
-			    == MDR_FAIL)
 				return MDR_FAIL;
 		} else if (spbuf[0] == 'u' || spbuf[0] == 'i') {
 			if (strlen(spbuf) < 2) {

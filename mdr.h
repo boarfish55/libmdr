@@ -9,8 +9,7 @@
 /*
  * Minimal Data Representation
  *
- * An mdr message can contain at most (UINT64_MAX - 1) bytes.
- * Total bytes excluding tail bytes is PTRDIFF_MAX.
+ * An mdr message can contain at most PTRDIFF_MAX bytes.
  */
 struct mdr {
 	/*
@@ -76,11 +75,11 @@ ptrdiff_t mdr_pack_uint32(struct mdr *, uint32_t);
 ptrdiff_t mdr_pack_uint64(struct mdr *, uint64_t);
 ptrdiff_t mdr_pack_bytes(struct mdr *, const char *, uint64_t);
 ptrdiff_t mdr_pack_space(struct mdr *, char **, uint64_t);
-ptrdiff_t mdr_pack_tail_bytes(struct mdr *, uint64_t);
 ptrdiff_t mdr_pack_string(struct mdr *, const char *);
 ptrdiff_t mdr_pack_mdr(struct mdr *, struct mdr *);
 ptrdiff_t mdr_packf(struct mdr *, const char *, ...);
 ptrdiff_t mdr_vpackf(struct mdr *, const char *, va_list);
+ptrdiff_t mdr_add_tail_bytes(struct mdr *, uint64_t);
 
 ptrdiff_t mdr_unpack(struct mdr *, char *, size_t, const char *, ...);
 ptrdiff_t mdr_unpack_from_fd(struct mdr *, int, char *, size_t);
@@ -96,7 +95,6 @@ ptrdiff_t mdr_unpack_uint32(struct mdr *, uint32_t *);
 ptrdiff_t mdr_unpack_uint64(struct mdr *, uint64_t *);
 ptrdiff_t mdr_unpack_bytes(struct mdr *, char *, uint64_t *);
 ptrdiff_t mdr_unpack_bytes_ref(struct mdr *, const char **, uint64_t *);
-ptrdiff_t mdr_unpack_tail_bytes(struct mdr *, uint64_t *);
 ptrdiff_t mdr_unpack_string(struct mdr *, char *, uint64_t *);
 ptrdiff_t mdr_unpack_mdr_ref(struct mdr *, struct mdr *);
 ptrdiff_t mdr_unpack_mdr(struct mdr *, struct mdr *, char *, size_t);

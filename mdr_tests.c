@@ -134,11 +134,12 @@ test_pack_space()
 void
 test_long_tail_bytes()
 {
-	uint64_t   r, lena, lenb;
+	uint64_t   r;
 	struct mdr echo, decode;
 	char       buf[4096];
 	char       stra[1024], stra2[1024];
 	char       strb[128], strb2[128];
+	char       strab[2048];
 	int        i;
 
 	printf("%s\n", __func__);
@@ -156,26 +157,20 @@ test_long_tail_bytes()
 	    MDR_NS_ECHO, MDR_ID_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
-	r = mdr_pack_tail_bytes(&echo, sizeof(stra));
+	r = mdr_add_tail_bytes(&echo, strlen(stra));
 	printf("mdr_pack_tail_bytes=%lu\n", r);
-	r = mdr_pack_tail_bytes(&echo, sizeof(strb));
+	r = mdr_add_tail_bytes(&echo, strlen(strb));
 	printf("mdr_pack_tail_bytes=%lu\n", r);
 
-	memcpy(buf + r, stra, sizeof(stra));
-	memcpy(buf + r + sizeof(stra), strb, sizeof(strb));
+	memcpy(buf + r, stra, strlen(stra));
+	memcpy(buf + r + strlen(stra), strb, strlen(strb));
 
 	r = mdr_unpack_hdr(&decode, (void *)mdr_buf(&echo), mdr_size(&echo));
 	printf("mdr_unpack_hdr=%lu\n", r);
 
-	r = mdr_unpack_tail_bytes(&decode, &lena);
-	printf("mdr_unpack_tail_bytes() -> %lu -> %lu\n", r, lena);
-	r = mdr_unpack_tail_bytes(&decode, &lenb);
-	printf("mdr_unpack_tail_bytes() -> %lu -> %lu\n", r, lenb);
-
-	memcpy(stra2, buf + r, lena);
-	printf("unpacked string: %s -> %lu\n", stra2, lena);
-	memcpy(strb2, buf + r + lena, lenb);
-	printf("unpacked string: %s -> %lu\n", strb2, lenb);
+	bzero(strab, sizeof(strab));
+	memcpy(strab, buf + r, mdr_tail_bytes(&decode));
+	printf("unpacked string: %s -> %lu\n", strab, strlen(strab));
 }
 
 void
@@ -206,11 +201,12 @@ test_limits()
 	if (errno != ENOMEM)
 		printf("mdr_pack_bytes(b): expected ENOMEM, got %d\n", errno);
 
-	n = UINT64_MAX - (mdr_hdr_size(mdr_flags(&echo)) + sizeof(uint64_t));
 	errno = 0;
-	r = mdr_pack_tail_bytes(&echo, n);
+	n = UINT64_MAX;
+	mdr_add_tail_bytes(&echo, n);
+	r = mdr_add_tail_bytes(&echo, 1);
 	if (errno != EOVERFLOW)
-		printf("mdr_pack_tail_bytes(b): expected EOVERFLOW, got %d\n",
+		printf("mdr_add_tail_bytes(b): expected EOVERFLOW, got %d\n",
 		    errno);
 
 	mdr_free(&echo);
