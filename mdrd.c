@@ -64,6 +64,7 @@ struct {
 	uint64_t socket_timeout_min;
 	uint64_t socket_timeout_max;
 	uint64_t max_payload_size;
+	uint64_t max_cert_size;
 	int      use_rcv_lowat;
 
 	uint64_t **allowed_mdr_namespaces;
@@ -88,6 +89,7 @@ struct {
 	2,
 	10,
 	16384,
+	4096,
 	1,
 	NULL,
 	NULL,
@@ -183,6 +185,12 @@ struct flatconf flatconf_vars[] = {
 		sizeof(mdrd_conf.max_payload_size)
 	},
 	{
+		"max_cert_size",
+		FLATCONF_ULONG,
+		&mdrd_conf.max_cert_size,
+		sizeof(mdrd_conf.max_cert_size)
+	},
+	{
 		"use_rcv_lowat",
 		FLATCONF_BOOLINT,
 		&mdrd_conf.use_rcv_lowat,
@@ -241,7 +249,12 @@ pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 		return -1;
 	}
 
-	if (mdr_pack_hdr(m, NULL, 4096, 0, MDR_NS_MDRD,
+	if (cert_len > mdrd_conf.max_cert_size) {
+		xlog(LOG_ERR, NULL, "%s: X509 length above limit: "
+		    "%lu > %lu", __func__, cert_len, mdrd_conf.max_cert_size);
+	}
+
+	if (mdr_pack_hdr(m, NULL, 4096, MDR_F_NONE, MDR_NS_MDRD,
 	    MDR_ID_MDRD_BEREQ, 0) == MDR_FAIL ||
 	    mdr_pack_uint64(m, id) == MDR_FAIL ||
 	    mdr_pack_int32(m, fd) == MDR_FAIL ||
@@ -323,6 +336,7 @@ struct daemon_in_cb_data {
 	char       *buf;
 	size_t      buf_sz;
 	struct mdr  msg;
+	int         send_cert;
 };
 
 void
@@ -349,6 +363,7 @@ daemon_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		}
 		bzero(*data, sizeof(struct daemon_in_cb_data));
 		cb_data = (struct daemon_in_cb_data *)(*data);
+		cb_data->send_cert = 1;
 		cb_data->buf = malloc(n);
 		if (cb_data->buf == NULL) {
 			free(cb_data);
@@ -371,7 +386,7 @@ daemon_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 	memcpy(cb_data->buf + cb_data->len, buf, n);
 	cb_data->len += n;
 
-	if (mdr_unpack_all(&cb_data->msg, cb_data->buf,
+	if (mdr_unpack_all(&cb_data->msg, MDR_F_NONE, cb_data->buf,
 	    cb_data->len, mdrd_conf.max_payload_size) == MDR_FAIL) {
 		if (errno == EAGAIN)
 			return 0;
@@ -392,7 +407,17 @@ daemon_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 	}
 
 	if ((status = pack_bereq(&bemsg, tlsev_id(t), tlsev_fd(t),
-	    &cb_data->msg, tlsev_peer_cert(t))) == 0) {
+	    &cb_data->msg,
+	    (cb_data->send_cert) ? tlsev_peer_cert(t) : NULL)) == 0) {
+		/*
+		 * We only sent the cert the first time; backend should
+		 * remember it.
+		 */
+		// TODO: we have to send the cert everytime for now, until
+		// we implement a backend message to tell that the client
+		// is gone and state can be forgotten.
+		//cb_data->send_cert = 0;
+
 		if ((status = writeall(backend_wfd, mdr_buf(&bemsg),
 		    mdr_size(&bemsg))) == -1) {
 			xlog_strerror(LOG_ERR, errno, "%s: writeall", __func__);
@@ -418,7 +443,7 @@ backend_cb(int fd)
 	int           tlsfd, r;
 	uint32_t      resp_status, resp_flags;
 
-	if ((r = mdr_unpack_from_fd(&reply, fd,
+	if ((r = mdr_unpack_from_fd(&reply, MDR_F_NONE, fd,
 	    reply_buf, sizeof(reply_buf))) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: mdr_unpack_from_fd", __func__);

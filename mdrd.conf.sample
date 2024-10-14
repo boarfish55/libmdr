@@ -20,8 +20,14 @@ socket_timeout_max = 10
 
 # Because TLS records are normally smaller than 16 KiB, as well as to
 # prevent excessive memory usage, it is advised to keep the maximum payload
-# size under this amount and break down messages.
+# size under this amount and break down messages. Moreover, pipe size on
+# OpenBSD is 16KiB so going above this will require a blocking write.
+# Keep in mind that mdrd will also pass the client's cert along with the
+# message so the backend can receive message over this size.
 max_payload_size = 16384
+
+# Put an upper bound to avoid clients sending absurd certs.
+max_cert_size = 4096
 
 allowed_mdr_namespaces = [ 1 ]
 

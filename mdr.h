@@ -19,6 +19,7 @@ struct mdr {
 
 	/* Reserved for future use */
 	uint32_t *flags;
+#define MDR_F_NONE       0x00000000
 #define MDR_F_TAIL_BYTES 0x00000001
 
 	/*
@@ -81,10 +82,10 @@ ptrdiff_t mdr_packf(struct mdr *, const char *, ...);
 ptrdiff_t mdr_vpackf(struct mdr *, const char *, va_list);
 ptrdiff_t mdr_add_tail_bytes(struct mdr *, uint64_t);
 
-ptrdiff_t mdr_unpack(struct mdr *, char *, size_t, const char *, ...);
-ptrdiff_t mdr_unpack_from_fd(struct mdr *, int, char *, size_t);
-ptrdiff_t mdr_unpack_all(struct mdr *, char *, size_t, size_t);
-ptrdiff_t mdr_unpack_hdr(struct mdr *, char *, size_t);
+ptrdiff_t mdr_unpack(struct mdr *, uint32_t, char *, size_t, const char *, ...);
+ptrdiff_t mdr_unpack_from_fd(struct mdr *, uint32_t, int, char *, size_t);
+ptrdiff_t mdr_unpack_all(struct mdr *, uint32_t, char *, size_t, size_t);
+ptrdiff_t mdr_unpack_hdr(struct mdr *, uint32_t, char *, size_t);
 ptrdiff_t mdr_unpack_int8(struct mdr *, int8_t *);
 ptrdiff_t mdr_unpack_int16(struct mdr *, int16_t *);
 ptrdiff_t mdr_unpack_int32(struct mdr *, int32_t *);

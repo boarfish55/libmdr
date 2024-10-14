@@ -502,8 +502,8 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 
 	/*
 	 * Normally this should be enough to empty the BIO_s_mem since we
-	 * reuse a buffer of the same size and the TLS overhead will not be
-	 * here.
+	 * reuse the same buffer size as the raw bytes, minus the TLS
+	 * overhead.
 	 */
 	if ((r = SSL_read(t->ssl, buf, sizeof(buf))) <= 0) {
 		r = SSL_get_error(t->ssl, r);

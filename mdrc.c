@@ -93,7 +93,8 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 				else
 					bytes[i] |= (b - 'a' + 10);
 			}
-			if (mdr_unpack_hdr(&m2, bytes, i) == MDR_FAIL)
+			if (mdr_unpack_hdr(&m2, MDR_F_NONE,
+			    bytes, i) == MDR_FAIL)
 				err(1, "mdr_unpack_hdr");
 			if (mdr_pack_mdr(m, &m2) == MDR_FAIL)
 				err(1, "mdr_pack_mdr");
@@ -304,7 +305,8 @@ do_tls(struct mdr *m, const char *target, const char *key_path,
 			if (r == -1 && !BIO_should_retry(b))
 				ssl_err();
 			len += r;
-			if (mdr_unpack_hdr(&reply, buf, len) == MDR_FAIL) {
+			if (mdr_unpack_hdr(&reply, MDR_F_NONE,
+			    buf, len) == MDR_FAIL) {
 				if (errno == EAGAIN)
 					continue;
 				else
@@ -353,7 +355,8 @@ do_stdin()
 			}
 
 			len += r;
-			if (mdr_unpack_hdr(&reply, buf, len) == MDR_FAIL) {
+			if (mdr_unpack_hdr(&reply, MDR_F_NONE,
+			    buf, len) == MDR_FAIL) {
 				if (errno == EAGAIN)
 					continue;
 				else
@@ -511,7 +514,7 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	r = mdr_pack_hdr(&m, NULL, 0, 0, namespace, id, version);
+	r = mdr_pack_hdr(&m, NULL, 0, MDR_F_NONE, namespace, id, version);
 	if (r == MDR_FAIL)
 		err(1, "mdr_pack_hdr");
 

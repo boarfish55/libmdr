@@ -1,3 +1,4 @@
+#include <err.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
@@ -25,7 +26,8 @@ test_long_str()
 	r = mdr_pack_string(&echo, str);
 	printf("mdr_pack_string=%lu\n", r);
 
-	r = mdr_unpack_hdr(&decode, (void *)mdr_buf(&echo), mdr_size(&echo));
+	r = mdr_unpack_hdr(&decode, MDR_F_NONE,
+	    (void *)mdr_buf(&echo), mdr_size(&echo));
 	printf("mdr_unpack_hdr=%lu\n", r);
 
 	len = sizeof(str2);
@@ -61,7 +63,8 @@ test_pack_mdr()
 	printf("mdr_pack_mdr=%lu\n", r);
 	printf("mdr_size=%lu\n", mdr_size(&echo));
 
-	r = mdr_unpack_hdr(&decode, (void *)mdr_buf(&echo), mdr_size(&echo));
+	r = mdr_unpack_hdr(&decode, MDR_F_NONE,
+	    (void *)mdr_buf(&echo), mdr_size(&echo));
 	printf("mdr_unpack_hdr=%lu\n", r);
 
 	len = sizeof(buf2);
@@ -100,7 +103,8 @@ test_pack_space()
 
 	memcpy(dst, str, strlen(str));
 
-	r = mdr_unpack_hdr(&decode, (void *)mdr_buf(&echo), mdr_size(&echo));
+	r = mdr_unpack_hdr(&decode, MDR_F_NONE,
+	    (void *)mdr_buf(&echo), mdr_size(&echo));
 	printf("mdr_unpack_hdr=%lu\n", r);
 
 	r = mdr_unpack_bytes_ref(&decode, &src, &len);
@@ -117,7 +121,8 @@ test_pack_space()
 	r = mdr_pack_space(&echo, &dst, 0);
 	printf("mdr_pack_space=%lu\n", r);
 
-	r = mdr_unpack_hdr(&decode, (void *)mdr_buf(&echo), mdr_size(&echo));
+	r = mdr_unpack_hdr(&decode, MDR_F_NONE,
+	    (void *)mdr_buf(&echo), mdr_size(&echo));
 	r = mdr_unpack_bytes(&decode, str, &len);
 	printf("mdr_unpack_bytes=%lu => %lu\n", r, len);
 
@@ -126,8 +131,8 @@ test_pack_space()
 	memcpy(dst, str, strlen(str));
 
 	bzero(str, sizeof(str));
-	r = mdr_unpack(&decode, (void *)mdr_buf(&echo), mdr_size(&echo),
-	    "p", &str, &len);
+	r = mdr_unpack(&decode, MDR_F_NONE,
+	    (void *)mdr_buf(&echo), mdr_size(&echo), "p", &str, &len);
 	printf("mdr_unpack_bytes_ref=%lu => %.*s\n", r, (int)len, src);
 }
 
@@ -165,7 +170,13 @@ test_long_tail_bytes()
 	memcpy(buf + r, stra, strlen(stra));
 	memcpy(buf + r + strlen(stra), strb, strlen(strb));
 
-	r = mdr_unpack_hdr(&decode, (void *)mdr_buf(&echo), mdr_size(&echo));
+	r = mdr_unpack_hdr(&decode, MDR_F_NONE,
+	    (void *)mdr_buf(&echo), mdr_size(&echo));
+	if (r != MDR_FAIL || errno != EACCES)
+		printf("mdr_unpack_hdr should have failed with EACCES");
+
+	r = mdr_unpack_hdr(&decode, MDR_F_TAIL_BYTES,
+	    (void *)mdr_buf(&echo), mdr_size(&echo));
 	printf("mdr_unpack_hdr=%lu\n", r);
 
 	bzero(strab, sizeof(strab));
@@ -283,7 +294,7 @@ main()
 	printf("memcmp(buf, buf2)==%d\n",
 	    memcmp(buf_echo, buf_echo2, mdr_size(&echo2)));
 
-	r = mdr_unpack_hdr(&decho, buf_echo2, sizeof(buf_echo2));
+	r = mdr_unpack_hdr(&decho, MDR_F_NONE, buf_echo2, sizeof(buf_echo2));
 	printf("mdr_unpack_hdr=%lu\n", r);
 	dlen = sizeof(dbytes);
 	dstr_len = sizeof(dstr);
@@ -304,7 +315,7 @@ main()
 	r = mdr_pack_bytes(&echo3, str5, strlen(str5));
 	printf("mdr_pack_bytes(b)=%lu\n", r);
 
-	r = mdr_unpack_hdr(&echo3, buf_echo3, sizeof(buf_echo3));
+	r = mdr_unpack_hdr(&echo3, MDR_F_NONE, buf_echo3, sizeof(buf_echo3));
 	printf("mdr_unpack_hdr=%lu\n", r);
 
 	len = sizeof(str5);

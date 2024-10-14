@@ -82,7 +82,8 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	while ((r = mdr_unpack_from_fd(&m, 0, buf, sizeof(buf))) > 0) {
+	while ((r = mdr_unpack_from_fd(&m, MDR_F_NONE,
+	    0, buf, sizeof(buf))) > 0) {
 		if (r == MDR_FAIL)
 			err(1, "mdr_unpack_from_fd");
 
