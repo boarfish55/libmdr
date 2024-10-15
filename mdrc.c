@@ -217,6 +217,7 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 void
 ssl_err()
 {
+	fprintf(stderr, "ssl_err:\n");
 	ERR_print_errors_fp(stderr);
 	exit(1);
 }
@@ -237,7 +238,7 @@ do_tls(struct mdr *m, const char *target, const char *key_path,
 	if (mdr_size(m) >= INT_MAX)
 		errx(1, "payload too large for sending");
 
-	if ((ctx = SSL_CTX_new(TLS_method())) == NULL)
+	if ((ctx = SSL_CTX_new(TLS_client_method())) == NULL)
 		ssl_err();
 
 	if (insecure)
@@ -302,7 +303,7 @@ do_tls(struct mdr *m, const char *target, const char *key_path,
 			err(1, "malloc");
 		for (len = 0;;) {
 			r = BIO_read(b, buf + len, buf_sz - len);
-			if (r == -1 && !BIO_should_retry(b))
+			if (r <= 0 && !BIO_should_retry(b))
 				ssl_err();
 			len += r;
 			if (mdr_unpack_hdr(&reply, MDR_F_NONE,
@@ -318,10 +319,10 @@ do_tls(struct mdr *m, const char *target, const char *key_path,
 				continue;
 			if (mdr_size(&reply) >= INT_MAX)
 				errx(1, "payload too large for receiving");
-			buf = realloc(buf, mdr_size(&reply));
+			buf_sz = mdr_size(&reply);
+			buf = realloc(buf, buf_sz);
 			if (buf == NULL)
 				err(1, "realloc");
-			buf_sz = mdr_size(&reply);
 		}
 		printf("\nReceived:\n");
 		mdr_print(stdout, &reply);
