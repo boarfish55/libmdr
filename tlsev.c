@@ -165,11 +165,6 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 	}
 	memcpy(l->lsock, lsock, sizeof(int) * l->lsock_len);
 #ifdef __OpenBSD__
-	 * See tlsev_run() to count how many changes can accumulte and l->ch:
-	 *   - Up to two events per filter (read/write on a client socket)
-	 *   - And more for disabling reads on the listening sockets and
-	 *     adding the new client, or when reenabling the listening socket.
-	 */
 	l->max_events = l->max_clients + l->lsock_len;
 	l->max_ch = l->max_events;
 	l->ch = malloc(sizeof(struct kevent) * l->max_ch);
