@@ -9,8 +9,8 @@
 #include "idxheap.h"
 #include "xlog.h"
 
-#define TLSEV_IO_SIZE    32768
-#define TLSEV_MAX_EVENTS 1000000000
+#define TLSEV_IO_SIZE     32768
+#define TLSEV_MAX_CLIENTS 1000000000
 
 struct tlsev;
 
@@ -28,6 +28,7 @@ struct tlsev_listener {
 	int                    tlsev_data_idx;
 	uint64_t               next_id;
 	struct idxheap         tlsev_store;
+	struct timespec        last_purge;
 	volatile sig_atomic_t  shutdown_triggered;
 
 	int                    active_clients;
@@ -44,6 +45,7 @@ struct tlsev_listener {
 	struct kevent         *events;
 	struct kevent         *ch;
 	int                    chn;
+	int                    max_ch;
 #else
 	int                    epollfd;
 	struct epoll_event    *events;
@@ -66,6 +68,7 @@ struct tlsev {
 	BIO                   *r;
 	BIO                   *w;
 	int                    wpending;
+	int                    reads_paused;
 	int                    rcvlowat;
 	int                    drain;
 	struct timespec        last_used_at;
