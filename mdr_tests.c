@@ -20,7 +20,7 @@ test_long_str()
 		str[i] = 'a';
 	str[i] = '\0';
 
-	r = mdr_pack_hdr(&echo, NULL, 0, 0, MDR_NS_ECHO, MDR_ID_ECHO, 0);
+	r = mdr_pack_hdr(&echo, NULL, 0, 0, MDR_NS_CTL, MDR_ID_CTL_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
 	r = mdr_pack_string(&echo, str);
@@ -49,14 +49,14 @@ test_pack_mdr()
 	printf("%s\n", __func__);
 
 	/* Create inner mdr, containing a string */
-	r = mdr_pack_hdr(&echo2, buf2, sizeof(buf2), 0, MDR_NS_ECHO,
-	    MDR_ID_ECHO, 0);
+	r = mdr_pack_hdr(&echo2, buf2, sizeof(buf2), 0, MDR_NS_CTL,
+	    MDR_ID_CTL_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 	r = mdr_pack_string(&echo2, str);
 	printf("mdr_pack_string=%lu\n", r);
 
-	r = mdr_pack_hdr(&echo, buf, sizeof(buf), 0, MDR_NS_ECHO,
-	    MDR_ID_ECHO, 0);
+	r = mdr_pack_hdr(&echo, buf, sizeof(buf), 0, MDR_NS_CTL,
+	    MDR_ID_CTL_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
 	r = mdr_pack_mdr(&echo, &echo2);
@@ -94,8 +94,8 @@ test_pack_space()
 	printf("%s\n", __func__);
 
 	/* Create inner mdr, containing a string */
-	r = mdr_pack_hdr(&echo, buf, sizeof(buf), 0, MDR_NS_ECHO,
-	    MDR_ID_ECHO, 0);
+	r = mdr_pack_hdr(&echo, buf, sizeof(buf), 0, MDR_NS_CTL,
+	    MDR_ID_CTL_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
 	r = mdr_pack_space(&echo, &dst, strlen(str));
@@ -116,8 +116,8 @@ test_pack_space()
 	r = mdr_unpack_bytes(&decode, str, &len);
 	printf("mdr_unpack_bytes=%lu => %.*s\n", r, (int)len, str);
 
-	r = mdr_pack_hdr(&echo, buf, sizeof(buf), 0, MDR_NS_ECHO,
-	    MDR_ID_ECHO, 0);
+	r = mdr_pack_hdr(&echo, buf, sizeof(buf), 0, MDR_NS_CTL,
+	    MDR_ID_CTL_ECHO, 0);
 	r = mdr_pack_space(&echo, &dst, 0);
 	printf("mdr_pack_space=%lu\n", r);
 
@@ -126,8 +126,8 @@ test_pack_space()
 	r = mdr_unpack_bytes(&decode, str, &len);
 	printf("mdr_unpack_bytes=%lu => %lu\n", r, len);
 
-	r = mdr_pack(&echo, buf, sizeof(buf), 0, MDR_NS_ECHO,
-	    MDR_ID_ECHO, 0, "p", &dst, strlen(str));
+	r = mdr_pack(&echo, buf, sizeof(buf), 0, MDR_NS_CTL,
+	    MDR_ID_CTL_ECHO, 0, "p", &dst, strlen(str));
 	memcpy(dst, str, strlen(str));
 
 	bzero(str, sizeof(str));
@@ -159,7 +159,7 @@ test_long_tail_bytes()
 	strb[i] = '\0';
 
 	r = mdr_pack_hdr(&echo, buf, sizeof(buf), MDR_F_TAIL_BYTES,
-	    MDR_NS_ECHO, MDR_ID_ECHO, 0);
+	    MDR_NS_CTL, MDR_ID_CTL_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
 	r = mdr_add_tail_bytes(&echo, strlen(stra));
@@ -193,8 +193,8 @@ test_limits()
 
 	printf("%s\n", __func__);
 
-	r = mdr_pack_hdr(&echo, NULL, 0, MDR_F_TAIL_BYTES, MDR_NS_ECHO,
-	    MDR_ID_ECHO, 0);
+	r = mdr_pack_hdr(&echo, NULL, 0, MDR_F_TAIL_BYTES, MDR_NS_CTL,
+	    MDR_ID_CTL_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
 	n = (PTRDIFF_MAX -
@@ -265,7 +265,7 @@ main()
 	uint64_t   dstr_len;
 
 	r = mdr_pack_hdr(&echo, buf_echo, sizeof(buf_echo), 0,
-	    MDR_NS_ECHO, MDR_ID_ECHO, 0);
+	    MDR_NS_CTL, MDR_ID_CTL_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
 	r = mdr_packf(&echo, "u64", 111);
@@ -284,7 +284,7 @@ main()
 	printf("mdr_packf(b4)=%lu\n", r);
 
 	r = mdr_pack_hdr(&echo2, buf_echo2, sizeof(buf_echo2), 0,
-	    MDR_NS_ECHO, MDR_ID_ECHO, 0);
+	    MDR_NS_CTL, MDR_ID_CTL_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
 	r = mdr_packf(&echo2, "u64:i8:u16:b:s", 111, -111, 111,
@@ -309,7 +309,7 @@ main()
 	printf("unpackf:dstr: string == %s\n", dstr);
 
 	r = mdr_pack_hdr(&echo3, buf_echo3, sizeof(buf_echo3), 0,
-	    MDR_NS_ECHO, MDR_ID_ECHO, 0);
+	    MDR_NS_CTL, MDR_ID_CTL_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
 	r = mdr_pack_bytes(&echo3, str5, strlen(str5));
