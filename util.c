@@ -237,7 +237,7 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 	if ((buf = malloc(max)) == NULL)
 		return -1;
 	argvlen = 16;
-	if ((argv = malloc(argvlen * sizeof(char *))) == NULL)
+	if ((argv = reallocarray(NULL, argvlen, sizeof(char *))) == NULL)
 		return -1;
 
 	for (;;) {

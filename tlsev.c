@@ -184,7 +184,7 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 		return -1;
 
 	RB_INIT(&l->peer_tree);
-	l->lsock = malloc(sizeof(int) * l->lsock_len);
+	l->lsock = reallocarray(NULL, sizeof(int), l->lsock_len);
 	if (l->lsock == NULL) {
 		idxheap_free(&l->tlsev_store);
 		return -1;
@@ -193,7 +193,7 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 #ifdef __OpenBSD__
 	l->max_events = l->max_clients + l->lsock_len;
 	l->max_ch = l->max_events;
-	l->ch = malloc(sizeof(struct kevent) * l->max_ch);
+	l->ch = reallocarray(NULL, sizeof(struct kevent), l->max_ch);
 	if (l->ch == NULL) {
 		free(l->lsock);
 		idxheap_free(&l->tlsev_store);
