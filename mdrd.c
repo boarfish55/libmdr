@@ -61,11 +61,14 @@ struct {
 	uint64_t listen_backlog;
 	uint64_t prefork;
 	uint64_t max_clients;
+	uint64_t max_conn_per_ip;
 	uint64_t socket_timeout_min;
 	uint64_t socket_timeout_max;
 	uint64_t max_payload_size;
 	uint64_t max_cert_size;
 	int      use_rcv_lowat;
+	uint64_t rcvbuf;
+	uint64_t sndbuf;
 
 	uint64_t **allowed_mdr_namespaces;
 
@@ -86,11 +89,14 @@ struct {
 	128,
 	4,
 	1000,
+	100,
 	2,
 	10,
 	16384,
 	4096,
 	1,
+	0,
+	0,
 	NULL,
 	NULL,
 	"_mdrd",
@@ -167,6 +173,12 @@ struct flatconf flatconf_vars[] = {
 		sizeof(mdrd_conf.max_clients)
 	},
 	{
+		"max_conn_per_ip",
+		FLATCONF_ULONG,
+		&mdrd_conf.max_conn_per_ip,
+		sizeof(mdrd_conf.max_conn_per_ip)
+	},
+	{
 		"socket_timeout_min",
 		FLATCONF_ULONG,
 		&mdrd_conf.socket_timeout_min,
@@ -195,6 +207,18 @@ struct flatconf flatconf_vars[] = {
 		FLATCONF_BOOLINT,
 		&mdrd_conf.use_rcv_lowat,
 		sizeof(mdrd_conf.use_rcv_lowat)
+	},
+	{
+		"rcvbuf",
+		FLATCONF_ULONG,
+		&mdrd_conf.rcvbuf,
+		sizeof(mdrd_conf.rcvbuf)
+	},
+	{
+		"sndbuf",
+		FLATCONF_ULONG,
+		&mdrd_conf.sndbuf,
+		sizeof(mdrd_conf.sndbuf)
 	},
 	{
 		"allowed_mdr_namespaces",
@@ -635,7 +659,9 @@ run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
 
 	if (tlsev_init(&listener, ctx, lsock, lsock_len,
 	    mdrd_conf.socket_timeout_min,
-	    mdrd_conf.socket_timeout_max, mdrd_conf.max_clients,
+	    mdrd_conf.socket_timeout_max,
+	    mdrd_conf.max_clients,
+	    mdrd_conf.max_conn_per_ip,
 	    mdrd_conf.use_rcv_lowat,
 	    ssl_data_idx, &daemon_in_cb, &free_daemon_in_cb_data) == -1) {
 		xlog_strerror(LOG_ERR, errno, "tlsev_init");
@@ -659,14 +685,32 @@ get_listen_socket(int domain, int type, unsigned short port)
 	struct sockaddr_in6 sa6;
 	struct sockaddr_in  sa;
 	int                 one = 1;
+	int                 bufsz;
 
 	if ((fd = socket(domain, type, 0)) == -1) {
 		xlog_strerror(LOG_ERR, errno, "socket");
 		return -1;
 	}
 	if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)) == -1) {
-		xlog_strerror(LOG_ERR, errno, "socket");
+		xlog_strerror(LOG_ERR, errno, "setsockopt");
 		return -1;
+	}
+
+	if (mdrd_conf.rcvbuf > 0) {
+		bufsz = (mdrd_conf.rcvbuf >= INT_MAX) ? 0 : mdrd_conf.rcvbuf;
+		if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF,
+		    &bufsz, sizeof(bufsz)) == -1) {
+			xlog_strerror(LOG_ERR, errno, "setsockopt");
+			return -1;
+		}
+	}
+	if (mdrd_conf.sndbuf > 0) {
+		bufsz = (mdrd_conf.sndbuf >= INT_MAX) ? 0 : mdrd_conf.sndbuf;
+		if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF,
+		    &bufsz, sizeof(bufsz)) == -1) {
+			xlog_strerror(LOG_ERR, errno, "setsockopt");
+			return -1;
+		}
 	}
 
 	if (domain == AF_INET6) {

@@ -16,6 +16,7 @@ enum xerr_space {
 enum xerr_code {
 	XLOG_SUCCESS = 0,
 	XLOG_EOF,          /* EOF on a pipe/socket */
+	XLOG_POLICY,       /* Policy violation */
 	XLOG_INVAL,        /* An invalid value was obtained */
 	XLOG_NOENT,        /* Entity not found */
 	XLOG_IO,           /* IO error */

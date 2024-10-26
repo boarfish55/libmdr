@@ -8,12 +8,24 @@ key_file = "/home/plalonde/prog/mdr/ca/private/overnet_key.pem"
 port = 9790
 listen_backlog = 1024
 prefork = 4
+
+# Maximum number of concurrent client connections per fork
 max_clients = 10000
+
+# Maximum number of concurrent client connections some the same IP address,
+# per fork. This can be useful to prevent abusive clients from using up
+# all connection slots from max_clients.
+max_conn_per_ip = 25
 
 # When receiving an incomplete TLS record, the SO_RCVLOWAT socket option
 # will be used on the socket to ensure all remaining bytes are buffered
 # before waking on read on that socket.
 use_rcv_lowat = true
+
+# The TCP SO_RCVBUF and SO_SNDBUF socket options. If set to 0, we leave it
+# up to the operating system to decide and auto-tune.
+rcvbuf = 0
+sndbuf = 0
 
 socket_timeout_min = 3
 socket_timeout_max = 300

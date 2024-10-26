@@ -17,6 +17,26 @@
 #include "idxheap.h"
 
 static int
+tlsev_peer_tree_cmp(struct tlsev_peer *p1, struct tlsev_peer *p2)
+{
+	if (p1->sa_family - p2->sa_family != 0)
+		return p1->sa_family - p2->sa_family;
+
+	if (p1->sa_family == AF_INET) {
+		if (p1->addr.v4.s_addr > p2->addr.v4.s_addr)
+			return 1;
+		else if (p1->addr.v4.s_addr < p2->addr.v4.s_addr)
+			return -1;
+		return 0;
+	}
+	return memcmp(&p1->addr.v6.s6_addr, &p2->addr.v6.s6_addr,
+	    sizeof(p1->addr.v6.s6_addr));
+}
+
+RB_PROTOTYPE(tlsev_peer_tree, tlsev_peer, entry, tlsev_peer_tree_cmp);
+RB_GENERATE(tlsev_peer_tree, tlsev_peer, entry, tlsev_peer_tree_cmp);
+
+static int
 tlsev_timeout_cmp(const void *k1, const void *k2)
 {
 	struct timespec *t1, *t2;
@@ -109,7 +129,8 @@ kq_ev_set(struct tlsev_listener *l, int fd, short filter, u_short flags)
 int
 tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
     size_t lsock_len, int socket_timeout_min, int socket_timeout_max,
-    int max_clients, int use_rcv_lowat, int ssl_data_idx,
+    uint32_t max_clients, uint16_t max_conn_per_ip, int use_rcv_lowat,
+    int ssl_data_idx,
     int (*in_cb)(struct tlsev *, const char *, size_t, void **),
     void (*in_cb_data_free)(void *))
 {
@@ -129,10 +150,13 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 		socket_timeout_max = 0;
 	if (socket_timeout_max < socket_timeout_min)
 		socket_timeout_max = socket_timeout_min;
-	if (max_clients < 0)
+	if (max_clients < 1)
 		max_clients = 1000;
 	else if (max_clients > TLSEV_MAX_CLIENTS)
 		max_clients = TLSEV_MAX_CLIENTS;
+
+	if (max_conn_per_ip < 1)
+		max_conn_per_ip = 10;
 
 	bzero(l, sizeof(struct tlsev_listener));
 	l->ctx = ctx;
@@ -145,6 +169,7 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 	l->in_cb_data_free = in_cb_data_free;
 
 	l->max_clients = max_clients;
+	l->max_conn_per_ip = max_conn_per_ip;
 	l->use_rcv_lowat = use_rcv_lowat;
 	l->accepting = 1;
 
@@ -158,6 +183,7 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 	    (void(*)(void *))&tlsev_free, &tlsev_hash))
 		return -1;
 
+	RB_INIT(&l->peer_tree);
 	l->lsock = malloc(sizeof(int) * l->lsock_len);
 	if (l->lsock == NULL) {
 		idxheap_free(&l->tlsev_store);
@@ -359,41 +385,76 @@ tlsev_bio_read_cb(BIO *b, int oper, const char *data, size_t len, int argi,
 	return ret;
 }
 
+
+static struct tlsev_peer *
+tlsev_peer_tree_find(struct tlsev_listener *l, struct sockaddr *peer)
+{
+	struct tlsev_peer find;
+
+	find.sa_family = peer->sa_family;
+	if (find.sa_family == AF_INET)
+		find.addr.v4.s_addr =
+		    ((struct sockaddr_in *)peer)->sin_addr.s_addr;
+	else
+		memcpy(&find.addr.v6.s6_addr,
+		    &((struct sockaddr_in6 *)peer)->sin6_addr.s6_addr,
+		    sizeof(find.addr.v6.s6_addr));
+	return RB_FIND(tlsev_peer_tree, &l->peer_tree, &find);
+}
+
 static int
 tlsev_create(struct tlsev_listener *l, int fd, SSL_CTX *ctx,
-    struct sockaddr_in6 *peer, socklen_t peerlen, struct xerr *e)
+    struct sockaddr *peer, socklen_t peerlen, struct xerr *e)
 {
-	struct tlsev *t;
+	struct tlsev      *t = NULL;
+	struct tlsev_peer *p = NULL;
+
+	if ((p = tlsev_peer_tree_find(l, peer)) != NULL) {
+		if (p->count >= l->max_conn_per_ip) {
+			return XERRF(e, XLOG_APP, XLOG_POLICY,
+			    "client IP reached max allowed connections");
+		}
+		p->count++;
+	}
 
 	/* Need to set non-blocking so SSL_accept() does not block */
-	if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1)
-		return XERRF(e, XLOG_ERRNO, errno, "fcntl");
+	if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1) {
+		XERRF(e, XLOG_ERRNO, errno, "fcntl");
+		goto fail;
+	}
 
-	if ((t = malloc(sizeof(struct tlsev))) == NULL)
-		return XERRF(e, XLOG_ERRNO, errno, "malloc");
+	if ((t = malloc(sizeof(struct tlsev))) == NULL) {
+		XERRF(e, XLOG_ERRNO, errno, "malloc");
+		goto fail;
+	}
 
 	bzero(t, sizeof(struct tlsev));
 	t->id = l->next_id++;
 	t->fd = fd;
 	t->listener = l;
 	t->wpending = 0;
+	bzero(&t->peer_addr, sizeof(t->peer_addr));
 	memcpy(&t->peer_addr, peer, peerlen);
+	t->peer_len = peerlen;
 
 	if ((t->r = BIO_new(BIO_s_mem())) == NULL) {
 		free(t);
-		return XERRF(e, XLOG_SSL, ERR_get_error(), "BIO_new");
+		XERRF(e, XLOG_SSL, ERR_get_error(), "BIO_new");
+		goto fail;
 	}
 	if ((t->w = BIO_new(BIO_s_mem())) == NULL) {
 		BIO_free(t->r);
 		free(t);
-		return XERRF(e, XLOG_SSL, ERR_get_error(), "BIO_new");
+		XERRF(e, XLOG_SSL, ERR_get_error(), "BIO_new");
+		goto fail;
 	}
 
 	if ((t->ssl = SSL_new(ctx)) == NULL) {
 		BIO_free(t->w);
 		BIO_free(t->r);
 		free(t);
-		return XERRF(e, XLOG_SSL, ERR_get_error(), "SSL_new");
+		XERRF(e, XLOG_SSL, ERR_get_error(), "SSL_new");
+		goto fail;
 	}
 	if (l->tlsev_data_idx >= 0)
 		SSL_set_ex_data(t->ssl, l->tlsev_data_idx, t);
@@ -406,7 +467,7 @@ tlsev_create(struct tlsev_listener *l, int fd, SSL_CTX *ctx,
 
 		if (setsockopt(t->fd, SOL_SOCKET, SO_RCVLOWAT,
 		    &t->rcvlowat, sizeof(t->rcvlowat)) == -1)
-			return XERRF(e, XLOG_ERRNO, errno, "setsockopt");
+			xlog_strerror(LOG_ERR, errno, "setsockopt: %d", t->fd);
 		BIO_set_callback_ex(t->r, &tlsev_bio_read_cb);
 		BIO_set_callback_arg(t->r, (char *)t);
 	} else
@@ -414,18 +475,47 @@ tlsev_create(struct tlsev_listener *l, int fd, SSL_CTX *ctx,
 
 	clock_gettime(CLOCK_MONOTONIC, &t->last_used_at);
 
+	if (p == NULL) {
+		if ((p = malloc(sizeof(struct tlsev_peer))) == NULL) {
+			tlsev_free(t);
+			XERRF(e, XLOG_ERRNO, errno, "malloc");
+			goto fail;
+		}
+
+		p->sa_family = t->peer_addr.sin6_family;
+		if (p->sa_family == AF_INET)
+			p->addr.v4.s_addr =
+			    ((struct sockaddr_in *)peer)->sin_addr.s_addr;
+		else
+			memcpy(&p->addr.v6.s6_addr,
+			    &((struct sockaddr_in6 *)peer)->sin6_addr.s6_addr,
+			    sizeof(p->addr.v6.s6_addr));
+		p->count = 1;
+		RB_INSERT(tlsev_peer_tree, &l->peer_tree, p);
+	}
+
 	if (idxheap_insert(&l->tlsev_store, t) == -1) {
 		tlsev_free(t);
-		return XERRF(e, XLOG_ERRNO, errno, "idxheap_insert");
+		XERRF(e, XLOG_ERRNO, errno, "idxheap_insert");
+		goto fail;
 	}
 
 	return 0;
+fail:
+	if (p != NULL) {
+		if (--p->count == 0) {
+			RB_REMOVE(tlsev_peer_tree, &l->peer_tree, p);
+			free(p);
+		}
+	}
+	return -1;
 }
 
 static int
 tlsev_close(struct tlsev_listener *l, struct tlsev *t)
 {
-	int r;
+	int                r;
+	struct tlsev_peer *p;
 
 	if (l->in_cb_data_free != NULL && t->in_cb_data != NULL) {
 		l->in_cb_data_free(t->in_cb_data);
@@ -434,6 +524,17 @@ tlsev_close(struct tlsev_listener *l, struct tlsev *t)
 
 	if ((struct tlsev *)idxheap_removek(&l->tlsev_store, t) != t)
 		abort();
+
+	if ((p = tlsev_peer_tree_find(l,
+	    (struct sockaddr *)&t->peer_addr)) != NULL) {
+		if (--p->count == 0) {
+			RB_REMOVE(tlsev_peer_tree, &l->peer_tree, p);
+			free(p);
+		}
+	} else {
+		xlog(LOG_ERR, NULL, "tlsev_close: could not find peer "
+		    "in tlsev_peer_tree for fd %d", t->fd);
+	}
 
 	xlog(LOG_INFO, NULL, "closing fd %d", t->fd);
 	if ((r = close(t->fd)) == -1)
@@ -701,7 +802,7 @@ tlsev_toggle_listen(struct tlsev_listener *l, int on)
 
 static int
 tlsev_new_client(struct tlsev_listener *l, int fd,
-    struct sockaddr_in6 *peer, socklen_t peerlen)
+    struct sockaddr *peer, socklen_t peerlen)
 {
 #ifndef __OpenBSD__
 	struct epoll_event   ev;
@@ -709,7 +810,7 @@ tlsev_new_client(struct tlsev_listener *l, int fd,
 	char                 hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
 	struct xerr          e;
 
-	if (getnameinfo((struct sockaddr *)&peer, peerlen, hbuf, sizeof(hbuf),
+	if (getnameinfo(peer, peerlen, hbuf, sizeof(hbuf),
 	    sbuf, sizeof(sbuf), NI_NUMERICHOST | NI_NUMERICSERV) == 0)
 		xlog(LOG_INFO, NULL, "new connection from %s:%s", hbuf, sbuf);
 
@@ -1031,7 +1132,8 @@ tlsev_poll(struct tlsev_listener *l)
 				continue;
 			}
 
-			if (tlsev_new_client(l, fd, &peer, peerlen) == -1)
+			if (tlsev_new_client(l, fd, (struct sockaddr *)&peer,
+			    peerlen) == -1)
 				close(fd);
 			continue;
 		}
