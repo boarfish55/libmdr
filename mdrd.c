@@ -1,4 +1,3 @@
-#include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -584,7 +583,6 @@ void
 load_keys()
 {
 	FILE        *f;
-	int          pkey_sz;
 	X509_LOOKUP *lookup;
 
 	if ((f = fopen(mdrd_conf.key_file, "r")) == NULL)
@@ -594,14 +592,6 @@ load_keys()
 		exit(1);
 	}
 	fclose(f);
-
-	if (!(pkey_sz = EVP_PKEY_size(priv_key))) {
-		ERR_print_errors_fp(stderr);
-		exit(1);
-	}
-
-	if (mlock(priv_key, pkey_sz) == -1)
-		err(1, "mlock");
 
 	if ((f = fopen(mdrd_conf.ca_file, "r")) == NULL)
 		err(1, "fopen");
@@ -868,6 +858,14 @@ main(int argc, char **argv)
 	SSL_CTX_set_cert_store(ctx, store);
 	SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
 	SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, verify_callback_daemon);
+
+	/*
+	 * Disable internal session caching since we prefork multiple processes
+	 * and clients may not hit the same process after reconnecting. If
+	 * we want resumption we'll use session tickets. See:
+	 *   SSL_CTX_set_tlsext_ticket_key_evp_cb(3SSL)
+	 */
+	SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_OFF);
 
 	if (SSL_CTX_use_certificate(ctx, ca_crt) != 1) {
 		xlog(LOG_ERR, NULL, "SSL_CTX_use_certificate: %s",
