@@ -1,3 +1,4 @@
+#include <sys/socket.h>
 #include <ctype.h>
 #include <err.h>
 #include <getopt.h>
@@ -16,14 +17,15 @@ int debug = 0;
 int delay = 0;
 int insecure = 0;
 int repeat = 1;
+int rcvbuf = 0;
 
 void
 usage()
 {
 	printf("%s: [-dhi] [-n <repeat>] [-t <tls target|->] "
-	    "[-k <key> -c <cert>]"
-	    " <send namespace:id:version> <format> <args>\n",
-	    program);
+	    "[-B <rcvbuf>] "
+	    "[-k <key> -c <cert>] "
+	    "<send namespace:id:version> <format> <args>\n", program);
 }
 
 void
@@ -230,6 +232,7 @@ do_tls(struct mdr *m, const char *target, const char *key_path,
 	BIO             *b;
 	SSL             *ssl;
 	int              i, j, r, len;
+	int              fd;
 	char            *buf;
 	size_t           buf_sz;
 	struct mdr       reply;
@@ -271,6 +274,13 @@ do_tls(struct mdr *m, const char *target, const char *key_path,
 
 	if (BIO_do_connect(b) <= 0)
 		ssl_err();
+
+	if (rcvbuf > 0) {
+		fd = BIO_get_fd(b, NULL);
+		if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF,
+		    &rcvbuf, sizeof(rcvbuf)) == -1)
+			err(1, "setsockopt");
+	}
 
 	if (BIO_do_handshake(b) <= 0)
 		ssl_err();
@@ -417,7 +427,7 @@ main(int argc, char **argv)
 	const char    *crt_path = NULL;
 	struct mdr     m;
 
-	while ((opt = getopt(argc, argv, "hdit:k:c:n:D:")) != -1) {
+	while ((opt = getopt(argc, argv, "hdit:k:c:n:D:B:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -436,6 +446,9 @@ main(int argc, char **argv)
 			break;
 		case 'c':
 			crt_path = optarg;
+			break;
+		case 'B':
+			rcvbuf = atoi(optarg);
 			break;
 		case 'n':
 			repeat = atoi(optarg);
