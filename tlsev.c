@@ -358,28 +358,21 @@ static long
 tlsev_bio_read_cb(BIO *b, int oper, const char *data, size_t len, int argi,
     long argl, int ret, size_t *read_bytes)
 {
-	int           want;
 	struct tlsev *t;
 
 	if (oper != (BIO_CB_READ|BIO_CB_RETURN))
 		return ret;
 
-	want = len - *read_bytes;
-	if (want < 1)
-		want = 1;
-
 	t = (struct tlsev *)BIO_get_callback_arg(b);
 
-	xlog(LOG_DEBUG, NULL, "%s: %lu/%lu bytes read/requested on fd %d",
-	    __func__, *read_bytes, len, (t == NULL) ? -1 : t->fd);
+	if (t != NULL) {
+		xlog(LOG_DEBUG, NULL,
+		    "%s: %lu/%lu bytes read/requested on fd %d",
+		    __func__, *read_bytes, len, (t == NULL) ? -1 : t->fd);
 
-	if (t != NULL && want != t->rcvlowat) {
-		xlog(LOG_DEBUG, NULL, "%s: updating SO_RCVLOWAT to %d on fd %d",
-		    __func__, want, t->fd);
-		t->rcvlowat = want;
-		if (setsockopt(t->fd, SOL_SOCKET, SO_RCVLOWAT,
-		    &want, sizeof(want)) == -1)
-			xlog_strerror(LOG_ERR, errno, "setsockopt: %d", t->fd);
+		t->tlswant = (len - *read_bytes < 1)
+		    ? 1
+		    : len - *read_bytes;
 	}
 
 	return ret;
@@ -462,12 +455,6 @@ tlsev_create(struct tlsev_listener *l, int fd, SSL_CTX *ctx,
 	SSL_set_accept_state(t->ssl);
 
 	if (l->use_rcv_lowat) {
-		/* The TLS header is 5 bytes */
-		t->rcvlowat = 5;
-
-		if (setsockopt(t->fd, SOL_SOCKET, SO_RCVLOWAT,
-		    &t->rcvlowat, sizeof(t->rcvlowat)) == -1)
-			xlog_strerror(LOG_ERR, errno, "setsockopt: %d", t->fd);
 		BIO_set_callback_ex(t->r, &tlsev_bio_read_cb);
 		BIO_set_callback_arg(t->r, (char *)t);
 	} else
@@ -644,9 +631,7 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		xlog(LOG_ERR, NULL, "%s: idxheap_update: returned NULL "
 		    "for fd %d", __func__, t->fd);
 
-	if ((pending = BIO_pending(t->w)) <= 0)
-		return XERRF(e, XLOG_SSL, ERR_get_error(), "BIO_pending");
-
+	pending = BIO_pending(t->w);
 	if (t->retry_buf != NULL) {
 		n = write(t->fd, t->retry_buf_pos, t->retry_len);
 		if (n != -1)
@@ -676,7 +661,7 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		    ? sizeof(buf)
 		    : pending);
 		if (r <= 0)
-			return XERRF(e, XLOG_SSL, ERR_get_error(), "BIO_read");
+			break;
 		pending -= r;
 
 		n = write(t->fd, buf, r);
@@ -701,8 +686,7 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 			r = BIO_read(t->w, t->retry_buf + t->retry_len,
 			    pending);
 			if (r <= 0)
-				return XERRF(e, XLOG_SSL, ERR_get_error(),
-				    "BIO_read");
+				break;
 			t->retry_len += r;
 			pending -= r;
 			/*
@@ -870,6 +854,15 @@ tlsev_ev_read(struct tlsev_listener *l, struct tlsev *t)
 		 */
 		xlog(LOG_DEBUG, NULL,
 		    "remote is shutting down on fd %d", t->fd);
+	}
+
+	if (t->tlswant != t->rcvlowat) {
+		xlog(LOG_DEBUG, NULL, "%s: updating SO_RCVLOWAT to %d on fd %d",
+		    __func__, t->tlswant, t->fd);
+		t->rcvlowat = t->tlswant;
+		if (setsockopt(t->fd, SOL_SOCKET, SO_RCVLOWAT,
+		    &t->tlswant, sizeof(t->tlswant)) == -1)
+			xlog_strerror(LOG_ERR, errno, "setsockopt: %d", t->fd);
 	}
 
 	/*

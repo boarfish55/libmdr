@@ -85,6 +85,7 @@ struct tlsev {
 	int                    wpending;
 	int                    reads_paused;
 	int                    rcvlowat;
+	int                    tlswant;
 	int                    drain;
 	struct timespec        last_used_at;
 
