@@ -66,6 +66,7 @@ struct {
 	uint64_t max_payload_size;
 	uint64_t max_cert_size;
 	int      use_rcv_lowat;
+	int      so_debug;
 	uint64_t rcvbuf;
 	uint64_t sndbuf;
 
@@ -93,6 +94,7 @@ struct {
 	10,
 	16384,
 	4096,
+	0,
 	0,
 	0,
 	0,
@@ -206,6 +208,12 @@ struct flatconf flatconf_vars[] = {
 		FLATCONF_BOOLINT,
 		&mdrd_conf.use_rcv_lowat,
 		sizeof(mdrd_conf.use_rcv_lowat)
+	},
+	{
+		"so_debug",
+		FLATCONF_BOOLINT,
+		&mdrd_conf.so_debug,
+		sizeof(mdrd_conf.so_debug)
 	},
 	{
 		"rcvbuf",
@@ -686,8 +694,31 @@ get_listen_socket(int domain, int type, unsigned short port)
 		return -1;
 	}
 
+#ifdef __OpenBSD__
+	if (mdrd_conf.so_debug &&
+	    setsockopt(fd, SOL_SOCKET, SO_DEBUG, &one, sizeof(one)) == -1) {
+		xlog_strerror(LOG_ERR, errno, "setsockopt");
+		return -1;
+	}
+#endif
+
 	if (mdrd_conf.rcvbuf > 0) {
 		bufsz = (mdrd_conf.rcvbuf >= INT_MAX) ? 0 : mdrd_conf.rcvbuf;
+#ifdef __OpenBSD__
+		if (mdrd_conf.use_rcv_lowat &&
+		    bufsz < mdrd_conf.max_payload_size + (1<<14)) {
+			/*
+			 * OpenBSD currently has an issue where a socket
+			 * with SO_RCVLOWAT and a small window may stall:
+			 *   https://marc.info/?l=openbsd-bugs&m=173368617609288&w=2
+			 * Until this is resolved, make sure our buffer can
+			 * hold at least a full payload and enough extra to
+			 * advertise a window when the scaling factor is
+			 * 14 (max).
+			 */
+			bufsz = mdrd_conf.max_payload_size + (1<<14);
+		}
+#endif
 		if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF,
 		    &bufsz, sizeof(bufsz)) == -1) {
 			xlog_strerror(LOG_ERR, errno, "setsockopt");

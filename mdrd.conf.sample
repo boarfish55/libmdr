@@ -22,6 +22,10 @@ max_conn_per_ip = 25
 # before waking on read on that socket.
 use_rcv_lowat = true
 
+# OpenBSD only; sets the SO_DEBUG option on the listening socket, which
+# is inherited on accept()
+so_debug = false
+
 # The TCP SO_RCVBUF and SO_SNDBUF socket options. If set to 0, we leave it
 # up to the operating system to decide and auto-tune.
 rcvbuf = 0
