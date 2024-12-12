@@ -705,7 +705,8 @@ get_listen_socket(int domain, int type, unsigned short port)
 	if (mdrd_conf.rcvbuf > 0) {
 		bufsz = (mdrd_conf.rcvbuf >= INT_MAX) ? 0 : mdrd_conf.rcvbuf;
 #ifdef __OpenBSD__
-		if (mdrd_conf.use_rcv_lowat &&
+		if (bufsz > 0 &&
+		    mdrd_conf.use_rcv_lowat &&
 		    bufsz < mdrd_conf.max_payload_size + (1<<14)) {
 			/*
 			 * OpenBSD currently has an issue where a socket
