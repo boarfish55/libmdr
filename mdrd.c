@@ -707,17 +707,17 @@ get_listen_socket(int domain, int type, unsigned short port)
 #ifdef __OpenBSD__
 		if (bufsz > 0 &&
 		    mdrd_conf.use_rcv_lowat &&
-		    bufsz < mdrd_conf.max_payload_size + (1<<14)) {
+		    bufsz < (2<<14)) {
 			/*
 			 * OpenBSD currently has an issue where a socket
 			 * with SO_RCVLOWAT and a small window may stall:
 			 *   https://marc.info/?l=openbsd-bugs&m=173368617609288&w=2
 			 * Until this is resolved, make sure our buffer can
-			 * hold at least a full payload and enough extra to
-			 * advertise a window when the scaling factor is
-			 * 14 (max).
+			 * hold at least a full TLS record and enough extra to
+			 * advertise a non-zero window when the scaling factor
+			 * is 14 (max).
 			 */
-			bufsz = mdrd_conf.max_payload_size + (1<<14);
+			bufsz = 2<<14;
 		}
 #endif
 		if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF,

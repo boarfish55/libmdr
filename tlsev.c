@@ -857,9 +857,14 @@ tlsev_ev_read(struct tlsev_listener *l, struct tlsev *t)
 	}
 
 	if (t->tlswant != t->rcvlowat) {
+		/*
+		 * Most of the time a TLS record is limited to 2^14 bytes.
+		 * We probably don't want to make our low watermark higher
+		 * than this anyway.
+		 */
+		t->rcvlowat = (t->tlswant > (1<<14)) ? 1<<14 : t->tlswant;
 		xlog(LOG_DEBUG, NULL, "%s: updating SO_RCVLOWAT to %d on fd %d",
-		    __func__, t->tlswant, t->fd);
-		t->rcvlowat = t->tlswant;
+		    __func__, t->rcvlowat, t->fd);
 		if (setsockopt(t->fd, SOL_SOCKET, SO_RCVLOWAT,
 		    &t->tlswant, sizeof(t->tlswant)) == -1)
 			xlog_strerror(LOG_ERR, errno, "setsockopt: %d", t->fd);
