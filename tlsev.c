@@ -13,6 +13,7 @@
 #include <strings.h>
 #include <stdio.h>
 #include <unistd.h>
+#include "counters.h"
 #include "tlsev.h"
 #include "idxheap.h"
 
@@ -532,6 +533,7 @@ tlsev_close(struct tlsev_listener *l, struct tlsev *t)
 		X509_free(t->peer_cert);
 	tlsev_free(t);
 	l->active_clients--;
+	counters_decr(COUNTER_ACTIVE_CLIENTS);
 	return r;
 }
 
@@ -803,12 +805,16 @@ tlsev_new_client(struct tlsev_listener *l, int fd,
 		return -1;
 	}
 
-	if (l->accepting && ++l->active_clients >= l->max_clients) {
-		xlog(LOG_WARNING, NULL, "max_clients reached (%d); "
-		    "not accepting new connections", l->active_clients);
-		l->accepting = 0;
-		if (tlsev_toggle_listen(l, 0))
-			l->shutdown_triggered = 1;
+	if (l->accepting) {
+		counters_incr(COUNTER_ACTIVE_CLIENTS);
+		counters_incr(COUNTER_TOTAL_CLIENTS);
+		if (++l->active_clients >= l->max_clients) {
+			xlog(LOG_WARNING, NULL, "max_clients reached (%d); "
+			    "not accepting new connections", l->active_clients);
+			l->accepting = 0;
+			if (tlsev_toggle_listen(l, 0))
+				l->shutdown_triggered = 1;
+		}
 	}
 
 #ifdef __OpenBSD__
@@ -997,8 +1003,7 @@ tlsev_ev_write(struct tlsev_listener *l, struct tlsev *t)
 				return -1;
 			}
 #endif
-			// TODO: count the times we
-			// paused reads; then remove log
+			counters_incr(COUNTER_READ_PAUSES);
 			xlog(LOG_DEBUG, NULL, "pausing reads for fd %d", t->fd);
 		}
 		/*
@@ -1119,11 +1124,14 @@ tlsev_poll(struct tlsev_listener *l)
 					continue;
 
 				if (errno == EWOULDBLOCK) {
-					if (nev == 1)
-						// TODO: track how many times
-						// we unblock just for an
-						// accept() we didn't handle
-						;
+					if (nev == 1) {
+						/*
+						 * Track how many times we
+						 * wake up just for an accept()
+						 * we didn't handle.
+						 */
+						counters_incr(COUNTER_WAKE_FOR_ACCEPT);
+					}
 					continue;
 				}
 				xlog_strerror(LOG_ERR, errno, "accept");
@@ -1155,10 +1163,12 @@ tlsev_poll(struct tlsev_listener *l)
 			xlog(LOG_ERR, NULL,
 			    "tlsev_get on fd %d not found", evfd);
 
-			if (close(evfd) == -1)
+			if (close(evfd) == -1) {
 				xlog_strerror(LOG_ERR, errno, "close");
-			else
+			} else {
 				l->active_clients--;
+				counters_decr(COUNTER_ACTIVE_CLIENTS);
+			}
 			continue;
 		}
 

@@ -14,7 +14,7 @@ MDRC_SRCS = mdr.c mdrc.c
 MDRC_OBJS = $(MDRC_SRCS:.c=.o)
 
 MDRD_SRCS = mdr.c mdrd.c mdr_mdrd.c idxheap.c tlsev.c util.c flatconf.c \
-	xlog.c
+	xlog.c counters.c
 MDRD_OBJS = $(MDRD_SRCS:.c=.o)
 
 MDRTESTS_SRCS = mdr.c mdr_tests.c

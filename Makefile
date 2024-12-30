@@ -3,9 +3,10 @@ CFLAGS = -Wall -Wno-format -g
 LIBS = -lcrypto -lssl
 
 SRCS = mdr.c mdrc.c mdr_mdrd.c mdr_tests.c flatconf.c idxheap.c tlsev.c \
-	util.c xlog.c
+	util.c xlog.c counters.c
 
-MDRD_OBJS = flatconf.o idxheap.o mdr.o mdr_mdrd.o tlsev.o util.o xlog.o
+MDRD_OBJS = flatconf.o idxheap.o mdr.o mdr_mdrd.o tlsev.o util.o xlog.o \
+	counters.o
 YACC=yacc
 
 all: .depend mdrc mdr_tests mdrd mdrd_backend_echo

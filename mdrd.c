@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "counters.h"
 #include "flatconf.h"
 #include "mdr.h"
 #include "mdr_mdrd.h"
@@ -51,6 +52,7 @@ struct {
 	char *gid;
 	int   enable_coredumps;
 
+	char  counters_file[PATH_MAX];
 	char  pid_file[PATH_MAX];
 	char  ca_file[PATH_MAX];
 	char  crl_file[PATH_MAX];
@@ -81,6 +83,7 @@ struct {
 	"_mdrd",
 	"_mdrd",
 	0,
+	"/mdrd-counters",
 	"/var/run/mdrd.pid",
 	"ca/overnet.pem",
 	"ca/overnet.crl",
@@ -130,6 +133,12 @@ struct flatconf flatconf_vars[] = {
 		FLATCONF_STRING,
 		mdrd_conf.pid_file,
 		sizeof(mdrd_conf.pid_file)
+	},
+	{
+		"counters_file",
+		FLATCONF_STRING,
+		mdrd_conf.counters_file,
+		sizeof(mdrd_conf.counters_file)
 	},
 	{
 		"ca_file",
@@ -771,6 +780,7 @@ main(int argc, char **argv)
 	int                lsock[2];
 	size_t             lsock_len = 0;
 	int                n_children, i;
+	int                cntra_idx;
 	int                wstatus;
 	pid_t              pid;
 	struct sigaction   act;
@@ -804,6 +814,28 @@ main(int argc, char **argv)
 		errx(1, "flatconf: memory exchaused by parser");
 	default:
 		err(1, "flatconf_read");
+	}
+
+	if (argc > optind) {
+		if (strcmp(argv[optind], "shutdown") == 0) {
+			usage();
+			errx(1, "not implemented");
+		} else if (strcmp(argv[optind], "stat") == 0) {
+			/*
+			 * Block most common signals to avoid exiting while
+			 * holding the counter read lock.
+			 */
+			if (sigaction(SIGINT, &act, NULL) == -1 ||
+			    sigaction(SIGHUP, &act, NULL) == -1 ||
+			    sigaction(SIGQUIT, &act, NULL) == -1 ||
+			    sigaction(SIGTERM, &act, NULL) == -1) {
+				err(1, "sigaction");
+			}
+			counters_read(mdrd_conf.counters_file);
+			exit(0);
+		}
+		usage();
+		errx(1, "unknown command");
 	}
 
 	if (mdrd_conf.backend_argv == NULL)
@@ -931,6 +963,10 @@ main(int argc, char **argv)
 
 	backend_reader.cb = &backend_cb;
 	if (mdrd_conf.prefork <= 0 || foreground) {
+		if ((counters_init(mdrd_conf.counters_file, 1)) == -1) {
+			xlog_strerror(LOG_ERR, errno, "counters_init");
+			exit(1);
+		}
 		if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
 		    &backend_wfd, &backend_reader.fd, mdrd_conf.backend_uid,
 		    mdrd_conf.backend_gid, xerrz(&e)) == -1) {
@@ -940,8 +976,12 @@ main(int argc, char **argv)
 		exit(run(ctx, lsock, lsock_len));
 	}
 
-	for (n_children = 0; n_children < mdrd_conf.prefork;
-	    n_children++) {
+	if ((counters_init(mdrd_conf.counters_file, mdrd_conf.prefork)) == -1) {
+		xlog_strerror(LOG_ERR, errno, "counters_init");
+		exit(1);
+	}
+
+	for (n_children = 0; n_children < mdrd_conf.prefork; n_children++) {
 		if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
 		    &backend_wfd, &backend_reader.fd, mdrd_conf.backend_uid,
 		    mdrd_conf.backend_gid, xerrz(&e)) == -1) {
@@ -949,6 +989,7 @@ main(int argc, char **argv)
 			exit(1);
 		}
 
+		counters_set_arena(n_children);
 		if ((pid = fork()) == -1) {
 			xlog_strerror(LOG_ERR, errno, "fork");
 			exit(1);
@@ -956,6 +997,7 @@ main(int argc, char **argv)
 			setproctitle("listener");
 			exit(run(ctx, lsock, lsock_len));
 		}
+		counters_set_pid(pid);
 
 		close(backend_reader.fd);
 		close(backend_wfd);
@@ -966,6 +1008,13 @@ main(int argc, char **argv)
 	for (;;) {
 		pid = waitpid(-1, &wstatus, 0);
 		if (pid != -1 && !shutdown_triggered) {
+			if ((cntra_idx = counters_find_arena(pid)) == -1) {
+				xlog(LOG_ERR, NULL, "%s: failed to find "
+				    "counter arena for pid %d", __func__, pid);
+				exit(1);
+			}
+			counters_set_arena(cntra_idx);
+			counters_set_pid(-1);
 			n_children--;
 			if (WIFEXITED(wstatus))
 				xlog(LOG_WARNING, NULL,
@@ -984,12 +1033,14 @@ main(int argc, char **argv)
 				exit(1);
 			}
 
+			counters_incr(COUNTER_RESTARTS);
 			if ((pid = fork()) == -1) {
 				xlog_strerror(LOG_ERR, errno, "fork");
 			} else if (pid == 0) {
 				setproctitle("listener");
 				exit(run(ctx, lsock, lsock_len));
 			} else {
+				counters_set_pid(pid);
 				n_children++;
 			}
 
