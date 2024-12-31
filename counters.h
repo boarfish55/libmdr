@@ -13,23 +13,26 @@ enum {
 	COUNTER_LAST
 };
 
-struct counters_arena {
-	pid_t    pid;
-	int      b;
-	sem_t    lock_a;
-	uint64_t c_a[COUNTER_LAST];
-	sem_t    lock_b;
-	uint64_t c_b[COUNTER_LAST];
+struct counter {
+	uint64_t v;
+	sem_t    lock;
 };
 
-int  counters_init(const char *, int);
-void counters_read(const char *);
-void counters_add(int, uint64_t);
-void counters_sub(int, uint64_t);
-void counters_incr(int);
-void counters_decr(int);
-int  counters_set_arena(int);
-void counters_set_pid(pid_t);
-int  counters_find_arena(pid_t);
+struct counters_arena {
+	pid_t          pid;
+	struct counter c[COUNTER_LAST];
+};
+
+int      counters_init(int);
+void     counters_read(const char *);
+uint64_t counters_get(int);
+void     counters_add(int, uint64_t);
+void     counters_sub(int, uint64_t);
+void     counters_incr(int);
+void     counters_decr(int);
+int      counters_arena_count();
+int      counters_set_arena(int);
+void     counters_set_pid(pid_t);
+int      counters_find_arena(pid_t);
 
 #endif

@@ -1,5 +1,7 @@
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 #include <errno.h>
 #include <err.h>
 #include <fcntl.h>
@@ -8,36 +10,33 @@
 #include <unistd.h>
 #include "counters.h"
 #include "counter_names.h"
+#include "util.h"
 
 int                    arena_count = 0;
 struct counters_arena *arenas;
 struct counters_arena *current_arena;
 
 int
-counters_init(const char *path, int n_arenas)
+counters_init(int n_arenas)
 {
 	struct counters_arena *a;
-	int                    i, fd;
+	int                    i, c;
 
 	arena_count = n_arenas;
-	if ((fd = shm_open(path, O_CREAT|O_RDWR, 0600)) == -1)
-		return -1;
-
-	if (ftruncate(fd, sizeof(struct counters_arena) * n_arenas) == -1)
-		return -1;
 
 	arenas = mmap(NULL, sizeof(struct counters_arena) * n_arenas,
-	    PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+	    PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);
 	if (arenas == MAP_FAILED)
 		return -1;
 	current_arena = arenas;
 
 	for (a = arenas, i = 0; i < n_arenas; i++, a++) {
-		bzero(a, sizeof(struct counters_arena));
-		if (sem_init(&a->lock_a, 1, 1) == -1)
-			return -1;
-		if (sem_init(&a->lock_b, 1, 1) == -1)
-			return -1;
+		a->pid = 0;
+		for (c = 0; c < COUNTER_LAST; c++) {
+			a->c[c].v = 0;
+			if (sem_init(&a->c[c].lock, 1, 1) == -1)
+				return -1;
+		}
 	}
 
 	return 0;
@@ -46,48 +45,40 @@ counters_init(const char *path, int n_arenas)
 void
 counters_read(const char *path)
 {
-	struct counters_arena *a, *ap;
-	int                    fd, c;
-	struct stat            st;
+	int                fd, c;
+	struct sockaddr_un addr;
+	uint64_t           v[COUNTER_LAST], v_all[COUNTER_LAST];
+	ssize_t            r;
 
-	if ((fd = shm_open(path, O_CREAT|O_RDWR, 0600)) == -1)
-		err(1, "shm_open");
+	if ((fd = socket(AF_LOCAL, SOCK_STREAM, 0)) == -1)
+		err(1, "socket");
 
-	if (fstat(fd, &st) == -1)
-		err(1, "fstat");
+	bzero(&addr, sizeof(addr));
+	addr.sun_family = AF_LOCAL;
+	strlcpy(addr.sun_path, path, sizeof(addr.sun_path));
 
-	printf("mdrd counters size: %lu (%lu per arena)\n", st.st_size,
-	    sizeof(struct counters_arena));
+	if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) == -1)
+		err(1, "connect");
 
-	a = mmap(NULL, st.st_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
-	if (a == MAP_FAILED)
-		err(1, "mmap");
+	bzero(v_all, sizeof(v_all));
+	for (;;) {
+		r = readall(fd, v, sizeof(v));
+		if (r == -1)
+			err(1, "readall");
+		if (r == 0)
+			break;
 
-	for (ap = a;
-	    ap - a < (st.st_size / sizeof(struct counters_arena)); ap++) {
-		printf(
-		    "%-20s: %d\n"
-		    "%-20s: %d\n",
-		    "pid", ap->pid, "b", ap->b);
+		if (r < sizeof(v))
+			errx(1, "readall: short read on counters: %lu < %lu",
+			    r, sizeof(v));
 
-		if (ap->b) {
-			if (sem_wait(&ap->lock_b) == -1)
-				err(1, "sem_wait");
-			for (c = 0; c < COUNTER_LAST; c++)
-				printf("%-20s: %lu\n", counter_names[c],
-				    ap->c_b[c]);
-			if (sem_post(&ap->lock_b) == -1)
-				err(1, "sem_post");
-		} else {
-			if (sem_wait(&ap->lock_a) == -1)
-				err(1, "sem_wait");
-			for (c = 0; c < COUNTER_LAST; c++)
-				printf("%-20s: %lu\n", counter_names[c],
-				    ap->c_a[c]);
-			if (sem_post(&ap->lock_a) == -1)
-				err(1, "sem_post");
-		}
+		for (c = 0; c < COUNTER_LAST; c++)
+			v_all[c] += v[c];
 	}
+	close(fd);
+
+	for (c = 0; c < COUNTER_LAST; c++)
+		printf("%-20s: %lu\n", counter_names[c], v_all[c]);
 }
 
 int
@@ -99,6 +90,12 @@ counters_set_arena(int idx)
 	}
 	current_arena = arenas + idx;
 	return 0;
+}
+
+int
+counters_arena_count()
+{
+	return arena_count;
 }
 
 void
@@ -118,73 +115,42 @@ counters_find_arena(pid_t pid)
 	return -1;
 }
 
-/*
- * We pass the counter being modified so we don't have to copy all of them.
- * current_arena->b was already seen by the reader before we lock so we
- * can flip it while holding the lock.
- */
-static void
-counters_flip(int c)
+uint64_t
+counters_get(int c)
 {
-	if (current_arena->b) {
-		if (sem_wait(&current_arena->lock_a) == -1)
-			abort();
-		current_arena->c_a[c] = current_arena->c_b[c];
-		current_arena->b = 0;
-	} else {
-		if (sem_wait(&current_arena->lock_b) == -1)
-			abort();
-		current_arena->c_b[c] = current_arena->c_a[c];
-		current_arena->b = 1;
-	}
+	uint64_t v;
+
+	if (sem_wait(&current_arena->c[c].lock) == -1)
+		abort();
+	v = current_arena->c[c].v;
+	if (sem_post(&current_arena->c[c].lock) == -1)
+		abort();
+	return v;
 }
 
 void
 counters_add(int c, uint64_t v)
 {
-	if (sem_trywait((current_arena->b)
-	    ? &current_arena->lock_b
-	    : &current_arena->lock_a) == -1) {
-		if (errno != EAGAIN)
-			abort();
-		counters_flip(c);
-	}
-	if (current_arena->b) {
-		current_arena->c_b[c] += v;
-		if (sem_post(&current_arena->lock_b) == -1)
-			abort();
-	} else {
-		current_arena->c_a[c] += v;
-		if (sem_post(&current_arena->lock_a) == -1)
-			abort();
-	}
+	if (sem_wait(&current_arena->c[c].lock) == -1)
+		abort();
+	current_arena->c[c].v += v;
+	if (sem_post(&current_arena->c[c].lock) == -1)
+		abort();
 }
 
 void
 counters_sub(int c, uint64_t v)
 {
-	if (sem_trywait((current_arena->b)
-	    ? &current_arena->lock_b
-	    : &current_arena->lock_a) == -1) {
-		if (errno != EAGAIN)
-			abort();
-		counters_flip(c);
-	}
-	if (current_arena->b) {
-		if (v >= current_arena->c_b[c])
-			current_arena->c_b[c] = 0;
-		else
-			current_arena->c_b[c] -= v;
-		if (sem_post(&current_arena->lock_b) == -1)
-			abort();
-	} else {
-		if (v >= current_arena->c_a[c])
-			current_arena->c_a[c] = 0;
-		else
-			current_arena->c_a[c] -= v;
-		if (sem_post(&current_arena->lock_a) == -1)
-			abort();
-	}
+	if (sem_wait(&current_arena->c[c].lock) == -1)
+		abort();
+
+	if (v >= current_arena->c[c].v)
+		current_arena->c[c].v = 0;
+	else
+		current_arena->c[c].v -= v;
+
+	if (sem_post(&current_arena->c[c].lock) == -1)
+		abort();
 }
 
 void

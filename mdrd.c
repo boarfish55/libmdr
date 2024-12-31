@@ -1,6 +1,7 @@
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <netinet/in.h>
 #include <openssl/err.h>
@@ -52,7 +53,7 @@ struct {
 	char *gid;
 	int   enable_coredumps;
 
-	char  counters_file[PATH_MAX];
+	char  counters_sock[PATH_MAX];
 	char  pid_file[PATH_MAX];
 	char  ca_file[PATH_MAX];
 	char  crl_file[PATH_MAX];
@@ -83,7 +84,7 @@ struct {
 	"_mdrd",
 	"_mdrd",
 	0,
-	"/mdrd-counters",
+	"/var/run/mdrd_counters.sock",
 	"/var/run/mdrd.pid",
 	"ca/overnet.pem",
 	"ca/overnet.crl",
@@ -135,10 +136,10 @@ struct flatconf flatconf_vars[] = {
 		sizeof(mdrd_conf.pid_file)
 	},
 	{
-		"counters_file",
+		"counters_sock",
 		FLATCONF_STRING,
-		mdrd_conf.counters_file,
-		sizeof(mdrd_conf.counters_file)
+		mdrd_conf.counters_sock,
+		sizeof(mdrd_conf.counters_sock)
 	},
 	{
 		"ca_file",
@@ -770,6 +771,131 @@ get_listen_socket(int domain, int type, unsigned short port)
 }
 
 void
+counters_sig_handler(int sig)
+{
+	if (sig == SIGCHLD) {
+		while (waitpid(-1, NULL, WNOHANG) > 0);
+		return;
+	}
+	shutdown_triggered = 1;
+	exit(0);
+}
+
+int
+counter_reader()
+{
+	int                lsock, sock, i, c;
+	ssize_t            w;
+	struct sockaddr_un saddr;
+	struct timeval     timeout = {1, 0};
+	pid_t              pid;
+	uint64_t           v[COUNTER_LAST];
+	struct sigaction   act;
+
+	if ((pid = fork()) == -1) {
+		xlog_strerror(LOG_ERR, errno, "fork");
+		return -1;
+	}
+	if (pid > 0)
+		return 0;
+
+	setproctitle("counters");
+	xlog_init(program, NULL, NULL, 1);
+
+	if ((lsock = socket(AF_LOCAL, SOCK_STREAM, 0)) == -1) {
+		xlog_strerror(LOG_ERR, errno, "socket");
+		exit(1);
+	}
+	unlink(mdrd_conf.counters_sock);
+
+	if (fcntl(lsock, F_SETFD, FD_CLOEXEC) == -1) {
+		xlog_strerror(LOG_ERR, errno, "fcntl");
+		exit(1);
+	}
+
+	bzero(&saddr, sizeof(saddr));
+	saddr.sun_family = AF_LOCAL;
+	strlcpy(saddr.sun_path, mdrd_conf.counters_sock,
+	    sizeof(saddr.sun_path));
+
+	if (bind(lsock, (struct sockaddr *)&saddr, SUN_LEN(&saddr)) == -1) {
+		xlog_strerror(LOG_ERR, errno, "bind");
+		exit(1);
+	}
+
+	if (listen(lsock, 64) == -1) {
+		xlog_strerror(LOG_ERR, errno, "listen");
+		exit(1);
+	}
+
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = 0;
+	act.sa_handler = &counters_sig_handler;
+	if (sigaction(SIGINT, &act, NULL) == -1 ||
+	    sigaction(SIGTERM, &act, NULL) == -1 ||
+	    sigaction(SIGCHLD, &act, NULL) == -1) {
+		xlog_strerror(LOG_ERR, errno, "sigaction");
+		exit(1);
+	}
+
+	while (!shutdown_triggered) {
+		if ((sock = accept(lsock, NULL, 0)) == -1) {
+			if (errno == EINTR)
+				continue;
+			xlog_strerror(LOG_ERR, errno, "accept");
+			exit(1);
+		}
+
+		if (fcntl(sock, F_SETFD, FD_CLOEXEC) == -1) {
+			xlog_strerror(LOG_ERR, errno, "fcntl");
+			close(sock);
+			continue;
+		}
+
+		if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+		    sizeof(timeout)) == -1) {
+			xlog_strerror(LOG_ERR, errno, "setsockopt");
+			close(sock);
+			continue;
+		}
+
+		if ((pid = fork()) == -1) {
+			xlog_strerror(LOG_ERR, errno, "fork");
+			continue;
+		}
+
+		if (pid > 0) {
+			close(sock);
+			continue;
+		}
+
+		close(lsock);
+		for (i = 0; i < counters_arena_count(); i++) {
+			counters_set_arena(i);
+			for (c = 0; c < COUNTER_LAST; c++)
+				v[c] = counters_get(c);
+again:
+			w = write(sock, v, sizeof(v));
+			if (w == -1) {
+				if (errno == EINTR)
+					goto again;
+				xlog_strerror(LOG_ERR, errno, "write");
+				goto end;
+			}
+
+			if (w < sizeof(v)) {
+				xlog(LOG_ERR, NULL, "short write");
+				goto end;
+			}
+		}
+end:
+		exit(0);
+	}
+	/* Never reached */
+	return 0;
+}
+
+void
 send_shutdown()
 {
 	FILE *f;
@@ -853,7 +979,7 @@ main(int argc, char **argv)
 			    sigaction(SIGTERM, &act, NULL) == -1) {
 				err(1, "sigaction");
 			}
-			counters_read(mdrd_conf.counters_file);
+			counters_read(mdrd_conf.counters_sock);
 			exit(0);
 		}
 		usage();
@@ -985,10 +1111,12 @@ main(int argc, char **argv)
 
 	backend_reader.cb = &backend_cb;
 	if (mdrd_conf.prefork <= 0 || foreground) {
-		if ((counters_init(mdrd_conf.counters_file, 1)) == -1) {
+		if ((counters_init(1)) == -1) {
 			xlog_strerror(LOG_ERR, errno, "counters_init");
 			exit(1);
 		}
+		if (counter_reader() == -1)
+			exit(1);
 		if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
 		    &backend_wfd, &backend_reader.fd, mdrd_conf.backend_uid,
 		    mdrd_conf.backend_gid, xerrz(&e)) == -1) {
@@ -998,10 +1126,12 @@ main(int argc, char **argv)
 		exit(run(ctx, lsock, lsock_len));
 	}
 
-	if ((counters_init(mdrd_conf.counters_file, mdrd_conf.prefork)) == -1) {
+	if ((counters_init(mdrd_conf.prefork)) == -1) {
 		xlog_strerror(LOG_ERR, errno, "counters_init");
 		exit(1);
 	}
+	if (counter_reader() == -1)
+		exit(1);
 
 	for (n_children = 0; n_children < mdrd_conf.prefork; n_children++) {
 		if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
@@ -1031,9 +1161,10 @@ main(int argc, char **argv)
 		pid = waitpid(-1, &wstatus, 0);
 		if (pid != -1 && !shutdown_triggered) {
 			if ((cntra_idx = counters_find_arena(pid)) == -1) {
-				xlog(LOG_ERR, NULL, "%s: failed to find "
-				    "counter arena for pid %d", __func__, pid);
-				exit(1);
+				xlog(LOG_DEBUG, NULL, "%s: failed to find "
+				    "counter arena for pid %d; possibly a "
+				    "non-listener child", __func__, pid);
+				continue;
 			}
 			counters_set_arena(cntra_idx);
 			counters_set_pid(-1);

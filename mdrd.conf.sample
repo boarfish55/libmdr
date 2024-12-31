@@ -1,13 +1,14 @@
 uid = plalonde
 gid = plalonde
 enable_coredumps = true
-pid_file = "/tmp/mdrd.pid"
 ca_file = "/home/plalonde/prog/mdr/ca/overnet.pem"
 crl_file = "/home/plalonde/prog/mdr/ca/overnet.crl"
 key_file = "/home/plalonde/prog/mdr/ca/private/overnet_key.pem"
 port = 9790
 listen_backlog = 1024
 prefork = 4
+pid_file = "/tmp/mdrd.pid"
+counters_sock = "/tmp/mdrd_counters.sock"
 
 # Maximum number of concurrent client connections per fork
 max_clients = 10000
