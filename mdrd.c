@@ -275,8 +275,6 @@ struct flatconf flatconf_vars[] = {
 	FLATCONF_LAST
 };
 
-void load_keys();
-
 static int
 pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 {
@@ -771,6 +769,30 @@ get_listen_socket(int domain, int type, unsigned short port)
 	return fd;
 }
 
+void
+send_shutdown()
+{
+	FILE *f;
+	char  p[11];
+	pid_t pid;
+
+	if ((f = fopen(mdrd_conf.pid_file, "r")) == NULL)
+		err(1, "fopen");
+	if (fgets(p, sizeof(p), f) == NULL) {
+		if (ferror(f))
+			err(1, "fgets");
+		else
+			errx(1, "fgets: pid file was empty");
+	}
+	fclose(f);
+
+	pid = atoi(p);
+	if (pid <= 1)
+		errx(1, "shutdown: pid file contained an invalid value");
+	if (kill(pid, 15) == -1)
+		err(1, "kill");
+}
+
 int
 main(int argc, char **argv)
 {
@@ -818,8 +840,8 @@ main(int argc, char **argv)
 
 	if (argc > optind) {
 		if (strcmp(argv[optind], "shutdown") == 0) {
-			usage();
-			errx(1, "not implemented");
+			send_shutdown();
+			exit(0);
 		} else if (strcmp(argv[optind], "stat") == 0) {
 			/*
 			 * Block most common signals to avoid exiting while
