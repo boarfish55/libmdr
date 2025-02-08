@@ -433,6 +433,8 @@ daemon_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		return -1;
 	}
 
+	counters_incr(COUNTER_MESSAGES_IN);
+
 	for (i = 0; mdrd_conf.allowed_mdr_namespaces &&
 	    mdrd_conf.allowed_mdr_namespaces[i] != NULL; i++) {
 		if (mdr_namespace(&cb_data->msg) ==
@@ -440,6 +442,7 @@ daemon_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 			break;
 	}
 	if (mdrd_conf.allowed_mdr_namespaces[i] == NULL) {
+		counters_incr(COUNTER_MESSAGES_IN_DENIED);
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: namespace not allowed", __func__);
 		return -1;
@@ -579,6 +582,8 @@ backend_cb(int fd)
 	if ((r = tlsev_reply(t, mdr_buf(&msg), mdr_size(&msg))) <= 0 ||
 	    resp_flags & MDRD_BERESP_F_CLOSE)
 		tlsev_drain(t);
+
+	counters_incr(COUNTER_MESSAGES_OUT);
 
 	/*
 	 * TODO: backend could overflow us here. We should cap how many

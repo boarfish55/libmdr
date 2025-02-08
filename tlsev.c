@@ -569,6 +569,7 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 	else if (n == 0)
 		return XERRF(e, XLOG_APP, XLOG_EOF, "read EOF");
 
+	counters_add(COUNTER_RAW_BYTES_IN, n);
 	xlog(LOG_DEBUG, NULL, "%s: %d bytes read on fd %d", __func__, n, t->fd);
 
 	if ((r = BIO_write(t->r, buf, n)) <= 0)
@@ -614,9 +615,11 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 			return XERRF(e, XLOG_SSL, r, "SSL_read: %s",
 			    ERR_error_string(r, NULL));
 		}
-	} else if ((r = l->in_cb(t, buf, r, &t->in_cb_data)) == -1)
+	} else if ((r = l->in_cb(t, buf, r, &t->in_cb_data)) == -1) {
+		counters_add(COUNTER_SSL_BYTES_IN, r);
 		return XERRF(e, XLOG_APP, XLOG_CALLBACK_ERR,
 		    "t->in_cb_data failed");
+	}
 
 	return 0;
 }
@@ -639,9 +642,12 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		if (n != -1)
 			xlog(LOG_DEBUG, NULL, "%s: wrote %d bytes on fd %d",
 			    __func__, n, t->fd);
-		if (n == -1) {
+		if (n == -1)
 			return XERRF(e, XLOG_ERRNO, errno, "write");
-		} else if (n < t->retry_len) {
+
+		counters_add(COUNTER_RAW_BYTES_OUT, n);
+
+		if (n < t->retry_len) {
 			t->retry_len -= n;
 			t->retry_buf_pos += n;
 			return pending + t->retry_len;
@@ -667,9 +673,11 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		pending -= r;
 
 		n = write(t->fd, buf, r);
-		if (n != -1)
+		if (n != -1) {
 			xlog(LOG_DEBUG, NULL, "%s: wrote %d bytes on fd %d",
 			    __func__, n, t->fd);
+			counters_add(COUNTER_RAW_BYTES_OUT, n);
+		}
 		if (n == -1) {
 			return XERRF(e, XLOG_ERRNO, errno, "write");
 		} else if (n < r) {
@@ -720,6 +728,8 @@ tlsev_reply(struct tlsev *t, const char *buf, int len)
 		    ERR_error_string(SSL_get_error(t->ssl, r), NULL));
 		return -1;
 	}
+
+	counters_add(COUNTER_SSL_BYTES_OUT, r);
 
 	if (t->wpending == 0) {
 #ifdef __OpenBSD__
