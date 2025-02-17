@@ -123,5 +123,6 @@ ptrdiff_t mdr_unpack_echo(struct mdr *, char *, size_t, char *, size_t *);
 #define MDR_ID_MDRD_ERROR      0x0001
 #define MDR_ID_MDRD_BEREQ      0x0002
 #define MDR_ID_MDRD_BERESP     0x0003
+#define MDR_ID_MDRD_BECLOSE    0x0004
 
 #endif

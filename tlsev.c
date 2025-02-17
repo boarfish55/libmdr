@@ -132,8 +132,8 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
     size_t lsock_len, int socket_timeout_min, int socket_timeout_max,
     uint32_t max_clients, uint16_t max_conn_per_ip, int use_rcv_lowat,
     int ssl_data_idx,
-    int (*in_cb)(struct tlsev *, const char *, size_t, void **),
-    void (*in_cb_data_free)(void *))
+    int (*client_msg_in_cb)(struct tlsev *, const char *, size_t, void **),
+    void (*client_cb_data_free)(struct tlsev *, void *))
 {
 	int                n;
 #ifdef __OpenBSD__
@@ -141,7 +141,7 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 #else
 	struct epoll_event ev;
 #endif
-	if (in_cb == NULL || l == NULL || ctx == NULL) {
+	if (client_msg_in_cb == NULL || l == NULL || ctx == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -166,8 +166,8 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 	l->socket_timeout_max = socket_timeout_max;
 	l->tlsev_data_idx = ssl_data_idx;
 	l->next_id = 1;
-	l->in_cb = in_cb;
-	l->in_cb_data_free = in_cb_data_free;
+	l->client_msg_in_cb = client_msg_in_cb;
+	l->client_cb_data_free = client_cb_data_free;
 
 	l->max_clients = max_clients;
 	l->max_conn_per_ip = max_conn_per_ip;
@@ -505,9 +505,9 @@ tlsev_close(struct tlsev_listener *l, struct tlsev *t)
 	int                r;
 	struct tlsev_peer *p;
 
-	if (l->in_cb_data_free != NULL && t->in_cb_data != NULL) {
-		l->in_cb_data_free(t->in_cb_data);
-		t->in_cb_data = NULL;
+	if (l->client_cb_data_free != NULL && t->client_cb_data != NULL) {
+		l->client_cb_data_free(t, t->client_cb_data);
+		t->client_cb_data = NULL;
 	}
 
 	if ((struct tlsev *)idxheap_removek(&l->tlsev_store, t) != t)
@@ -615,10 +615,11 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 			return XERRF(e, XLOG_SSL, r, "SSL_read: %s",
 			    ERR_error_string(r, NULL));
 		}
-	} else if ((r = l->in_cb(t, buf, r, &t->in_cb_data)) == -1) {
+	} else if ((r = l->client_msg_in_cb(t, buf, r,
+	    &t->client_cb_data)) == -1) {
 		counters_add(COUNTER_SSL_BYTES_IN, r);
 		return XERRF(e, XLOG_APP, XLOG_CALLBACK_ERR,
-		    "t->in_cb_data failed");
+		    "t->client_cb_data failed");
 	}
 
 	return 0;

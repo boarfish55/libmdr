@@ -67,8 +67,8 @@ struct tlsev_listener {
 #endif
 	int                     max_events;
 
-	int  (*in_cb)(struct tlsev *, const char *, size_t, void **);
-	void (*in_cb_data_free)(void *);
+	int  (*client_msg_in_cb)(struct tlsev *, const char *, size_t, void **);
+	void (*client_cb_data_free)(struct tlsev *, void *);
 
 	struct tlsev_fd_cb    *fd_callbacks;
 	size_t                 fd_callbacks_sz;
@@ -97,14 +97,14 @@ struct tlsev {
 	char                  *retry_buf_pos;
 	int                    retry_len;
 
-	void                  *in_cb_data;
+	void                  *client_cb_data;
 };
 
 int                  tlsev_init(struct tlsev_listener *, SSL_CTX *, int *,
                          size_t, int, int, uint32_t, uint16_t, int, int,
                          int (*in_cb)(struct tlsev *, const char *,
                          size_t, void **),
-                         void (*in_cb_data_free)(void *));
+                         void (*in_cb_data_free)(struct tlsev *, void *));
 int                  tlsev_add_fd_cb(struct tlsev_listener *,
                          struct tlsev_fd_cb *);
 void                 tlsev_destroy(struct tlsev_listener *);

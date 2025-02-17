@@ -20,7 +20,7 @@ MDRD_OBJS = $(MDRD_SRCS:.c=.o)
 MDRTESTS_SRCS = mdr.c mdr_tests.c
 MDRTESTS_OBJS = $(MDRTESTS_SRCS:.c=.o)
 
-MDRD_ECHO_SRCS = mdrd_backend_echo.c mdr.c mdr_mdrd.c
+MDRD_ECHO_SRCS = mdrd_backend_echo.c mdr.c mdr_mdrd.c xlog.c
 MDRD_ECHO_OBJS = $(MDRD_ECHO_SRCS:.c=.o)
 
 all: mdrc mdr_tests mdrd mdrd_backend_echo

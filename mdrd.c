@@ -370,7 +370,7 @@ handle_signals(int sig)
 	tlsev_shutdown(&listener);
 }
 
-struct daemon_in_cb_data {
+struct client_cb_data {
 	size_t      len;
 	char       *buf;
 	size_t      buf_sz;
@@ -379,29 +379,43 @@ struct daemon_in_cb_data {
 };
 
 void
-free_daemon_in_cb_data(void *data) {
-	struct daemon_in_cb_data *cb_data = (struct daemon_in_cb_data *)data;
+client_close_cb(struct tlsev *t, void *data)
+{
+	struct mdr bemsg;
+	char       buf[mdr_hdr_size(0) + sizeof(uint64_t)];
+
+	if (mdr_pack_hdr(&bemsg, buf, sizeof(buf), MDR_F_NONE, MDR_NS_MDRD,
+	    MDR_ID_MDRD_BECLOSE, 0) == MDR_FAIL ||
+	    mdr_pack_uint64(&bemsg, tlsev_id(t)) == MDR_FAIL) {
+		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack_hdr", __func__);
+	} else {
+		if (writeall(backend_wfd, mdr_buf(&bemsg),
+		    mdr_size(&bemsg)) == -1)
+			xlog_strerror(LOG_ERR, errno, "%s: writeall", __func__);
+	}
+
+	struct client_cb_data *cb_data = (struct client_cb_data *)data;
 	if (cb_data->buf != NULL)
 		free(cb_data->buf);
 	free(cb_data);
 }
 
 int
-daemon_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
+client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 {
-	struct daemon_in_cb_data *cb_data = (struct daemon_in_cb_data *)(*data);
+	struct client_cb_data *cb_data = (struct client_cb_data *)(*data);
 	void                     *tmp;
 	struct mdr                bemsg;
 	int                       status, i;
 
 	if (cb_data == NULL) {
-		*data = malloc(sizeof(struct daemon_in_cb_data));
+		*data = malloc(sizeof(struct client_cb_data));
 		if (*data == NULL) {
 			xlog_strerror(LOG_ERR, errno, "%s: malloc", __func__);
 			return -1;
 		}
-		bzero(*data, sizeof(struct daemon_in_cb_data));
-		cb_data = (struct daemon_in_cb_data *)(*data);
+		bzero(*data, sizeof(struct client_cb_data));
+		cb_data = (struct client_cb_data *)(*data);
 		cb_data->send_cert = 1;
 		cb_data->buf = malloc(n);
 		if (cb_data->buf == NULL) {
@@ -415,7 +429,7 @@ daemon_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		tmp = realloc(cb_data->buf, cb_data->len + n);
 		if (tmp == NULL) {
 			xlog_strerror(LOG_ERR, errno, "%s: realloc", __func__);
-			free_daemon_in_cb_data(*data);
+			client_close_cb(t, *data);
 			return -1;
 		}
 		cb_data->buf = tmp;
@@ -455,10 +469,7 @@ daemon_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		 * We only sent the cert the first time; backend should
 		 * remember it.
 		 */
-		// TODO: we have to send the cert everytime for now, until
-		// we implement a backend message to tell that the client
-		// is gone and state can be forgotten.
-		//cb_data->send_cert = 0;
+		cb_data->send_cert = 0;
 
 		if ((status = writeall(backend_wfd, mdr_buf(&bemsg),
 		    mdr_size(&bemsg))) == -1) {
@@ -475,7 +486,7 @@ daemon_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 }
 
 int
-backend_cb(int fd)
+backend_msg_in_cb(int fd)
 {
 	struct mdr    reply, msg;
 	char          reply_buf[mdrd_conf.max_payload_size + 4096];
@@ -590,7 +601,10 @@ backend_cb(int fd)
 	 * bytes pending we have and create a message to tell our backend
 	 * to stop pause message for this client.
 	 * This only matters in a "streaming" situation where we don't
-	 * have 1:1 requests/replies.
+	 * have 1:1 requests/replies. We'll need a message serial number
+	 * to properly inform the backend where to resme.
+	 * The code above assumes we get a "reply" from the backend,
+	 * always, so it's not yet able to support this kind of streaming.
 	 */
 
 	return 1;
@@ -674,7 +688,7 @@ run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
 	    mdrd_conf.max_clients,
 	    mdrd_conf.max_conn_per_ip,
 	    mdrd_conf.use_rcv_lowat,
-	    ssl_data_idx, &daemon_in_cb, &free_daemon_in_cb_data) == -1) {
+	    ssl_data_idx, &client_msg_in_cb, &client_close_cb) == -1) {
 		xlog_strerror(LOG_ERR, errno, "tlsev_init");
 		return 1;
 	}
@@ -1114,7 +1128,7 @@ main(int argc, char **argv)
 #endif
 	ssl_data_idx = SSL_get_ex_new_index(0, "tlsev_idx", NULL, NULL, NULL);
 
-	backend_reader.cb = &backend_cb;
+	backend_reader.cb = &backend_msg_in_cb;
 	if (mdrd_conf.prefork <= 0 || foreground) {
 		if ((counters_init(1)) == -1) {
 			xlog_strerror(LOG_ERR, errno, "counters_init");
