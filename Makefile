@@ -1,6 +1,8 @@
 CC = cc
 CFLAGS = -Wall -Wno-format -g
-LIBS = -lcrypto -lssl
+
+# pthread for semaphores
+LIBS = -lcrypto -lssl -pthread
 
 SRCS = mdr.c mdrc.c mdr_mdrd.c mdr_tests.c flatconf.c idxheap.c tlsev.c \
 	util.c xlog.c counters.c

@@ -4,6 +4,7 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <stdio.h>
@@ -711,6 +712,9 @@ get_listen_socket(int domain, int type, unsigned short port)
 	struct sockaddr_in  sa;
 	int                 one = 1;
 	int                 bufsz;
+#ifdef __linux__
+	int                 defer_accept_seconds = 5;
+#endif
 
 	if ((fd = socket(domain, type, 0)) == -1) {
 		xlog_strerror(LOG_ERR, errno, "socket");
@@ -720,6 +724,14 @@ get_listen_socket(int domain, int type, unsigned short port)
 		xlog_strerror(LOG_ERR, errno, "setsockopt");
 		return -1;
 	}
+
+#ifdef __linux__
+	if (setsockopt(fd, IPPROTO_TCP, TCP_DEFER_ACCEPT,
+	    &defer_accept_seconds, sizeof(defer_accept_seconds)) == -1) {
+		xlog_strerror(LOG_ERR, errno, "setsockopt");
+		return -1;
+	}
+#endif
 
 #ifdef __OpenBSD__
 	if (mdrd_conf.so_debug &&
