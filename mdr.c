@@ -415,6 +415,50 @@ mdr_pack_uint8(struct mdr *m, uint8_t v)
 }
 
 ptrdiff_t
+mdr_pack_float32(struct mdr *m, float v)
+{
+	union {
+		float    f;
+		uint32_t i;
+	} f = { v };
+
+	if (m == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	if (!mdr_can_fit(m, sizeof(float)))
+		return MDR_FAIL;
+
+	*(uint32_t *)m->pos = htobe32(f.i);
+	m->pos += sizeof(uint32_t);
+
+	return mdr_update_size(m);
+}
+
+ptrdiff_t
+mdr_pack_float64(struct mdr *m, double v)
+{
+	union {
+		double   f;
+		uint64_t i;
+	} f = { v };
+
+	if (m == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	if (!mdr_can_fit(m, sizeof(double)))
+		return MDR_FAIL;
+
+	*(uint64_t *)m->pos = htobe64(f.i);
+	m->pos += sizeof(uint64_t);
+
+	return mdr_update_size(m);
+}
+
+ptrdiff_t
 mdr_pack_bytes(struct mdr *m, const char *bytes, uint64_t bytes_sz)
 {
 	if (m == NULL || bytes_sz & 0x8000000000000000) {
@@ -542,7 +586,9 @@ mdr_vpackf(struct mdr *m, const char *spec, va_list ap)
 	 * Possible types in spec:
 	 *   u8, u16, u32, u64
 	 *   i8, i16, i32, i64
-	 *   b, s, m, p
+	 *   f32, f64,
+	 *   b, s, m, r ("r" for "reserve")
+	 * TODO: a "repeat" specifier.
 	 */
 	for (p = spec, prev = spec; !finish; p++) {
 		if (*p == '\0')
@@ -551,13 +597,13 @@ mdr_vpackf(struct mdr *m, const char *spec, va_list ap)
 		if (*p != ':' && *p != '\0')
 			continue;
 
-		if (strlcpy(spbuf, prev,
-		    (((p - prev) + 1) < sizeof(spbuf))
-		    ? ((p - prev) + 1)
-		    : sizeof(spbuf)) >= sizeof(spbuf)) {
+		if (p - prev >= sizeof(spbuf) - 1) {
 			errno = EINVAL;
 			return MDR_FAIL;
 		}
+
+		memcpy(spbuf, prev, p - prev);
+		spbuf[p - prev] = '\0';
 
 		if (strcmp(spbuf, "m") == 0) {
 			if (mdr_pack_mdr(m, va_arg(ap, struct mdr *))
@@ -568,7 +614,7 @@ mdr_vpackf(struct mdr *m, const char *spec, va_list ap)
 			bytes_sz = va_arg(ap, uint64_t);
 			if (mdr_pack_bytes(m, bytes, bytes_sz) == MDR_FAIL)
 				return MDR_FAIL;
-		} else if (strcmp(spbuf, "p") == 0) {
+		} else if (strcmp(spbuf, "r") == 0) {
 			bytes_p = va_arg(ap, char **);
 			bytes_sz = va_arg(ap, uint64_t);
 			if (mdr_pack_space(m, bytes_p, bytes_sz) == MDR_FAIL)
@@ -614,6 +660,38 @@ mdr_vpackf(struct mdr *m, const char *spec, va_list ap)
 			case 64:
 				if (mdr_pack_uint64(m,
 				    va_arg(ap, uint64_t)) == MDR_FAIL) {
+					errno = EOVERFLOW;
+					return MDR_FAIL;
+				}
+				break;
+			default:
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+		} else if (spbuf[0] == 'f') {
+			if (strlen(spbuf) < 3) {
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+
+			errno = 0;
+			bits = strtoull(spbuf + 1, &end, 10);
+			if (errno || *end != '\0') {
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+
+			switch (bits) {
+			case 32:
+				if (mdr_pack_float32(m,
+				    va_arg(ap, double)) == MDR_FAIL) {
+					errno = EOVERFLOW;
+					return MDR_FAIL;
+				}
+				break;
+			case 64:
+				if (mdr_pack_float64(m,
+				    va_arg(ap, double)) == MDR_FAIL) {
 					errno = EOVERFLOW;
 					return MDR_FAIL;
 				}
@@ -921,6 +999,56 @@ mdr_unpack_uint64(struct mdr *m, uint64_t *v)
 }
 
 ptrdiff_t
+mdr_unpack_float32(struct mdr *m, float *v)
+{
+	union {
+		float    f;
+		uint32_t i;
+	} f;
+
+	if (m == NULL || v == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	if (m->buf_sz - mdr_tell(m) < sizeof(float)) {
+		errno = EAGAIN;
+		return MDR_FAIL;
+	}
+
+	f.i = be32toh(*(uint32_t *)m->pos);
+	*v = f.f;
+	m->pos += sizeof(uint32_t);
+
+	return mdr_tell(m);
+}
+
+ptrdiff_t
+mdr_unpack_float64(struct mdr *m, double *v)
+{
+	union {
+		double   f;
+		uint64_t i;
+	} f;
+
+	if (m == NULL || v == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	if (m->buf_sz - mdr_tell(m) < sizeof(float)) {
+		errno = EAGAIN;
+		return MDR_FAIL;
+	}
+
+	f.i = be64toh(*(uint64_t *)m->pos);
+	*v = f.f;
+	m->pos += sizeof(uint64_t);
+
+	return mdr_tell(m);
+}
+
+ptrdiff_t
 mdr_unpack_bytes(struct mdr *m, char *bytes, uint64_t *bytes_sz)
 {
 	uint64_t avail;
@@ -1095,7 +1223,9 @@ mdr_vunpackf(struct mdr *m, const char *spec, va_list ap)
 	 * Possible types in spec:
 	 *   u8, u16, u32, u64
 	 *   i8, i16, i32, i64
-	 *   b, s, m
+	 *   f32, f64,
+	 *   b, s, m, r (reference to bytes)
+	 * TODO: a "repeat" specifier, which can be "N"
 	 */
 	for (p = spec, prev = spec; !finish; p++) {
 		if (*p == '\0')
@@ -1104,13 +1234,13 @@ mdr_vunpackf(struct mdr *m, const char *spec, va_list ap)
 		if (*p != ':' && *p != '\0')
 			continue;
 
-		if (strlcpy(spbuf, prev,
-		    (((p - prev) + 1) < sizeof(spbuf))
-		    ? ((p - prev) + 1)
-		    : sizeof(spbuf)) >= sizeof(spbuf)) {
+		if (p - prev >= sizeof(spbuf) - 1) {
 			errno = EINVAL;
 			return MDR_FAIL;
 		}
+
+		memcpy(spbuf, prev, p - prev);
+		spbuf[p - prev] = '\0';
 
 		if (strcmp(spbuf, "m") == 0) {
 			if (mdr_unpack_mdr_ref(m, va_arg(ap, struct mdr *))
@@ -1122,7 +1252,7 @@ mdr_vunpackf(struct mdr *m, const char *spec, va_list ap)
 			if (mdr_unpack_bytes(m, bytes, bytes_sz)
 			    == MDR_FAIL)
 				return MDR_FAIL;
-		} else if (strcmp(spbuf, "p") == 0) {
+		} else if (strcmp(spbuf, "r") == 0) {
 			bytes_ref = va_arg(ap, const char **);
 			bytes_sz = va_arg(ap, uint64_t *);
 			if (mdr_unpack_bytes_ref(m, bytes_ref, bytes_sz)
@@ -1165,6 +1295,34 @@ mdr_vunpackf(struct mdr *m, const char *spec, va_list ap)
 			case 64:
 				if (mdr_unpack_uint64(m,
 				    va_arg(ap, uint64_t *)) == MDR_FAIL)
+					return MDR_FAIL;
+				break;
+			default:
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+		} else if (spbuf[0] == 'f') {
+			if (strlen(spbuf) < 3) {
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+
+			errno = 0;
+			bits = strtoull(spbuf + 1, &end, 10);
+			if (errno || *end != '\0') {
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+
+			switch (bits) {
+			case 32:
+				if (mdr_unpack_float32(m,
+				    va_arg(ap, float *)) == MDR_FAIL)
+					return MDR_FAIL;
+				break;
+			case 64:
+				if (mdr_unpack_float64(m,
+				    va_arg(ap, double *)) == MDR_FAIL)
 					return MDR_FAIL;
 				break;
 			default:

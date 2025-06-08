@@ -127,12 +127,12 @@ test_pack_space()
 	printf("mdr_unpack_bytes=%lu => %lu\n", r, len);
 
 	r = mdr_pack(&echo, buf, sizeof(buf), 0, MDR_NS_CTL,
-	    MDR_ID_CTL_ECHO, 0, "p", &dst, strlen(str));
+	    MDR_ID_CTL_ECHO, 0, "r", &dst, strlen(str));
 	memcpy(dst, str, strlen(str));
 
 	bzero(str, sizeof(str));
 	r = mdr_unpack(&decode, MDR_F_NONE,
-	    (void *)mdr_buf(&echo), mdr_size(&echo), "p", &str, &len);
+	    (void *)mdr_buf(&echo), mdr_size(&echo), "r", &str, &len);
 	printf("mdr_unpack_bytes_ref=%lu => %.*s\n", r, (int)len, src);
 }
 
@@ -263,11 +263,14 @@ main()
 	uint64_t   dlen = 0;
 	char       dstr[1024];
 	uint64_t   dstr_len;
+	float      f32;
+	double     f64;
 
 	r = mdr_pack_hdr(&echo, buf_echo, sizeof(buf_echo), 0,
 	    MDR_NS_CTL, MDR_ID_CTL_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
+	// TODO: test boundaries
 	r = mdr_packf(&echo, "u64", 111);
 	printf("mdr_packf(u64)=%lu\n", r);
 
@@ -287,8 +290,8 @@ main()
 	    MDR_NS_CTL, MDR_ID_CTL_ECHO, 0);
 	printf("mdr_pack_hdr=%lu\n", r);
 
-	r = mdr_packf(&echo2, "u64:i8:u16:b:s", 111, -111, 111,
-	    "allo", 4, "string");
+	r = mdr_packf(&echo2, "u64:i8:u16:b:s:f32:f64", 111, -128, 111,
+	    "allo", 4, "string", -111.111, -11111.11111);
 	printf("mdr_packf(u64)=%lu\n", r);
 
 	printf("memcmp(buf, buf2)==%d\n",
@@ -298,8 +301,8 @@ main()
 	printf("mdr_unpack_hdr=%lu\n", r);
 	dlen = sizeof(dbytes);
 	dstr_len = sizeof(dstr);
-	r = mdr_unpackf(&decho, "u64:i8:u16:b:s", &u64, &i8, &u16,
-	    dbytes, &dlen, dstr, &dstr_len);
+	r = mdr_unpackf(&decho, "u64:i8:u16:b:s:f32:f64", &u64, &i8, &u16,
+	    dbytes, &dlen, dstr, &dstr_len, &f32, &f64);
 
 	printf("unpackf:u64: 111 == %lu\n", u64);
 	printf("unpackf:i8: -111 == %d\n", i8);
@@ -307,6 +310,8 @@ main()
 	printf("unpackf:dbytes: allo == [%.*s] (%d)\n",
 	    (int)dlen, dbytes, (int)dlen);
 	printf("unpackf:dstr: string == %s\n", dstr);
+	printf("unpackf:f32: float == %f\n", f32);
+	printf("unpackf:f64: double == %f\n", f64);
 
 	r = mdr_pack_hdr(&echo3, buf_echo3, sizeof(buf_echo3), 0,
 	    MDR_NS_CTL, MDR_ID_CTL_ECHO, 0);
