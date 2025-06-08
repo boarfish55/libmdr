@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include "mdr_macros.h"
 
 /*
  * Minimal Data Representation
@@ -62,7 +63,7 @@ uint16_t mdr_id(const struct mdr *);
 uint16_t mdr_version(const struct mdr *);
 uint64_t mdr_tail_bytes(const struct mdr *);
 
-ptrdiff_t mdr_pack(struct mdr *, char *, size_t, uint32_t,
+ptrdiff_t mdr_pack_(size_t, struct mdr *, char *, size_t, uint32_t,
               uint16_t, uint16_t, uint16_t, const char *, ...);
 ptrdiff_t mdr_pack_hdr(struct mdr *, char *, size_t, uint32_t, uint16_t,
               uint16_t, uint16_t);
@@ -80,11 +81,12 @@ ptrdiff_t mdr_pack_bytes(struct mdr *, const char *, uint64_t);
 ptrdiff_t mdr_pack_space(struct mdr *, char **, uint64_t);
 ptrdiff_t mdr_pack_string(struct mdr *, const char *);
 ptrdiff_t mdr_pack_mdr(struct mdr *, struct mdr *);
-ptrdiff_t mdr_packf(struct mdr *, const char *, ...);
-ptrdiff_t mdr_vpackf(struct mdr *, const char *, va_list);
+ptrdiff_t mdr_packf_(size_t, struct mdr *, const char *, ...);
+ptrdiff_t mdr_vpackf(size_t, struct mdr *, const char *, va_list);
 ptrdiff_t mdr_add_tail_bytes(struct mdr *, uint64_t);
 
-ptrdiff_t mdr_unpack(struct mdr *, uint32_t, char *, size_t, const char *, ...);
+ptrdiff_t mdr_unpack_(size_t, struct mdr *, uint32_t, char *, size_t,
+              const char *, ...);
 ptrdiff_t mdr_unpack_from_fd(struct mdr *, uint32_t, int, char *, size_t);
 ptrdiff_t mdr_unpack_all(struct mdr *, uint32_t, char *, size_t, size_t);
 ptrdiff_t mdr_unpack_hdr(struct mdr *, uint32_t, char *, size_t);
@@ -103,8 +105,8 @@ ptrdiff_t mdr_unpack_bytes_ref(struct mdr *, const char **, uint64_t *);
 ptrdiff_t mdr_unpack_string(struct mdr *, char *, uint64_t *);
 ptrdiff_t mdr_unpack_mdr_ref(struct mdr *, struct mdr *);
 ptrdiff_t mdr_unpack_mdr(struct mdr *, struct mdr *, char *, size_t);
-ptrdiff_t mdr_unpackf(struct mdr *, const char *, ...);
-ptrdiff_t mdr_vunpackf(struct mdr *, const char *, va_list);
+ptrdiff_t mdr_unpackf_(size_t, struct mdr *, const char *, ...);
+ptrdiff_t mdr_vunpackf(size_t, struct mdr *, const char *, va_list);
 void      mdr_print(FILE *, const struct mdr *);
 
 ptrdiff_t mdr_pack_echo(struct mdr *, const char *);

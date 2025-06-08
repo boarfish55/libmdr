@@ -244,7 +244,7 @@ mdr_buf(const struct mdr *m)
 }
 
 ptrdiff_t
-mdr_pack(struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
+mdr_pack_(size_t argc, struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
     uint16_t namespace, uint16_t id, uint16_t version, const char *spec, ...)
 {
 	ptrdiff_t r;
@@ -255,7 +255,7 @@ mdr_pack(struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
 		return MDR_FAIL;
 
 	va_start(ap, spec);
-	r = mdr_vpackf(m, spec, ap);
+	r = mdr_vpackf(argc, m, spec, ap);
 	va_end(ap);
 
 	if (r == MDR_FAIL)
@@ -562,7 +562,7 @@ mdr_pack_mdr(struct mdr *m, struct mdr *src)
 }
 
 ptrdiff_t
-mdr_vpackf(struct mdr *m, const char *spec, va_list ap)
+mdr_vpackf(size_t argc, struct mdr *m, const char *spec, va_list ap)
 {
 	int          finish = 0;
 	const char  *p, *prev;
@@ -573,14 +573,18 @@ mdr_vpackf(struct mdr *m, const char *spec, va_list ap)
 	uint64_t     bits;
 	/*
 	 * A uint64 can render up to 20 digits, plus one for the 'b'
-	 * prefix and the terminating NUL byte.
+	 * prefix, an optional array specifier and the terminating NUL byte.
 	 */
-	char        spbuf[22];
+	char        spbuf[23];
 
 	if (m == NULL || spec == NULL) {
 		errno = EINVAL;
 		return MDR_FAIL;
 	}
+
+	/* We only handle up to 256 variadic fields. */
+	if (argc > MDR_STDARG_MAX)
+		abort();
 
 	/*
 	 * Possible types in spec:
@@ -604,19 +608,41 @@ mdr_vpackf(struct mdr *m, const char *spec, va_list ap)
 
 		memcpy(spbuf, prev, p - prev);
 		spbuf[p - prev] = '\0';
+		argc--;
 
-		if (strcmp(spbuf, "m") == 0) {
+		/* We have more format specifiers than we have args. */
+		if (argc < 0)
+			abort();
+
+		if (spbuf[0] == 'A') {
+			//argc--;
+			//if (mdr_pack_array_of(m, spbuf + 1,
+			//  va_arg(ap, uint32_t),
+			//  va_arg(ap, void *)) == MDR_FAIL)
+			//	return MDR_FAIL;
+			// TODO: above says how many in the array...
+			// next arg must be the array
+			// This can support bytes and strings too, though
+			// they must be of a single fixed length.
+			// TODO: the pack functions should have a macro that
+			// passes a "terminator", which should always be
+			// present. It can be used to sanitize if the format
+			// was used properly, with the right count of variadic
+			// args.
+		} else if (strcmp(spbuf, "m") == 0) {
 			if (mdr_pack_mdr(m, va_arg(ap, struct mdr *))
 			    == MDR_FAIL)
 				return MDR_FAIL;
 		} else if (strcmp(spbuf, "b") == 0) {
 			bytes = va_arg(ap, char *);
 			bytes_sz = va_arg(ap, uint64_t);
+			argc--;
 			if (mdr_pack_bytes(m, bytes, bytes_sz) == MDR_FAIL)
 				return MDR_FAIL;
 		} else if (strcmp(spbuf, "r") == 0) {
 			bytes_p = va_arg(ap, char **);
 			bytes_sz = va_arg(ap, uint64_t);
+			argc--;
 			if (mdr_pack_space(m, bytes_p, bytes_sz) == MDR_FAIL)
 				return MDR_FAIL;
 		} else if (strcmp(spbuf, "s") == 0) {
@@ -708,11 +734,15 @@ mdr_vpackf(struct mdr *m, const char *spec, va_list ap)
 		prev = p + 1;
 	}
 
+	/* We have more args than format specifiers. */
+	if (argc > 0)
+		abort();
+
 	return mdr_tell(m);
 }
 
 ptrdiff_t
-mdr_packf(struct mdr *m, const char *spec, ...)
+mdr_packf_(size_t argc, struct mdr *m, const char *spec, ...)
 {
 	va_list     ap;
 	ptrdiff_t   r;
@@ -723,7 +753,7 @@ mdr_packf(struct mdr *m, const char *spec, ...)
 	}
 
 	va_start(ap, spec);
-	r = mdr_vpackf(m, spec, ap);
+	r = mdr_vpackf(argc, m, spec, ap);
 	va_end(ap);
 
 	if (r == MDR_FAIL)
@@ -1200,7 +1230,7 @@ mdr_unpack_mdr(struct mdr *m, struct mdr *dst, char *buf, size_t buf_sz)
 }
 
 ptrdiff_t
-mdr_vunpackf(struct mdr *m, const char *spec, va_list ap)
+mdr_vunpackf(size_t argc, struct mdr *m, const char *spec, va_list ap)
 {
 	int          finish = 0;
 	const char  *p, *prev;
@@ -1210,14 +1240,18 @@ mdr_vunpackf(struct mdr *m, const char *spec, va_list ap)
 	uint64_t     bits;
 	/*
 	 * A uint64 can render up to 20 digits, plus one for the 'b'
-	 * prefix and the terminating NUL byte.
+	 * prefix, an optional array specifier and the terminating NUL byte.
 	 */
-	char        spbuf[22];
+	char        spbuf[23];
 
 	if (m == NULL || spec == NULL) {
 		errno = EINVAL;
 		return MDR_FAIL;
 	}
+
+	/* We only handle up to 256 variadic fields. */
+	if (argc > MDR_STDARG_MAX)
+		abort();
 
 	/*
 	 * Possible types in spec:
@@ -1241,6 +1275,11 @@ mdr_vunpackf(struct mdr *m, const char *spec, va_list ap)
 
 		memcpy(spbuf, prev, p - prev);
 		spbuf[p - prev] = '\0';
+		argc--;
+
+		/* We have more format specifiers than we have args. */
+		if (argc < 0)
+			abort();
 
 		if (strcmp(spbuf, "m") == 0) {
 			if (mdr_unpack_mdr_ref(m, va_arg(ap, struct mdr *))
@@ -1249,18 +1288,21 @@ mdr_vunpackf(struct mdr *m, const char *spec, va_list ap)
 		} else if (strcmp(spbuf, "b") == 0) {
 			bytes = va_arg(ap, char *);
 			bytes_sz = va_arg(ap, uint64_t *);
+			argc--;
 			if (mdr_unpack_bytes(m, bytes, bytes_sz)
 			    == MDR_FAIL)
 				return MDR_FAIL;
 		} else if (strcmp(spbuf, "r") == 0) {
 			bytes_ref = va_arg(ap, const char **);
 			bytes_sz = va_arg(ap, uint64_t *);
+			argc--;
 			if (mdr_unpack_bytes_ref(m, bytes_ref, bytes_sz)
 			    == MDR_FAIL)
 				return MDR_FAIL;
 		} else if (strcmp(spbuf, "s") == 0) {
 			bytes = va_arg(ap, char *);
 			bytes_sz = va_arg(ap, uint64_t *);
+			argc--;
 			if (mdr_unpack_string(m, bytes, bytes_sz) == MDR_FAIL)
 				return MDR_FAIL;
 		} else if (spbuf[0] == 'u' || spbuf[0] == 'i') {
@@ -1337,11 +1379,15 @@ mdr_vunpackf(struct mdr *m, const char *spec, va_list ap)
 		prev = p + 1;
 	}
 
+	/* We have more args than format specifiers. */
+	if (argc > 0)
+		abort();
+
 	return mdr_tell(m);
 }
 
 ptrdiff_t
-mdr_unpack(struct mdr *m, uint32_t allowed_flags, char *buf,
+mdr_unpack_(size_t argc, struct mdr *m, uint32_t allowed_flags, char *buf,
     size_t buf_sz, const char *spec, ...)
 {
 	va_list   ap;
@@ -1356,7 +1402,7 @@ mdr_unpack(struct mdr *m, uint32_t allowed_flags, char *buf,
 		return MDR_FAIL;
 
 	va_start(ap, spec);
-	r = mdr_vunpackf(m, spec, ap);
+	r = mdr_vunpackf(argc, m, spec, ap);
 	va_end(ap);
 
 	if (r == MDR_FAIL)
@@ -1366,7 +1412,7 @@ mdr_unpack(struct mdr *m, uint32_t allowed_flags, char *buf,
 }
 
 ptrdiff_t
-mdr_unpackf(struct mdr *m, const char *spec, ...)
+mdr_unpackf_(size_t argc, struct mdr *m, const char *spec, ...)
 {
 	va_list   ap;
 	ptrdiff_t r;
@@ -1377,7 +1423,7 @@ mdr_unpackf(struct mdr *m, const char *spec, ...)
 	}
 
 	va_start(ap, spec);
-	r = mdr_vunpackf(m, spec, ap);
+	r = mdr_vunpackf(argc, m, spec, ap);
 	va_end(ap);
 
 	if (r == MDR_FAIL)
