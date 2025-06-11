@@ -295,7 +295,7 @@ pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 	}
 
 	if (mdr_pack_hdr(m, NULL, 4096, MDR_F_NONE, MDR_NS_MDRD,
-	    MDR_ID_MDRD_BEREQ, 0) == MDR_FAIL ||
+	    MDR_NAME_MDRD_BEREQ, 0) == MDR_FAIL ||
 	    mdr_pack_uint64(m, id) == MDR_FAIL ||
 	    mdr_pack_int32(m, fd) == MDR_FAIL ||
 	    mdr_pack_mdr(m, msg) == MDR_FAIL ||
@@ -386,7 +386,7 @@ client_close_cb(struct tlsev *t, void *data)
 	char       buf[mdr_hdr_size(0) + sizeof(uint64_t)];
 
 	if (mdr_pack_hdr(&bemsg, buf, sizeof(buf), MDR_F_NONE, MDR_NS_MDRD,
-	    MDR_ID_MDRD_BECLOSE, 0) == MDR_FAIL ||
+	    MDR_NAME_MDRD_BECLOSE, 0) == MDR_FAIL ||
 	    mdr_pack_uint64(&bemsg, tlsev_id(t)) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack_hdr", __func__);
 	} else {
@@ -510,7 +510,7 @@ backend_msg_in_cb(int fd)
 		goto fail;
 	}
 
-	if (mdr_id(&reply) != MDR_ID_MDRD_BERESP) {
+	if (mdr_name(&reply) != MDR_NAME_MDRD_BERESP) {
 		xlog(LOG_ERR, NULL,
 		    "%s: unexpected message ID from backend", __func__);
 		goto fail;

@@ -18,10 +18,14 @@ struct mdr {
 	 */
 	uint64_t *size;
 
-	/* Reserved for future use */
+	/*
+	 * Flags can be used to provide generic information to implementations
+	 * that are otherwise unaware of the specific structure of the data.
+	 */
 	uint32_t *flags;
 #define MDR_F_NONE       0x00000000
 #define MDR_F_TAIL_BYTES 0x00000001
+	/* Other flags reserved for future use */
 
 	/*
 	 * Namespace, id and version is used to identify
@@ -33,7 +37,7 @@ struct mdr {
 	 * like adding new fields.
 	 */
 	uint32_t *namespace;
-	uint16_t *id;
+	uint16_t *name;
 	uint16_t *version;
 	uint64_t *tail_bytes;
 
@@ -59,7 +63,7 @@ ptrdiff_t   mdr_copy(struct mdr *, char *, size_t, const struct mdr *);
 
 uint32_t mdr_flags(const struct mdr *);
 uint32_t mdr_namespace(const struct mdr *);
-uint16_t mdr_id(const struct mdr *);
+uint16_t mdr_name(const struct mdr *);
 uint16_t mdr_version(const struct mdr *);
 uint64_t mdr_tail_bytes(const struct mdr *);
 
@@ -118,17 +122,17 @@ ptrdiff_t mdr_unpack_echo(struct mdr *, char *, size_t, char *, size_t *);
  * IDs are 16 bits.
  */
 
-#define MDR_NS_RESERVED    0x80000000
+#define MDR_NS_RESERVED      0x80000000
 
-#define MDR_NS_CTL         0x00000001
-#define MDR_ID_CTL_PING        0x0001
-#define MDR_ID_CTL_PONG        0x0002
-#define MDR_ID_CTL_ECHO        0x0003
+#define MDR_NS_CTL           0x00000001
+#define MDR_NAME_CTL_PING        0x0001
+#define MDR_NAME_CTL_PONG        0x0002
+#define MDR_NAME_CTL_ECHO        0x0003
 
-#define MDR_NS_MDRD        0x00000002
-#define MDR_ID_MDRD_ERROR      0x0001
-#define MDR_ID_MDRD_BEREQ      0x0002
-#define MDR_ID_MDRD_BERESP     0x0003
-#define MDR_ID_MDRD_BECLOSE    0x0004
+#define MDR_NS_MDRD          0x00000002
+#define MDR_NAME_MDRD_ERROR      0x0001
+#define MDR_NAME_MDRD_BEREQ      0x0002
+#define MDR_NAME_MDRD_BERESP     0x0003
+#define MDR_NAME_MDRD_BECLOSE    0x0004
 
 #endif

@@ -109,11 +109,11 @@ main(int argc, char **argv)
 			exit(1);
 		}
 
-		switch (mdr_id(&m)) {
-		case MDR_ID_MDRD_BECLOSE:
+		switch (mdr_name(&m)) {
+		case MDR_NAME_MDRD_BECLOSE:
 			r = mdrd_unpack_beclose(&m, &id);
 			break;
-		case MDR_ID_MDRD_BEREQ:
+		case MDR_NAME_MDRD_BEREQ:
 			r = mdrd_unpack_bereq(&m, &id, &fd, &msg, msg_buf,
 			    sizeof(msg_buf), &peer_cert);
 			break;
@@ -143,7 +143,7 @@ main(int argc, char **argv)
 			}
 		}
 
-		if (mdr_id(&m) == MDR_ID_MDRD_BECLOSE) {
+		if (mdr_name(&m) == MDR_NAME_MDRD_BECLOSE) {
 			/*
 			 * Session was not found but we're cleaning up, so
 			 * nothing to do.

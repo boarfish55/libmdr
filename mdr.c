@@ -57,7 +57,7 @@ mdr_can_fit(struct mdr *m, size_t n)
 		m->flags = (uint32_t *)(tmp + ((char *)m->flags - m->buf));
 		m->namespace = (uint32_t *)(tmp + ((char *)m->namespace -
 		    m->buf));
-		m->id = (uint16_t *)(tmp + ((char *)m->id - m->buf));
+		m->name = (uint16_t *)(tmp + ((char *)m->name - m->buf));
 		m->version = (uint16_t *)(tmp + ((char *)m->version - m->buf));
 
 		if (mdr_flags(m) & MDR_F_TAIL_BYTES)
@@ -76,7 +76,7 @@ mdr_copy(struct mdr *dst, char *buf, size_t buf_sz, const struct mdr *src)
 	ptrdiff_t r;
 
 	if ((r = mdr_pack_hdr(dst, buf, buf_sz, mdr_flags(src),
-	    mdr_namespace(src), mdr_id(src), mdr_version(src))) == MDR_FAIL)
+	    mdr_namespace(src), mdr_name(src), mdr_version(src))) == MDR_FAIL)
 		return MDR_FAIL;
 
 
@@ -206,13 +206,13 @@ mdr_flags(const struct mdr *m)
 }
 
 uint16_t
-mdr_id(const struct mdr *m)
+mdr_name(const struct mdr *m)
 {
 	if (m == NULL) {
 		errno = EINVAL;
 		return 0;
 	}
-	return be16toh(*m->id);
+	return be16toh(*m->name);
 }
 
 uint16_t
@@ -266,7 +266,7 @@ mdr_pack_(size_t argc, struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
 
 ptrdiff_t
 mdr_pack_hdr(struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
-    uint16_t namespace, uint16_t id, uint16_t version)
+    uint16_t namespace, uint16_t name, uint16_t version)
 {
 	if (m == NULL) {
 		errno = EINVAL;
@@ -299,8 +299,8 @@ mdr_pack_hdr(struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
 	m->namespace = (uint32_t *)m->pos;
 	m->pos += sizeof(*m->namespace);
 
-	m->id = (uint16_t *)m->pos;
-	m->pos += sizeof(*m->id);
+	m->name = (uint16_t *)m->pos;
+	m->pos += sizeof(*m->name);
 
 	m->version = (uint16_t *)m->pos;
 	m->pos += sizeof(*m->version);
@@ -316,7 +316,7 @@ mdr_pack_hdr(struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
 
 	*m->flags = htobe32(flags);
 	*m->namespace = htobe32(namespace);
-	*m->id = htobe16(id);
+	*m->name = htobe16(name);
 	*m->version = htobe16(version);
 
 	return mdr_update_size(m);
@@ -562,6 +562,87 @@ mdr_pack_mdr(struct mdr *m, struct mdr *src)
 }
 
 ptrdiff_t
+mdr_pack_array_of(struct mdr *m, const char *type, uint64_t bytes_sz,
+    uint32_t n, void *a)
+{
+	int       i;
+	uint64_t  bits;
+	char     *end;
+
+	for (i = 0; i < n; i++) {
+		if (*type == 'i' || *type == 'u' || *type == 'f') {
+			bits = strtoull(type + 1, &end, 10);
+			if (errno || *end != '\0') {
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+		}
+
+		switch (*type) {
+		case 'i':
+		case 'u':
+			switch (bits) {
+			case 8:
+				if (mdr_pack_uint8(m, ((uint8_t *)a)[i])
+				    == MDR_FAIL)
+					return MDR_FAIL;
+				break;
+			case 16:
+				if (mdr_pack_uint16(m, ((uint16_t *)a)[i])
+				    == MDR_FAIL)
+					return MDR_FAIL;
+				break;
+			case 32:
+				if (mdr_pack_uint32(m, ((uint32_t *)a)[i])
+				    == MDR_FAIL)
+					return MDR_FAIL;
+				break;
+			case 64:
+				if (mdr_pack_uint64(m, ((uint64_t *)a)[i])
+				    == MDR_FAIL)
+					return MDR_FAIL;
+				break;
+			default:
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+			break;
+		case 'f':
+			switch (bits) {
+			case 32:
+				if (mdr_pack_float32(m, ((float *)a)[i])
+				    == MDR_FAIL)
+					return MDR_FAIL;
+				break;
+			case 64:
+				if (mdr_pack_float64(m, ((double *)a)[i])
+				    == MDR_FAIL)
+					return MDR_FAIL;
+				break;
+			default:
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+			break;
+		case 'b':
+			if (mdr_pack_bytes(m, ((char **)a)[i], bytes_sz)
+			    == MDR_FAIL)
+				return MDR_FAIL;
+		case 's':
+			if (mdr_pack_string(m, ((char **)a)[i]) == MDR_FAIL)
+				return MDR_FAIL;
+			break;
+		case 'm':
+			if (mdr_pack_mdr(m, (struct mdr *)a + i)
+			    == MDR_FAIL)
+				return MDR_FAIL;
+		}
+	}
+
+	return mdr_tell(m);
+}
+
+ptrdiff_t
 mdr_vpackf(size_t argc, struct mdr *m, const char *spec, va_list ap)
 {
 	int          finish = 0;
@@ -572,10 +653,10 @@ mdr_vpackf(size_t argc, struct mdr *m, const char *spec, va_list ap)
 	uint64_t     bytes_sz;
 	uint64_t     bits;
 	/*
-	 * A uint64 can render up to 20 digits, plus one for the 'b'
-	 * prefix, an optional array specifier and the terminating NUL byte.
+	 * A specifier can be at most 5 bytes: "A" for array, then 3
+	 * chars, for example u64, and terminating NUL.
 	 */
-	char        spbuf[23];
+	char        spbuf[5];
 
 	if (m == NULL || spec == NULL) {
 		errno = EINVAL;
@@ -592,7 +673,7 @@ mdr_vpackf(size_t argc, struct mdr *m, const char *spec, va_list ap)
 	 *   i8, i16, i32, i64
 	 *   f32, f64,
 	 *   b, s, m, r ("r" for "reserve")
-	 * TODO: a "repeat" specifier.
+	 * An "A" prefix can be used to specify an array.
 	 */
 	for (p = spec, prev = spec; !finish; p++) {
 		if (*p == '\0')
@@ -615,20 +696,15 @@ mdr_vpackf(size_t argc, struct mdr *m, const char *spec, va_list ap)
 			abort();
 
 		if (spbuf[0] == 'A') {
-			//argc--;
-			//if (mdr_pack_array_of(m, spbuf + 1,
-			//  va_arg(ap, uint32_t),
-			//  va_arg(ap, void *)) == MDR_FAIL)
-			//	return MDR_FAIL;
-			// TODO: above says how many in the array...
-			// next arg must be the array
-			// This can support bytes and strings too, though
-			// they must be of a single fixed length.
-			// TODO: the pack functions should have a macro that
-			// passes a "terminator", which should always be
-			// present. It can be used to sanitize if the format
-			// was used properly, with the right count of variadic
-			// args.
+			argc--;
+			if (spbuf[1] == 'b') {
+				bytes_sz = va_arg(ap, uint64_t);
+				argc--;
+			}
+			if (mdr_pack_array_of(m, spbuf + 1, bytes_sz,
+			    va_arg(ap, uint32_t),
+			    va_arg(ap, void *)) == MDR_FAIL)
+				return MDR_FAIL;
 		} else if (strcmp(spbuf, "m") == 0) {
 			if (mdr_pack_mdr(m, va_arg(ap, struct mdr *))
 			    == MDR_FAIL)
@@ -881,8 +957,8 @@ mdr_unpack_hdr(struct mdr *m, uint32_t allowed_flags, char *buf, size_t buf_sz)
 	m->namespace = (uint32_t *)m->pos;
 	m->pos += sizeof(*m->namespace);
 
-	m->id = (uint16_t *)m->pos;
-	m->pos += sizeof(*m->id);
+	m->name = (uint16_t *)m->pos;
+	m->pos += sizeof(*m->name);
 
 	m->version = (uint16_t *)m->pos;
 	m->pos += sizeof(*m->version);
@@ -908,7 +984,7 @@ mdr_print(FILE *out, const struct mdr *m)
 
 	fprintf(out, "  size:        %lu\n", mdr_size(m));
 	fprintf(out, "  namespace:   %u\n", mdr_namespace(m));
-	fprintf(out, "  id:          %u\n", mdr_id(m));
+	fprintf(out, "  id:          %u\n", mdr_name(m));
 	fprintf(out, "  version:     %u\n", mdr_version(m));
 	if (mdr_flags(m) & MDR_F_TAIL_BYTES)
 		fprintf(out, "  tail bytes:  %lu\n", mdr_tail_bytes(m));
@@ -1237,12 +1313,13 @@ mdr_vunpackf(size_t argc, struct mdr *m, const char *spec, va_list ap)
 	char        *bytes, *end;
 	const char **bytes_ref;
 	uint64_t    *bytes_sz;
+	uint64_t     max_length;
 	uint64_t     bits;
 	/*
-	 * A uint64 can render up to 20 digits, plus one for the 'b'
-	 * prefix, an optional array specifier and the terminating NUL byte.
+	 * A specifier can be at most 5 bytes: "A" for array, then 3
+	 * chars, for example u64, and terminating NUL.
 	 */
-	char        spbuf[23];
+	char        spbuf[5];
 
 	if (m == NULL || spec == NULL) {
 		errno = EINVAL;
@@ -1259,7 +1336,7 @@ mdr_vunpackf(size_t argc, struct mdr *m, const char *spec, va_list ap)
 	 *   i8, i16, i32, i64
 	 *   f32, f64,
 	 *   b, s, m, r (reference to bytes)
-	 * TODO: a "repeat" specifier, which can be "N"
+	 * An "A" prefix can be used to specify an array.
 	 */
 	for (p = spec, prev = spec; !finish; p++) {
 		if (*p == '\0')
@@ -1281,7 +1358,18 @@ mdr_vunpackf(size_t argc, struct mdr *m, const char *spec, va_list ap)
 		if (argc < 0)
 			abort();
 
-		if (strcmp(spbuf, "m") == 0) {
+		if (spbuf[0] == 'A') {
+			argc--;
+			if (spbuf[1] == 'b' || spbuf[1] == 's') {
+				max_length = va_arg(ap, uint64_t);
+				argc--;
+			}
+			// TODO:
+			//if (mdr_unpack_array_of(m, spbuf + 1, max_length,
+			//    va_arg(ap, uint32_t),
+			//    va_arg(ap, void *)) == MDR_FAIL)
+			//	return MDR_FAIL;
+		} else if (strcmp(spbuf, "m") == 0) {
 			if (mdr_unpack_mdr_ref(m, va_arg(ap, struct mdr *))
 			    == MDR_FAIL)
 				return MDR_FAIL;
@@ -1436,7 +1524,7 @@ ptrdiff_t
 mdr_pack_echo(struct mdr *m, const char *echo)
 {
 	return mdr_pack(m, NULL, 0, MDR_F_NONE, MDR_NS_CTL,
-	    MDR_ID_CTL_ECHO, 0, "s", echo);
+	    MDR_NAME_CTL_ECHO, 0, "s", echo);
 }
 
 ptrdiff_t
