@@ -1126,11 +1126,11 @@ main(int argc, char **argv)
 	if (lsock[lsock_len] == -1)
 		exit(1);
 	lsock_len++;
-#ifdef __OpenBSD__
+#ifndef __linux__
 	/*
-	 * On OpenBSD, we don't get v4 compatibility when creating a v6
-	 * listening socket. This function lets us create listening sockets by
-	 * family.
+	 * On OpenBSD (and other BSDs??), we don't get v4 compatibility when
+	 * creating a v6 listening socket. This function lets us create
+	 * listening sockets by family.
 	 */
 	lsock[lsock_len] = get_listen_socket(AF_INET, SOCK_STREAM,
 	    mdrd_conf.port);

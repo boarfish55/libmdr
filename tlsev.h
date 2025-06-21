@@ -51,7 +51,10 @@ struct tlsev_listener {
 	uint16_t                max_conn_per_ip;
 	int                     use_rcv_lowat;
 
-#ifdef __OpenBSD__
+#ifdef __linux__
+	int                     epollfd;
+	struct epoll_event     *events;
+#else
 	int                     kq;
 	/*
 	 * This needs to be here so we can resize it when we add new
@@ -61,9 +64,6 @@ struct tlsev_listener {
 	struct kevent          *ch;
 	int                     chn;
 	int                     max_ch;
-#else
-	int                     epollfd;
-	struct epoll_event     *events;
 #endif
 	int                     max_events;
 
