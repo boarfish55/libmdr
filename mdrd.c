@@ -1071,6 +1071,8 @@ main(int argc, char **argv)
 	}
 
 #ifdef __OpenBSD__
+	// TODO: We should use Linux's landlock when it stabilizes and
+	// becomes mainstream on Debian
 	if (unveil(mdrd_conf.backend_argv[0], "x") == -1) {
 		xlog_strerror(LOG_ERR, errno,
 		    "unveil: %s", mdrd_conf.backend_argv[0]);

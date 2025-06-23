@@ -22,4 +22,7 @@ void   close_x(int, const char *, const char *, int);
 int    spawn(char *const[], int *, int *, const char *,
            const char *, struct xerr *);
 
+char **strarray_alloc(size_t, size_t);
+char **strarray_add(char **, const char *);
+
 #endif

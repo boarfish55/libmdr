@@ -67,7 +67,7 @@ uint16_t mdr_name(const struct mdr *);
 uint16_t mdr_version(const struct mdr *);
 uint64_t mdr_tail_bytes(const struct mdr *);
 
-ptrdiff_t mdr_pack_(size_t, struct mdr *, char *, size_t, uint32_t,
+ptrdiff_t mdr_pack_(int, struct mdr *, char *, size_t, uint32_t,
               uint16_t, uint16_t, uint16_t, const char *, ...);
 ptrdiff_t mdr_pack_hdr(struct mdr *, char *, size_t, uint32_t, uint16_t,
               uint16_t, uint16_t);
@@ -87,11 +87,10 @@ ptrdiff_t mdr_pack_string(struct mdr *, const char *);
 ptrdiff_t mdr_pack_mdr(struct mdr *, struct mdr *);
 ptrdiff_t mdr_pack_array_of(struct mdr *, const char *, uint64_t,
 	      uint32_t, void *);
-ptrdiff_t mdr_packf_(size_t, struct mdr *, const char *, ...);
-ptrdiff_t mdr_vpackf(size_t, struct mdr *, const char *, va_list);
+ptrdiff_t mdr_packf_(int, struct mdr *, const char *, ...);
 ptrdiff_t mdr_add_tail_bytes(struct mdr *, uint64_t);
 
-ptrdiff_t mdr_unpack_(size_t, struct mdr *, uint32_t, char *, size_t,
+ptrdiff_t mdr_unpack_(int, struct mdr *, uint32_t, char *, size_t,
               const char *, ...);
 ptrdiff_t mdr_unpack_from_fd(struct mdr *, uint32_t, int, char *, size_t);
 ptrdiff_t mdr_unpack_all(struct mdr *, uint32_t, char *, size_t, size_t);
@@ -113,8 +112,7 @@ ptrdiff_t mdr_unpack_mdr_ref(struct mdr *, struct mdr *);
 ptrdiff_t mdr_unpack_mdr(struct mdr *, struct mdr *, char *, size_t);
 ptrdiff_t mdr_unpack_array_of(struct mdr *, const char *, uint64_t,
 	      uint32_t *, void *);
-ptrdiff_t mdr_unpackf_(size_t, struct mdr *, const char *, ...);
-ptrdiff_t mdr_vunpackf(size_t, struct mdr *, const char *, va_list);
+ptrdiff_t mdr_unpackf_(int, struct mdr *, const char *, ...);
 void      mdr_print(FILE *, const struct mdr *);
 
 ptrdiff_t mdr_pack_echo(struct mdr *, const char *);

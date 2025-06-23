@@ -71,6 +71,381 @@ mdr_can_fit(struct mdr *m, size_t n)
 	return 1;
 }
 
+static ptrdiff_t
+mdr_vpackf(int argc, int validate_argc_only, struct mdr *m, const char *spec,
+    va_list ap)
+{
+	int          finish = 0;
+	const char  *p, *prev;
+	const char  *bytes;
+	char       **bytes_p;
+	char        *end;
+	uint64_t     bytes_sz;
+	uint64_t     bits;
+	uint32_t     n;
+	/*
+	 * A specifier can be at most 5 bytes: "A" for array, then 3
+	 * chars, for example u64, and terminating NUL.
+	 */
+	char        spbuf[5];
+
+	if (m == NULL || spec == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	/* We only handle up to 256 variadic fields. */
+	if (argc > MDR_STDARG_MAX)
+		abort();
+
+	/*
+	 * Possible types in spec:
+	 *   u8, u16, u32, u64
+	 *   i8, i16, i32, i64
+	 *   f32, f64,
+	 *   b, s, m, r ("r" for "reserve")
+	 * An "A" prefix can be used to specify an array.
+	 */
+	for (p = spec, prev = spec; !finish; p++) {
+		if (*p == '\0')
+			finish = 1;
+
+		if (*p != ':' && *p != '\0')
+			continue;
+
+		if (p - prev > sizeof(spbuf) - 1) {
+			errno = EINVAL;
+			return MDR_FAIL;
+		}
+
+		memcpy(spbuf, prev, p - prev);
+		spbuf[p - prev] = '\0';
+		argc--;
+
+		if (spbuf[0] == 'A') {
+			argc--;
+			if (spbuf[1] == 'b')
+				argc--;
+		}
+
+		if (spbuf[0] == 'b' || spbuf[0] == 'r')
+			argc--;
+
+		/* We have more format specifiers than we have args. */
+		if (argc < 0)
+			abort();
+
+		if (spbuf[0] == 'A') {
+			n = va_arg(ap, uint32_t);
+			if (spbuf[1] == 'b')
+				bytes_sz = va_arg(ap, uint64_t);
+			if (!validate_argc_only &&
+			    mdr_pack_array_of(m, spbuf + 1, bytes_sz,
+			    n, va_arg(ap, void *)) == MDR_FAIL)
+				return MDR_FAIL;
+		} else if (strcmp(spbuf, "m") == 0) {
+			if (!validate_argc_only &&
+			    mdr_pack_mdr(m, va_arg(ap, struct mdr *))
+			    == MDR_FAIL)
+				return MDR_FAIL;
+		} else if (strcmp(spbuf, "b") == 0) {
+			bytes = va_arg(ap, char *);
+			bytes_sz = va_arg(ap, uint64_t);
+			if (!validate_argc_only &&
+			    mdr_pack_bytes(m, bytes, bytes_sz) == MDR_FAIL)
+				return MDR_FAIL;
+		} else if (strcmp(spbuf, "r") == 0) {
+			bytes_p = va_arg(ap, char **);
+			bytes_sz = va_arg(ap, uint64_t);
+			if (!validate_argc_only &&
+			    mdr_pack_space(m, bytes_p, bytes_sz) == MDR_FAIL)
+				return MDR_FAIL;
+		} else if (strcmp(spbuf, "s") == 0) {
+			if (!validate_argc_only &&
+			    mdr_pack_string(m, va_arg(ap, char *)) == MDR_FAIL)
+				return MDR_FAIL;
+		} else if (spbuf[0] == 'u' || spbuf[0] == 'i') {
+			if (strlen(spbuf) < 2) {
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+
+			errno = 0;
+			bits = strtoull(spbuf + 1, &end, 10);
+			if (bits == ULLONG_MAX || *end != '\0') {
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+
+			switch (bits) {
+			case 8:
+				if (!validate_argc_only &&
+				    mdr_pack_uint8(m, va_arg(ap, int))
+				    == MDR_FAIL) {
+					errno = EOVERFLOW;
+					return MDR_FAIL;
+				}
+				break;
+			case 16:
+				if (!validate_argc_only &&
+				    mdr_pack_uint16(m, va_arg(ap, int))
+				    == MDR_FAIL) {
+					errno = EOVERFLOW;
+					return MDR_FAIL;
+				}
+				break;
+			case 32:
+				if (!validate_argc_only &&
+				    mdr_pack_uint32(m, va_arg(ap, uint32_t))
+				    == MDR_FAIL) {
+					errno = EOVERFLOW;
+					return MDR_FAIL;
+				}
+				break;
+			case 64:
+				if (!validate_argc_only &&
+				    mdr_pack_uint64(m, va_arg(ap, uint64_t))
+				    == MDR_FAIL) {
+					errno = EOVERFLOW;
+					return MDR_FAIL;
+				}
+				break;
+			default:
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+		} else if (spbuf[0] == 'f') {
+			if (strlen(spbuf) < 3) {
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+
+			errno = 0;
+			bits = strtoull(spbuf + 1, &end, 10);
+			if (bits == ULLONG_MAX || *end != '\0') {
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+
+			switch (bits) {
+			case 32:
+				if (!validate_argc_only &&
+				    mdr_pack_float32(m, va_arg(ap, double))
+				    == MDR_FAIL) {
+					errno = EOVERFLOW;
+					return MDR_FAIL;
+				}
+				break;
+			case 64:
+				if (!validate_argc_only &&
+				    mdr_pack_float64(m, va_arg(ap, double))
+				    == MDR_FAIL) {
+					errno = EOVERFLOW;
+					return MDR_FAIL;
+				}
+				break;
+			default:
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+		} else {
+			/* Unknown type specifier */
+			errno = EINVAL;
+			return MDR_FAIL;
+		}
+		prev = p + 1;
+	}
+
+	/* We have more args than format specifiers. */
+	if (argc > 0)
+		abort();
+
+	return mdr_tell(m);
+}
+
+static ptrdiff_t
+mdr_vunpackf(int argc, int validate_argc_only, struct mdr *m, const char *spec,
+    va_list ap)
+{
+	int          finish = 0;
+	const char  *p, *prev;
+	char        *bytes, *end;
+	const char **bytes_ref;
+	uint64_t    *bytes_sz;
+	uint64_t     max_length;
+	uint64_t     bits;
+	uint32_t    *n;
+	/*
+	 * A specifier can be at most 5 bytes: "A" for array, then 3
+	 * chars, for example u64, and terminating NUL.
+	 */
+	char        spbuf[5];
+
+	if (m == NULL || spec == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	/* We only handle up to 256 variadic fields. */
+	if (argc > MDR_STDARG_MAX)
+		abort();
+
+	/*
+	 * Possible types in spec:
+	 *   u8, u16, u32, u64
+	 *   i8, i16, i32, i64
+	 *   f32, f64,
+	 *   b, s, m, r (reference to bytes)
+	 * An "A" prefix can be used to specify an array.
+	 */
+	for (p = spec, prev = spec; !finish; p++) {
+		if (*p == '\0')
+			finish = 1;
+
+		if (*p != ':' && *p != '\0')
+			continue;
+
+		if (p - prev > sizeof(spbuf) - 1) {
+			errno = EINVAL;
+			return MDR_FAIL;
+		}
+
+		memcpy(spbuf, prev, p - prev);
+		spbuf[p - prev] = '\0';
+		argc--;
+
+		if (spbuf[0] == 'A') {
+			argc--;
+			if (spbuf[1] == 'b' || spbuf[1] == 's')
+				argc--;
+		}
+
+		if (spbuf[0] == 'b' || spbuf[0] == 'r' || spbuf[0] == 's')
+			argc--;
+
+		/* We have more format specifiers than we have args. */
+		if (argc < 0)
+			abort();
+
+		if (spbuf[0] == 'A') {
+			n = va_arg(ap, uint32_t *);
+			if (spbuf[1] == 'b' || spbuf[1] == 's')
+				max_length = va_arg(ap, uint64_t);
+			if (!validate_argc_only &&
+			    mdr_unpack_array_of(m, spbuf + 1, max_length,
+			    n, va_arg(ap, void *)) == MDR_FAIL)
+				return MDR_FAIL;
+		} else if (strcmp(spbuf, "m") == 0) {
+			if (!validate_argc_only &&
+			    mdr_unpack_mdr_ref(m, va_arg(ap, struct mdr *))
+			    == MDR_FAIL)
+				return MDR_FAIL;
+		} else if (strcmp(spbuf, "b") == 0) {
+			bytes = va_arg(ap, char *);
+			bytes_sz = va_arg(ap, uint64_t *);
+			if (!validate_argc_only &&
+			    mdr_unpack_bytes(m, bytes, bytes_sz) == MDR_FAIL)
+				return MDR_FAIL;
+		} else if (strcmp(spbuf, "r") == 0) {
+			bytes_ref = va_arg(ap, const char **);
+			bytes_sz = va_arg(ap, uint64_t *);
+			if (!validate_argc_only &&
+			    mdr_unpack_bytes_ref(m, bytes_ref, bytes_sz)
+			    == MDR_FAIL)
+				return MDR_FAIL;
+		} else if (strcmp(spbuf, "s") == 0) {
+			bytes = va_arg(ap, char *);
+			bytes_sz = va_arg(ap, uint64_t *);
+			if (!validate_argc_only &&
+			    mdr_unpack_string(m, bytes, bytes_sz) == MDR_FAIL)
+				return MDR_FAIL;
+		} else if (spbuf[0] == 'u' || spbuf[0] == 'i') {
+			if (strlen(spbuf) < 2) {
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+
+			errno = 0;
+			bits = strtoull(spbuf + 1, &end, 10);
+			if (bits == ULLONG_MAX || *end != '\0') {
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+
+			switch (bits) {
+			case 8:
+				if (!validate_argc_only &&
+				    mdr_unpack_uint8(m,
+				    va_arg(ap, uint8_t *)) == MDR_FAIL)
+					return MDR_FAIL;
+				break;
+			case 16:
+				if (!validate_argc_only &&
+				    mdr_unpack_uint16(m,
+				    va_arg(ap, uint16_t *)) == MDR_FAIL)
+					return MDR_FAIL;
+				break;
+			case 32:
+				if (!validate_argc_only &&
+				    mdr_unpack_uint32(m,
+				    va_arg(ap, uint32_t *)) == MDR_FAIL)
+					return MDR_FAIL;
+				break;
+			case 64:
+				if (!validate_argc_only &&
+				    mdr_unpack_uint64(m,
+				    va_arg(ap, uint64_t *)) == MDR_FAIL)
+					return MDR_FAIL;
+				break;
+			default:
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+		} else if (spbuf[0] == 'f') {
+			if (strlen(spbuf) < 3) {
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+
+			errno = 0;
+			bits = strtoull(spbuf + 1, &end, 10);
+			if (bits == ULLONG_MAX || *end != '\0') {
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+
+			switch (bits) {
+			case 32:
+				if (!validate_argc_only &&
+				    mdr_unpack_float32(m,
+				    va_arg(ap, float *)) == MDR_FAIL)
+					return MDR_FAIL;
+				break;
+			case 64:
+				if (!validate_argc_only &&
+				    mdr_unpack_float64(m,
+				    va_arg(ap, double *)) == MDR_FAIL)
+					return MDR_FAIL;
+				break;
+			default:
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+		} else {
+			/* Unknown type specifier */
+			errno = EINVAL;
+			return MDR_FAIL;
+		}
+		prev = p + 1;
+	}
+
+	/* We have more args than format specifiers. */
+	if (argc > 0)
+		abort();
+
+	return mdr_tell(m);
+}
+
 ptrdiff_t
 mdr_copy(struct mdr *dst, char *buf, size_t buf_sz, const struct mdr *src)
 {
@@ -245,7 +620,7 @@ mdr_buf(const struct mdr *m)
 }
 
 ptrdiff_t
-mdr_pack_(size_t argc, struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
+mdr_pack_(int argc, struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
     uint16_t namespace, uint16_t id, uint16_t version, const char *spec, ...)
 {
 	ptrdiff_t r;
@@ -256,7 +631,11 @@ mdr_pack_(size_t argc, struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
 		return MDR_FAIL;
 
 	va_start(ap, spec);
-	r = mdr_vpackf(argc, m, spec, ap);
+	r = mdr_vpackf(argc, 1, m, spec, ap);
+	va_end(ap);
+
+	va_start(ap, spec);
+	r = mdr_vpackf(argc, 0, m, spec, ap);
 	va_end(ap);
 
 	if (r == MDR_FAIL)
@@ -571,8 +950,10 @@ mdr_pack_array_of(struct mdr *m, const char *type, uint64_t bytes_sz,
 	char     *end;
 
 	if (*type == 's' || *type == 'b' || *type == 'm') {
+		if (n == -1)
+			n = UINT32_MAX;
 		for (i = 0; i < n; i++) {
-			if (a + i == NULL) {
+			if (((void **)a)[i] == NULL) {
 				n = i;
 				break;
 			}
@@ -582,15 +963,15 @@ mdr_pack_array_of(struct mdr *m, const char *type, uint64_t bytes_sz,
 	if (mdr_pack_uint32(m, n) == MDR_FAIL)
 		return MDR_FAIL;
 
-	for (i = 0; i < n; i++) {
-		if (*type == 'i' || *type == 'u' || *type == 'f') {
-			bits = strtoull(type + 1, &end, 10);
-			if (errno || *end != '\0') {
-				errno = EINVAL;
-				return MDR_FAIL;
-			}
+	if (*type == 'i' || *type == 'u' || *type == 'f') {
+		bits = strtoull(type + 1, &end, 10);
+		if (bits == ULLONG_MAX || *end != '\0') {
+			errno = EINVAL;
+			return MDR_FAIL;
 		}
+	}
 
+	for (i = 0; i < n; i++) {
 		switch (*type) {
 		case 'i':
 		case 'u':
@@ -641,6 +1022,7 @@ mdr_pack_array_of(struct mdr *m, const char *type, uint64_t bytes_sz,
 			if (mdr_pack_bytes(m, ((char **)a)[i], bytes_sz)
 			    == MDR_FAIL)
 				return MDR_FAIL;
+			break;
 		case 's':
 			if (mdr_pack_string(m, ((char **)a)[i]) == MDR_FAIL)
 				return MDR_FAIL;
@@ -656,182 +1038,7 @@ mdr_pack_array_of(struct mdr *m, const char *type, uint64_t bytes_sz,
 }
 
 ptrdiff_t
-mdr_vpackf(size_t argc, struct mdr *m, const char *spec, va_list ap)
-{
-	int          finish = 0;
-	const char  *p, *prev;
-	const char  *bytes;
-	char       **bytes_p;
-	char        *end;
-	uint64_t     bytes_sz;
-	uint64_t     bits;
-	/*
-	 * A specifier can be at most 5 bytes: "A" for array, then 3
-	 * chars, for example u64, and terminating NUL.
-	 */
-	char        spbuf[5];
-
-	if (m == NULL || spec == NULL) {
-		errno = EINVAL;
-		return MDR_FAIL;
-	}
-
-	/* We only handle up to 256 variadic fields. */
-	if (argc > MDR_STDARG_MAX)
-		abort();
-
-	/*
-	 * Possible types in spec:
-	 *   u8, u16, u32, u64
-	 *   i8, i16, i32, i64
-	 *   f32, f64,
-	 *   b, s, m, r ("r" for "reserve")
-	 * An "A" prefix can be used to specify an array.
-	 */
-	for (p = spec, prev = spec; !finish; p++) {
-		if (*p == '\0')
-			finish = 1;
-
-		if (*p != ':' && *p != '\0')
-			continue;
-
-		if (p - prev >= sizeof(spbuf) - 1) {
-			errno = EINVAL;
-			return MDR_FAIL;
-		}
-
-		memcpy(spbuf, prev, p - prev);
-		spbuf[p - prev] = '\0';
-		argc--;
-
-		/* We have more format specifiers than we have args. */
-		if (argc < 0)
-			abort();
-
-		if (spbuf[0] == 'A') {
-			argc--;
-			if (spbuf[1] == 'b') {
-				bytes_sz = va_arg(ap, uint64_t);
-				argc--;
-			}
-			if (mdr_pack_array_of(m, spbuf + 1, bytes_sz,
-			    va_arg(ap, uint32_t),
-			    va_arg(ap, void *)) == MDR_FAIL)
-				return MDR_FAIL;
-		} else if (strcmp(spbuf, "m") == 0) {
-			if (mdr_pack_mdr(m, va_arg(ap, struct mdr *))
-			    == MDR_FAIL)
-				return MDR_FAIL;
-		} else if (strcmp(spbuf, "b") == 0) {
-			bytes = va_arg(ap, char *);
-			bytes_sz = va_arg(ap, uint64_t);
-			argc--;
-			if (mdr_pack_bytes(m, bytes, bytes_sz) == MDR_FAIL)
-				return MDR_FAIL;
-		} else if (strcmp(spbuf, "r") == 0) {
-			bytes_p = va_arg(ap, char **);
-			bytes_sz = va_arg(ap, uint64_t);
-			argc--;
-			if (mdr_pack_space(m, bytes_p, bytes_sz) == MDR_FAIL)
-				return MDR_FAIL;
-		} else if (strcmp(spbuf, "s") == 0) {
-			if (mdr_pack_string(m, va_arg(ap, char *)) == MDR_FAIL)
-				return MDR_FAIL;
-		} else if (spbuf[0] == 'u' || spbuf[0] == 'i') {
-			if (strlen(spbuf) < 2) {
-				errno = EINVAL;
-				return MDR_FAIL;
-			}
-
-			errno = 0;
-			bits = strtoull(spbuf + 1, &end, 10);
-			if (errno || *end != '\0') {
-				errno = EINVAL;
-				return MDR_FAIL;
-			}
-
-			switch (bits) {
-			case 8:
-				if (mdr_pack_uint8(m,
-				    va_arg(ap, int)) == MDR_FAIL) {
-					errno = EOVERFLOW;
-					return MDR_FAIL;
-				}
-				break;
-			case 16:
-				if (mdr_pack_uint16(m,
-				    va_arg(ap, int)) == MDR_FAIL) {
-					errno = EOVERFLOW;
-					return MDR_FAIL;
-				}
-				break;
-			case 32:
-				if (mdr_pack_uint32(m,
-				    va_arg(ap, uint32_t)) == MDR_FAIL) {
-					errno = EOVERFLOW;
-					return MDR_FAIL;
-				}
-				break;
-			case 64:
-				if (mdr_pack_uint64(m,
-				    va_arg(ap, uint64_t)) == MDR_FAIL) {
-					errno = EOVERFLOW;
-					return MDR_FAIL;
-				}
-				break;
-			default:
-				errno = EINVAL;
-				return MDR_FAIL;
-			}
-		} else if (spbuf[0] == 'f') {
-			if (strlen(spbuf) < 3) {
-				errno = EINVAL;
-				return MDR_FAIL;
-			}
-
-			errno = 0;
-			bits = strtoull(spbuf + 1, &end, 10);
-			if (errno || *end != '\0') {
-				errno = EINVAL;
-				return MDR_FAIL;
-			}
-
-			switch (bits) {
-			case 32:
-				if (mdr_pack_float32(m,
-				    va_arg(ap, double)) == MDR_FAIL) {
-					errno = EOVERFLOW;
-					return MDR_FAIL;
-				}
-				break;
-			case 64:
-				if (mdr_pack_float64(m,
-				    va_arg(ap, double)) == MDR_FAIL) {
-					errno = EOVERFLOW;
-					return MDR_FAIL;
-				}
-				break;
-			default:
-				errno = EINVAL;
-				return MDR_FAIL;
-			}
-		} else {
-			/* Unknown type specifier */
-			errno = EINVAL;
-			return MDR_FAIL;
-		}
-		prev = p + 1;
-	}
-
-	/* We have more args than format specifiers. */
-	if (argc > 0)
-		abort();
-
-	return mdr_tell(m);
-}
-
-ptrdiff_t
-mdr_packf_(size_t argc, struct mdr *m, const char *spec, ...)
+mdr_packf_(int argc, struct mdr *m, const char *spec, ...)
 {
 	va_list     ap;
 	ptrdiff_t   r;
@@ -842,7 +1049,11 @@ mdr_packf_(size_t argc, struct mdr *m, const char *spec, ...)
 	}
 
 	va_start(ap, spec);
-	r = mdr_vpackf(argc, m, spec, ap);
+	r = mdr_vpackf(argc, 1, m, spec, ap);
+	va_end(ap);
+
+	va_start(ap, spec);
+	r = mdr_vpackf(argc, 0, m, spec, ap);
 	va_end(ap);
 
 	if (r == MDR_FAIL)
@@ -1334,7 +1545,7 @@ mdr_unpack_array_of(struct mdr *m, const char *type, uint64_t sb_sz,
 	for (i = 0; i < MIN(*n, packed_n); i++) {
 		if (*type == 'i' || *type == 'u' || *type == 'f') {
 			bits = strtoull(type + 1, &end, 10);
-			if (errno || *end != '\0') {
+			if (bits == ULLONG_MAX || *end != '\0') {
 				errno = EINVAL;
 				return MDR_FAIL;
 			}
@@ -1415,175 +1626,7 @@ mdr_unpack_array_of(struct mdr *m, const char *type, uint64_t sb_sz,
 }
 
 ptrdiff_t
-mdr_vunpackf(size_t argc, struct mdr *m, const char *spec, va_list ap)
-{
-	int          finish = 0;
-	const char  *p, *prev;
-	char        *bytes, *end;
-	const char **bytes_ref;
-	uint64_t    *bytes_sz;
-	uint64_t     max_length;
-	uint64_t     bits;
-	/*
-	 * A specifier can be at most 5 bytes: "A" for array, then 3
-	 * chars, for example u64, and terminating NUL.
-	 */
-	char        spbuf[5];
-
-	if (m == NULL || spec == NULL) {
-		errno = EINVAL;
-		return MDR_FAIL;
-	}
-
-	/* We only handle up to 256 variadic fields. */
-	if (argc > MDR_STDARG_MAX)
-		abort();
-
-	/*
-	 * Possible types in spec:
-	 *   u8, u16, u32, u64
-	 *   i8, i16, i32, i64
-	 *   f32, f64,
-	 *   b, s, m, r (reference to bytes)
-	 * An "A" prefix can be used to specify an array.
-	 */
-	for (p = spec, prev = spec; !finish; p++) {
-		if (*p == '\0')
-			finish = 1;
-
-		if (*p != ':' && *p != '\0')
-			continue;
-
-		if (p - prev >= sizeof(spbuf) - 1) {
-			errno = EINVAL;
-			return MDR_FAIL;
-		}
-
-		memcpy(spbuf, prev, p - prev);
-		spbuf[p - prev] = '\0';
-		argc--;
-
-		/* We have more format specifiers than we have args. */
-		if (argc < 0)
-			abort();
-
-		if (spbuf[0] == 'A') {
-			argc--;
-			if (spbuf[1] == 'b' || spbuf[1] == 's') {
-				max_length = va_arg(ap, uint64_t);
-				argc--;
-			}
-			if (mdr_unpack_array_of(m, spbuf + 1, max_length,
-			    va_arg(ap, uint32_t *),
-			    va_arg(ap, void *)) == MDR_FAIL)
-				return MDR_FAIL;
-		} else if (strcmp(spbuf, "m") == 0) {
-			if (mdr_unpack_mdr_ref(m, va_arg(ap, struct mdr *))
-			    == MDR_FAIL)
-				return MDR_FAIL;
-		} else if (strcmp(spbuf, "b") == 0) {
-			bytes = va_arg(ap, char *);
-			bytes_sz = va_arg(ap, uint64_t *);
-			argc--;
-			if (mdr_unpack_bytes(m, bytes, bytes_sz)
-			    == MDR_FAIL)
-				return MDR_FAIL;
-		} else if (strcmp(spbuf, "r") == 0) {
-			bytes_ref = va_arg(ap, const char **);
-			bytes_sz = va_arg(ap, uint64_t *);
-			argc--;
-			if (mdr_unpack_bytes_ref(m, bytes_ref, bytes_sz)
-			    == MDR_FAIL)
-				return MDR_FAIL;
-		} else if (strcmp(spbuf, "s") == 0) {
-			bytes = va_arg(ap, char *);
-			bytes_sz = va_arg(ap, uint64_t *);
-			argc--;
-			if (mdr_unpack_string(m, bytes, bytes_sz) == MDR_FAIL)
-				return MDR_FAIL;
-		} else if (spbuf[0] == 'u' || spbuf[0] == 'i') {
-			if (strlen(spbuf) < 2) {
-				errno = EINVAL;
-				return MDR_FAIL;
-			}
-
-			errno = 0;
-			bits = strtoull(spbuf + 1, &end, 10);
-			if (errno || *end != '\0') {
-				errno = EINVAL;
-				return MDR_FAIL;
-			}
-
-			switch (bits) {
-			case 8:
-				if (mdr_unpack_uint8(m,
-				    va_arg(ap, uint8_t *)) == MDR_FAIL)
-					return MDR_FAIL;
-				break;
-			case 16:
-				if (mdr_unpack_uint16(m,
-				    va_arg(ap, uint16_t *)) == MDR_FAIL)
-					return MDR_FAIL;
-				break;
-			case 32:
-				if (mdr_unpack_uint32(m,
-				    va_arg(ap, uint32_t *)) == MDR_FAIL)
-					return MDR_FAIL;
-				break;
-			case 64:
-				if (mdr_unpack_uint64(m,
-				    va_arg(ap, uint64_t *)) == MDR_FAIL)
-					return MDR_FAIL;
-				break;
-			default:
-				errno = EINVAL;
-				return MDR_FAIL;
-			}
-		} else if (spbuf[0] == 'f') {
-			if (strlen(spbuf) < 3) {
-				errno = EINVAL;
-				return MDR_FAIL;
-			}
-
-			errno = 0;
-			bits = strtoull(spbuf + 1, &end, 10);
-			if (errno || *end != '\0') {
-				errno = EINVAL;
-				return MDR_FAIL;
-			}
-
-			switch (bits) {
-			case 32:
-				if (mdr_unpack_float32(m,
-				    va_arg(ap, float *)) == MDR_FAIL)
-					return MDR_FAIL;
-				break;
-			case 64:
-				if (mdr_unpack_float64(m,
-				    va_arg(ap, double *)) == MDR_FAIL)
-					return MDR_FAIL;
-				break;
-			default:
-				errno = EINVAL;
-				return MDR_FAIL;
-			}
-		} else {
-			/* Unknown type specifier */
-			errno = EINVAL;
-			return MDR_FAIL;
-		}
-		prev = p + 1;
-	}
-
-	/* We have more args than format specifiers. */
-	if (argc > 0)
-		abort();
-
-	return mdr_tell(m);
-}
-
-ptrdiff_t
-mdr_unpack_(size_t argc, struct mdr *m, uint32_t allowed_flags, char *buf,
+mdr_unpack_(int argc, struct mdr *m, uint32_t allowed_flags, char *buf,
     size_t buf_sz, const char *spec, ...)
 {
 	va_list   ap;
@@ -1598,7 +1641,11 @@ mdr_unpack_(size_t argc, struct mdr *m, uint32_t allowed_flags, char *buf,
 		return MDR_FAIL;
 
 	va_start(ap, spec);
-	r = mdr_vunpackf(argc, m, spec, ap);
+	r = mdr_vunpackf(argc, 1, m, spec, ap);
+	va_end(ap);
+
+	va_start(ap, spec);
+	r = mdr_vunpackf(argc, 0, m, spec, ap);
 	va_end(ap);
 
 	if (r == MDR_FAIL)
@@ -1608,7 +1655,7 @@ mdr_unpack_(size_t argc, struct mdr *m, uint32_t allowed_flags, char *buf,
 }
 
 ptrdiff_t
-mdr_unpackf_(size_t argc, struct mdr *m, const char *spec, ...)
+mdr_unpackf_(int argc, struct mdr *m, const char *spec, ...)
 {
 	va_list   ap;
 	ptrdiff_t r;
@@ -1619,7 +1666,11 @@ mdr_unpackf_(size_t argc, struct mdr *m, const char *spec, ...)
 	}
 
 	va_start(ap, spec);
-	r = mdr_vunpackf(argc, m, spec, ap);
+	r = mdr_vunpackf(argc, 1, m, spec, ap);
+	va_end(ap);
+
+	va_start(ap, spec);
+	r = mdr_vunpackf(argc, 0, m, spec, ap);
 	va_end(ap);
 
 	if (r == MDR_FAIL)

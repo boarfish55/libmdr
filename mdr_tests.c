@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "mdr.h"
+#include "util.h"
 
 void
 test_long_str()
@@ -249,6 +250,43 @@ test_echo()
 	mdr_free(&src);
 }
 
+void
+test_pack_array()
+{
+	struct mdr   in, out;
+	char         buf[1024];
+	uint64_t     r;
+
+	uint32_t     a_u32[3] = { 0, 1, 2 };
+	uint32_t     a_u32_n = 3;
+	uint32_t     a_u32_out[3] = { 0, 1, 2 };
+
+	char        *a_s[] = { "string1", "string2", NULL };
+	uint32_t     a_s_n = 3;
+	char       **a_s_out = strarray_alloc(3, 16);
+
+	char        *a_b[] = { "bytes1", "bytes2", "bytes3" };
+	uint32_t     a_b_n = 3;
+	char       **a_b_out = strarray_alloc(3, 6);
+
+	printf("%s\n", __func__);
+
+	r = mdr_pack(&in, buf, sizeof(buf), MDR_F_NONE, MDR_NS_CTL,
+	    MDR_NAME_CTL_ECHO, 0, "Au32:As:Ab",
+	    a_u32_n, a_u32,
+	    -1, a_s,
+	    3, 6, a_b);
+	printf("mdr_pack=%lu\n", r);
+
+	r = mdr_unpack(&out, MDR_F_NONE, buf, r, "Au32:As:Ab",
+	    &a_u32_n, a_u32_out,
+	    &a_s_n, 16, a_s_out,
+	    &a_b_n, 6, a_b_out);
+	printf("mdr_unpack=%lu\n", r);
+	free(a_s_out);
+	free(a_b_out);
+}
+
 int
 main()
 {
@@ -350,5 +388,7 @@ main()
 	test_pack_mdr();
 
 	test_pack_space();
+
+	test_pack_array();
 	return 0;
 }
