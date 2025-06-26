@@ -59,7 +59,7 @@ mdr_can_fit(struct mdr *m, size_t n)
 		m->namespace = (uint32_t *)(tmp + ((char *)m->namespace -
 		    m->buf));
 		m->name = (uint16_t *)(tmp + ((char *)m->name - m->buf));
-		m->version = (uint16_t *)(tmp + ((char *)m->version - m->buf));
+		m->variant = (uint16_t *)(tmp + ((char *)m->variant - m->buf));
 
 		if (mdr_flags(m) & MDR_F_TAIL_BYTES)
 			m->tail_bytes = (uint64_t *)
@@ -77,12 +77,15 @@ mdr_vpackf(int argc, int validate_argc_only, struct mdr *m, const char *spec,
 {
 	int          finish = 0;
 	const char  *p, *prev;
+	void        *array;
 	const char  *bytes;
 	char       **bytes_p;
 	char        *end;
 	uint64_t     bytes_sz;
+	int64_t      slen;
+	uint64_t     max_item_sz;
 	uint64_t     bits;
-	uint32_t     n;
+	int32_t      n;
 	/*
 	 * A specifier can be at most 5 bytes: "A" for array, then 3
 	 * chars, for example u64, and terminating NUL.
@@ -103,7 +106,7 @@ mdr_vpackf(int argc, int validate_argc_only, struct mdr *m, const char *spec,
 	 *   u8, u16, u32, u64
 	 *   i8, i16, i32, i64
 	 *   f32, f64,
-	 *   b, s, m, r ("r" for "reserve")
+	 *   bN, sN, m, rN ("r" for "reserve")
 	 * An "A" prefix can be used to specify an array.
 	 */
 	for (p = spec, prev = spec; !finish; p++) {
@@ -124,11 +127,12 @@ mdr_vpackf(int argc, int validate_argc_only, struct mdr *m, const char *spec,
 
 		if (spbuf[0] == 'A') {
 			argc--;
-			if (spbuf[1] == 'b')
+			if (spbuf[1] == 'b' || spbuf[1] == 'r' ||
+			    spbuf[1] == 's')
 				argc--;
 		}
 
-		if (spbuf[0] == 'b' || spbuf[0] == 'r')
+		if (spbuf[0] == 'b' || spbuf[0] == 'r' || spbuf[0] == 's')
 			argc--;
 
 		/* We have more format specifiers than we have args. */
@@ -136,33 +140,37 @@ mdr_vpackf(int argc, int validate_argc_only, struct mdr *m, const char *spec,
 			abort();
 
 		if (spbuf[0] == 'A') {
-			n = va_arg(ap, uint32_t);
-			if (spbuf[1] == 'b')
-				bytes_sz = va_arg(ap, uint64_t);
+			n = va_arg(ap, int32_t);
+			array = va_arg(ap, void *);
+			if (spbuf[1] == 'b' || spbuf[1] == 'r' ||
+			    spbuf[1] == 's')
+				max_item_sz = va_arg(ap, uint64_t);
 			if (!validate_argc_only &&
-			    mdr_pack_array_of(m, spbuf + 1, bytes_sz,
-			    n, va_arg(ap, void *)) == MDR_FAIL)
+			    mdr_pack_array_of(m, spbuf + 1, n, array,
+			    max_item_sz) == MDR_FAIL)
 				return MDR_FAIL;
 		} else if (strcmp(spbuf, "m") == 0) {
 			if (!validate_argc_only &&
 			    mdr_pack_mdr(m, va_arg(ap, struct mdr *))
 			    == MDR_FAIL)
 				return MDR_FAIL;
-		} else if (strcmp(spbuf, "b") == 0) {
+		} else if (strcmp(spbuf, "bN") == 0) {
 			bytes = va_arg(ap, char *);
 			bytes_sz = va_arg(ap, uint64_t);
 			if (!validate_argc_only &&
 			    mdr_pack_bytes(m, bytes, bytes_sz) == MDR_FAIL)
 				return MDR_FAIL;
-		} else if (strcmp(spbuf, "r") == 0) {
+		} else if (strcmp(spbuf, "rN") == 0) {
 			bytes_p = va_arg(ap, char **);
 			bytes_sz = va_arg(ap, uint64_t);
 			if (!validate_argc_only &&
 			    mdr_pack_space(m, bytes_p, bytes_sz) == MDR_FAIL)
 				return MDR_FAIL;
-		} else if (strcmp(spbuf, "s") == 0) {
+		} else if (strcmp(spbuf, "sN") == 0) {
+			bytes = va_arg(ap, char *);
+			slen = va_arg(ap, int64_t);
 			if (!validate_argc_only &&
-			    mdr_pack_string(m, va_arg(ap, char *)) == MDR_FAIL)
+			    mdr_pack_string(m, bytes, slen) == MDR_FAIL)
 				return MDR_FAIL;
 		} else if (spbuf[0] == 'u' || spbuf[0] == 'i') {
 			if (strlen(spbuf) < 2) {
@@ -270,11 +278,12 @@ mdr_vunpackf(int argc, int validate_argc_only, struct mdr *m, const char *spec,
 	int          finish = 0;
 	const char  *p, *prev;
 	char        *bytes, *end;
+	void        *array;
 	const char **bytes_ref;
 	uint64_t    *bytes_sz;
-	uint64_t     max_length;
+	uint64_t    *max_item_sz;
 	uint64_t     bits;
-	uint32_t    *n;
+	int32_t     *n;
 	/*
 	 * A specifier can be at most 5 bytes: "A" for array, then 3
 	 * chars, for example u64, and terminating NUL.
@@ -295,7 +304,7 @@ mdr_vunpackf(int argc, int validate_argc_only, struct mdr *m, const char *spec,
 	 *   u8, u16, u32, u64
 	 *   i8, i16, i32, i64
 	 *   f32, f64,
-	 *   b, s, m, r (reference to bytes)
+	 *   bN, sN, m, rN (reference to bytes)
 	 * An "A" prefix can be used to specify an array.
 	 */
 	for (p = spec, prev = spec; !finish; p++) {
@@ -316,7 +325,8 @@ mdr_vunpackf(int argc, int validate_argc_only, struct mdr *m, const char *spec,
 
 		if (spbuf[0] == 'A') {
 			argc--;
-			if (spbuf[1] == 'b' || spbuf[1] == 's')
+			if (spbuf[1] == 'b' || spbuf[1] == 'r' ||
+			    spbuf[1] == 's')
 				argc--;
 		}
 
@@ -328,32 +338,36 @@ mdr_vunpackf(int argc, int validate_argc_only, struct mdr *m, const char *spec,
 			abort();
 
 		if (spbuf[0] == 'A') {
-			n = va_arg(ap, uint32_t *);
-			if (spbuf[1] == 'b' || spbuf[1] == 's')
-				max_length = va_arg(ap, uint64_t);
+			n = va_arg(ap, int32_t *);
+			array = va_arg(ap, void *);
+			if (spbuf[1] == 'b' || spbuf[1] == 'r' ||
+			    spbuf[1] == 's')
+				max_item_sz = va_arg(ap, uint64_t *);
+			else
+				max_item_sz = NULL;
 			if (!validate_argc_only &&
-			    mdr_unpack_array_of(m, spbuf + 1, max_length,
-			    n, va_arg(ap, void *)) == MDR_FAIL)
+			    mdr_unpack_array_of(m, spbuf + 1, n,
+			    array, max_item_sz) == MDR_FAIL)
 				return MDR_FAIL;
 		} else if (strcmp(spbuf, "m") == 0) {
 			if (!validate_argc_only &&
 			    mdr_unpack_mdr_ref(m, va_arg(ap, struct mdr *))
 			    == MDR_FAIL)
 				return MDR_FAIL;
-		} else if (strcmp(spbuf, "b") == 0) {
+		} else if (strcmp(spbuf, "bN") == 0) {
 			bytes = va_arg(ap, char *);
 			bytes_sz = va_arg(ap, uint64_t *);
 			if (!validate_argc_only &&
 			    mdr_unpack_bytes(m, bytes, bytes_sz) == MDR_FAIL)
 				return MDR_FAIL;
-		} else if (strcmp(spbuf, "r") == 0) {
+		} else if (strcmp(spbuf, "rN") == 0) {
 			bytes_ref = va_arg(ap, const char **);
 			bytes_sz = va_arg(ap, uint64_t *);
 			if (!validate_argc_only &&
 			    mdr_unpack_bytes_ref(m, bytes_ref, bytes_sz)
 			    == MDR_FAIL)
 				return MDR_FAIL;
-		} else if (strcmp(spbuf, "s") == 0) {
+		} else if (strcmp(spbuf, "sN") == 0) {
 			bytes = va_arg(ap, char *);
 			bytes_sz = va_arg(ap, uint64_t *);
 			if (!validate_argc_only &&
@@ -452,7 +466,7 @@ mdr_copy(struct mdr *dst, char *buf, size_t buf_sz, const struct mdr *src)
 	ptrdiff_t r;
 
 	if ((r = mdr_pack_hdr(dst, buf, buf_sz, mdr_flags(src),
-	    mdr_namespace(src), mdr_name(src), mdr_version(src))) == MDR_FAIL)
+	    mdr_namespace(src), mdr_name(src), mdr_variant(src))) == MDR_FAIL)
 		return MDR_FAIL;
 
 
@@ -506,8 +520,8 @@ mdr_hdr_size(uint32_t flags)
 	 *  - size:       uint64_t
 	 *  - flags:      uint32_t
 	 *  - namespace:  uint32_t
-	 *  - id:         uint16_t
-	 *  - version:    uint16_t
+	 *  - name:       uint16_t
+	 *  - variant:    uint16_t
 	 *  - tail_bytes: uint64_t (optional)
 	 */
 	n = sizeof(uint64_t) +
@@ -538,6 +552,17 @@ mdr_tell(const struct mdr *m)
 	return m->pos - m->buf;
 }
 
+ptrdiff_t
+mdr_seek(struct mdr *m, ptrdiff_t offset)
+{
+	if (m == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	m->pos = MIN(m->buf + offset, m->buf + m->buf_sz);
+	return m->pos - m->buf;
+}
+
 uint64_t
 mdr_pending(const struct mdr *m)
 {
@@ -551,7 +576,7 @@ mdr_pending(const struct mdr *m)
 }
 
 int
-mdr_reset(struct mdr *m)
+mdr_rewind(struct mdr *m)
 {
 	if (m == NULL) {
 		errno = EINVAL;
@@ -592,13 +617,13 @@ mdr_name(const struct mdr *m)
 }
 
 uint16_t
-mdr_version(const struct mdr *m)
+mdr_variant(const struct mdr *m)
 {
 	if (m == NULL) {
 		errno = EINVAL;
 		return 0;
 	}
-	return be16toh(*m->version);
+	return be16toh(*m->variant);
 }
 
 uint64_t
@@ -621,18 +646,21 @@ mdr_buf(const struct mdr *m)
 
 ptrdiff_t
 mdr_pack_(int argc, struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
-    uint16_t namespace, uint16_t id, uint16_t version, const char *spec, ...)
+    uint16_t namespace, uint16_t name, uint16_t variant, const char *spec, ...)
 {
 	ptrdiff_t r;
 	va_list   ap;
 
-	if (mdr_pack_hdr(m, buf, buf_sz, flags, namespace, id,
-	    version) == MDR_FAIL)
+	if (mdr_pack_hdr(m, buf, buf_sz, flags, namespace, name,
+	    variant) == MDR_FAIL)
 		return MDR_FAIL;
 
 	va_start(ap, spec);
 	r = mdr_vpackf(argc, 1, m, spec, ap);
 	va_end(ap);
+
+	if (r == MDR_FAIL)
+		return MDR_FAIL;
 
 	va_start(ap, spec);
 	r = mdr_vpackf(argc, 0, m, spec, ap);
@@ -646,7 +674,7 @@ mdr_pack_(int argc, struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
 
 ptrdiff_t
 mdr_pack_hdr(struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
-    uint16_t namespace, uint16_t name, uint16_t version)
+    uint16_t namespace, uint16_t name, uint16_t variant)
 {
 	if (m == NULL) {
 		errno = EINVAL;
@@ -682,8 +710,8 @@ mdr_pack_hdr(struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
 	m->name = (uint16_t *)m->pos;
 	m->pos += sizeof(*m->name);
 
-	m->version = (uint16_t *)m->pos;
-	m->pos += sizeof(*m->version);
+	m->variant = (uint16_t *)m->pos;
+	m->pos += sizeof(*m->variant);
 
 	if (flags & MDR_F_TAIL_BYTES) {
 		m->tail_bytes = (uint64_t *)m->pos;
@@ -697,7 +725,7 @@ mdr_pack_hdr(struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
 	*m->flags = htobe32(flags);
 	*m->namespace = htobe32(namespace);
 	*m->name = htobe16(name);
-	*m->version = htobe16(version);
+	*m->variant = htobe16(variant);
 
 	return mdr_update_size(m);
 }
@@ -919,9 +947,12 @@ mdr_add_tail_bytes(struct mdr *m, uint64_t bytes_sz)
 }
 
 ptrdiff_t
-mdr_pack_string(struct mdr *m, const char *bytes)
+mdr_pack_string(struct mdr *m, const char *bytes, int64_t maxlen)
 {
-	return mdr_pack_bytes(m, bytes, strlen(bytes));
+	size_t len = strlen(bytes);
+	if (maxlen < 0)
+		maxlen = INT64_MAX;
+	return mdr_pack_bytes(m, bytes, MIN(len, maxlen));
 }
 
 ptrdiff_t
@@ -942,16 +973,21 @@ mdr_pack_mdr(struct mdr *m, struct mdr *src)
 }
 
 ptrdiff_t
-mdr_pack_array_of(struct mdr *m, const char *type, uint64_t bytes_sz,
-    uint32_t n, void *a)
+mdr_pack_array_of(struct mdr *m, const char *type, int32_t n,
+    void *a, uint64_t bytes_sz)
 {
 	int       i;
 	uint64_t  bits;
 	char     *end;
 
+	if (n > 0x7fffffff) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
 	if (*type == 's' || *type == 'b' || *type == 'm') {
-		if (n == -1)
-			n = UINT32_MAX;
+		if (n < 0)
+			n = 0x7fffffff;
 		for (i = 0; i < n; i++) {
 			if (((void **)a)[i] == NULL) {
 				n = i;
@@ -960,8 +996,13 @@ mdr_pack_array_of(struct mdr *m, const char *type, uint64_t bytes_sz,
 		}
 	}
 
-	if (mdr_pack_uint32(m, n) == MDR_FAIL)
-		return MDR_FAIL;
+	if (n <= 0x7f) {
+		*(uint8_t *)m->pos = n;
+		m->pos += sizeof(uint8_t);
+	} else {
+		*(uint32_t *)m->pos = htobe32(n | 0x80000000);
+		m->pos += sizeof(uint32_t);
+	}
 
 	if (*type == 'i' || *type == 'u' || *type == 'f') {
 		bits = strtoull(type + 1, &end, 10);
@@ -1024,7 +1065,8 @@ mdr_pack_array_of(struct mdr *m, const char *type, uint64_t bytes_sz,
 				return MDR_FAIL;
 			break;
 		case 's':
-			if (mdr_pack_string(m, ((char **)a)[i]) == MDR_FAIL)
+			if (mdr_pack_string(m, ((char **)a)[i], bytes_sz)
+			    == MDR_FAIL)
 				return MDR_FAIL;
 			break;
 		case 'm':
@@ -1184,8 +1226,8 @@ mdr_unpack_hdr(struct mdr *m, uint32_t allowed_flags, char *buf, size_t buf_sz)
 	m->name = (uint16_t *)m->pos;
 	m->pos += sizeof(*m->name);
 
-	m->version = (uint16_t *)m->pos;
-	m->pos += sizeof(*m->version);
+	m->variant = (uint16_t *)m->pos;
+	m->pos += sizeof(*m->variant);
 
 	if (mdr_flags(m) & MDR_F_TAIL_BYTES) {
 		m->tail_bytes = (uint64_t *)m->pos;
@@ -1208,8 +1250,8 @@ mdr_print(FILE *out, const struct mdr *m)
 
 	fprintf(out, "  size:        %lu\n", mdr_size(m));
 	fprintf(out, "  namespace:   %u\n", mdr_namespace(m));
-	fprintf(out, "  id:          %u\n", mdr_name(m));
-	fprintf(out, "  version:     %u\n", mdr_version(m));
+	fprintf(out, "  name:        %u\n", mdr_name(m));
+	fprintf(out, "  variant:     %u\n", mdr_variant(m));
 	if (mdr_flags(m) & MDR_F_TAIL_BYTES)
 		fprintf(out, "  tail bytes:  %lu\n", mdr_tail_bytes(m));
 	fprintf(out, "\n");
@@ -1476,11 +1518,17 @@ mdr_unpack_string(struct mdr *m, char *bytes, uint64_t *bytes_sz)
 		return MDR_FAIL;
 	}
 
+	/* Make room for \0 */
 	b = *bytes_sz - 1;
+
+	/*
+	 * Get the size we would have unpacked if the bytes buffer
+	 * was big enough.
+	 */
 	if ((r = mdr_unpack_bytes(m, bytes, &b)) == MDR_FAIL)
 		return MDR_FAIL;
 
-	bytes[MIN(*bytes_sz, b)] = '\0';
+	bytes[MIN(*bytes_sz - 1, b)] = '\0';
 	*bytes_sz = b + 1;
 	return r;
 }
@@ -1530,17 +1578,27 @@ mdr_unpack_mdr(struct mdr *m, struct mdr *dst, char *buf, size_t buf_sz)
 }
 
 ptrdiff_t
-mdr_unpack_array_of(struct mdr *m, const char *type, uint64_t sb_sz,
-    uint32_t *n, void *dst)
+mdr_unpack_array_of(struct mdr *m, const char *type, int32_t *n,
+    void *dst, uint64_t *max_item_sz)
 {
 	int       i;
 	uint64_t  bits;
 	uint32_t  packed_n;
-	uint64_t  saved_sb_sz;
+	uint64_t  sz, saved_max_item_sz;
 	char     *end;
 
-	if (mdr_unpack_uint32(m, &packed_n) == MDR_FAIL)
-		return MDR_FAIL;
+	if (*(uint8_t *)m->pos & 0x80) {
+		packed_n = be32toh(*(uint32_t *)m->pos) & 0x7fffffff;
+		m->pos += sizeof(uint32_t);
+	} else {
+		packed_n = *(uint8_t *)m->pos;
+		m->pos += sizeof(uint8_t);
+	}
+
+	if (max_item_sz != NULL) {
+		saved_max_item_sz = *max_item_sz;
+		*max_item_sz = 0;
+	}
 
 	for (i = 0; i < MIN(*n, packed_n); i++) {
 		if (*type == 'i' || *type == 'u' || *type == 'f') {
@@ -1598,18 +1656,20 @@ mdr_unpack_array_of(struct mdr *m, const char *type, uint64_t sb_sz,
 			}
 			break;
 		case 'b':
-			saved_sb_sz = sb_sz;
-			if (mdr_unpack_bytes(m, ((char **)dst)[i], &sb_sz)
+			sz = saved_max_item_sz;
+			if (mdr_unpack_bytes(m, ((char **)dst)[i], &sz)
 			    == MDR_FAIL)
 				return MDR_FAIL;
-			sb_sz = saved_sb_sz;
+			if (sz > *max_item_sz)
+				*max_item_sz = sz;
 			break;
 		case 's':
-			saved_sb_sz = sb_sz;
-			if (mdr_unpack_string(m, ((char **)dst)[i], &sb_sz)
+			sz = saved_max_item_sz;
+			if (mdr_unpack_string(m, ((char **)dst)[i], &sz)
 			    == MDR_FAIL)
 				return MDR_FAIL;
-			sb_sz = saved_sb_sz;
+			if (sz > *max_item_sz)
+				*max_item_sz = sz;
 			break;
 		case 'm':
 			if (mdr_unpack_mdr(m, (struct mdr *)dst + i, NULL, 0)
@@ -1622,6 +1682,7 @@ mdr_unpack_array_of(struct mdr *m, const char *type, uint64_t sb_sz,
 		}
 	}
 
+	*n = i;
 	return mdr_tell(m);
 }
 
@@ -1643,6 +1704,9 @@ mdr_unpack_(int argc, struct mdr *m, uint32_t allowed_flags, char *buf,
 	va_start(ap, spec);
 	r = mdr_vunpackf(argc, 1, m, spec, ap);
 	va_end(ap);
+
+	if (r == MDR_FAIL)
+		return MDR_FAIL;
 
 	va_start(ap, spec);
 	r = mdr_vunpackf(argc, 0, m, spec, ap);
@@ -1682,13 +1746,13 @@ mdr_unpackf_(int argc, struct mdr *m, const char *spec, ...)
 ptrdiff_t
 mdr_pack_echo(struct mdr *m, const char *echo)
 {
-	return mdr_pack(m, NULL, 0, MDR_F_NONE, MDR_NS_CTL,
-	    MDR_NAME_CTL_ECHO, 0, "s", echo);
+	return mdr_pack(m, NULL, 0, MDR_F_NONE, MDR_NS_MDR,
+	    MDR_NAME_MDR_ECHO, 0, "sN", echo, -1);
 }
 
 ptrdiff_t
 mdr_unpack_echo(struct mdr *m, char *buf, size_t sz, char *echo,
     size_t *echo_sz)
 {
-	return mdr_unpack(m, MDR_F_NONE, buf, sz, "s", echo, echo_sz);
+	return mdr_unpack(m, MDR_F_NONE, buf, sz, "sN", echo, echo_sz);
 }

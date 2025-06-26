@@ -25,7 +25,7 @@ flatconf.c: flatconf.y flatconf.h
 	$(YACC) -o flatconf.c flatconf.y
 
 mdr_tests: mdr_tests.c mdr.o util.o xlog.o
-	${CC} ${CFLAGS} mdr_tests.c $(LIBS) mdr.o -o mdr_tests
+	${CC} ${CFLAGS} mdr_tests.c $(LIBS) mdr.o util.o xlog.o -o mdr_tests
 
 mdrc: mdrc.c mdr.o
 	${CC} ${CFLAGS} mdrc.c $(LIBS) mdr.o -o mdrc

@@ -66,7 +66,7 @@ mdrd_unpack_bereq_ref(struct mdr *m, uint64_t *id, int *fd, struct mdr *msg,
 }
 
 int
-mdrd_pack_beresp(struct mdr *m, char *buf, size_t sz, uint64_t id, int fd,
+mdrd_pack_beresp_wmsg(struct mdr *m, char *buf, size_t sz, uint64_t id, int fd,
     uint32_t status, uint32_t flags, struct mdr *msg)
 {
 	if (mdr_pack_hdr(m, buf, sz, MDR_F_NONE, MDR_NS_MDRD,
@@ -74,11 +74,23 @@ mdrd_pack_beresp(struct mdr *m, char *buf, size_t sz, uint64_t id, int fd,
 	    mdr_pack_uint64(m, id) == MDR_FAIL ||
 	    mdr_pack_int32(m, fd) == MDR_FAIL ||
 	    mdr_pack_uint32(m, status) == MDR_FAIL ||
-	    mdr_pack_uint32(m, flags) == MDR_FAIL)
+	    mdr_pack_uint32(m, flags) == MDR_FAIL ||
+	    mdr_pack_mdr(m, msg) == MDR_FAIL)
 		return MDR_FAIL;
 
-	if (flags & MDRD_BERESP_F_MSG &&
-	    mdr_pack_mdr(m, msg) == MDR_FAIL)
+	return 0;
+}
+
+int
+mdrd_pack_beresp(struct mdr *m, char *buf, size_t sz, uint64_t id, int fd,
+    uint32_t status, uint32_t flags)
+{
+	if (mdr_pack_hdr(m, buf, sz, MDR_F_NONE, MDR_NS_MDRD,
+	    MDR_NAME_MDRD_BERESP, 0) == MDR_FAIL ||
+	    mdr_pack_uint64(m, id) == MDR_FAIL ||
+	    mdr_pack_int32(m, fd) == MDR_FAIL ||
+	    mdr_pack_uint32(m, status) == MDR_FAIL ||
+	    mdr_pack_uint32(m, flags) == MDR_FAIL)
 		return MDR_FAIL;
 
 	return 0;
@@ -91,7 +103,7 @@ mdrd_pack_error(struct mdr *m, char *buf, size_t sz, uint32_t status,
 	if (mdr_pack_hdr(m, buf, sz, MDR_F_NONE, MDR_NS_MDRD,
 	    MDR_NAME_MDRD_ERROR, 0) == MDR_FAIL ||
 	    mdr_pack_uint32(m, status) == MDR_FAIL ||
-	    mdr_pack_string(m, reason) == MDR_FAIL)
+	    mdr_pack_string(m, reason, 0) == MDR_FAIL)
 		return MDR_FAIL;
 
 	return 0;

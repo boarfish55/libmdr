@@ -25,7 +25,7 @@ usage()
 	printf("%s: [-dhi] [-n <repeat>] [-t <tls target|->] "
 	    "[-B <rcvbuf>] "
 	    "[-k <key> -c <cert>] "
-	    "<send namespace:id:version> <format> <args>\n", program);
+	    "<send namespace:name:varian> <format> <args>\n", program);
 }
 
 void
@@ -54,7 +54,7 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 	 * Possible types in spec:
 	 *   u8, u16, u32, u64
 	 *   i8, i16, i32, i64
-	 *   b, s
+	 *   bN, sN
 	 */
 	for (p = spec, prev = spec, a = args; !finish; p++) {
 		if (*p == '\0')
@@ -100,7 +100,7 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 				err(1, "mdr_unpack_hdr");
 			if (mdr_pack_mdr(m, &m2) == MDR_FAIL)
 				err(1, "mdr_pack_mdr");
-		} else if (strcmp(spbuf, "b") == 0) {
+		} else if (strcmp(spbuf, "bN") == 0) {
 			for (i = 0, bytes_p = *a++;
 			    *bytes_p != '\0' && i < sizeof(bytes); i++) {
 				if (*bytes_p++ != 'x')
@@ -128,8 +128,8 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 			}
 			if (mdr_pack_bytes(m, bytes, i) == MDR_FAIL)
 				err(1, "mdr_pack_bytes");
-		} else if (strcmp(spbuf, "s") == 0) {
-			if (mdr_pack_string(m, *a++) == MDR_FAIL)
+		} else if (strcmp(spbuf, "sN") == 0) {
+			if (mdr_pack_string(m, *a++, -1) == MDR_FAIL)
 				err(1, "mdr_pack_string");
 		} else if (spbuf[0] == 'u' || spbuf[0] == 'i') {
 			if (strlen(spbuf) < 2)
@@ -418,8 +418,8 @@ main(int argc, char **argv)
 	unsigned long  l;
 	int            opt;
 	uint32_t       namespace = 0;
-	uint16_t       id = 0, version = 0;
-	char          *msgid, *p;
+	uint16_t       name = 0, variant = 0;
+	char          *msgname, *p;
 	char          *format, *spec, *end;
 	int            count, r;
 	const char    *target = NULL;
@@ -472,9 +472,9 @@ main(int argc, char **argv)
 		return 0;
 	}
 
-	msgid = argv[optind++];
+	msgname = argv[optind++];
 
-	if ((p = strtok(msgid, ":")) == NULL) {
+	if ((p = strtok(msgname, ":")) == NULL) {
 		usage();
 		exit(1);
 	}
@@ -497,8 +497,8 @@ main(int argc, char **argv)
 		err(1, "invalid id");
 
 	if (l > UINT16_MAX)
-		errx(1, "id out of range");
-	id = l;
+		errx(1, "name out of range");
+	name = l;
 
 	if ((p = strtok(NULL, ":")) == NULL) {
 		usage();
@@ -508,11 +508,11 @@ main(int argc, char **argv)
 	errno = 0;
 	l = strtoul(p, &end, 10);
 	if (errno || *end != '\0')
-		err(1, "invalid version");
+		err(1, "invalid variant");
 
 	if (l > UINT16_MAX)
-		errx(1, "version out of range");
-	version = l;
+		errx(1, "variant out of range");
+	variant = l;
 
 	format = argv[optind++];
 	if (strlen(format) < 1) {
@@ -528,7 +528,7 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	r = mdr_pack_hdr(&m, NULL, 0, MDR_F_NONE, namespace, id, version);
+	r = mdr_pack_hdr(&m, NULL, 0, MDR_F_NONE, namespace, name, variant);
 	if (r == MDR_FAIL)
 		err(1, "mdr_pack_hdr");
 

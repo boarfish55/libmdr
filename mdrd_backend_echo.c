@@ -171,7 +171,7 @@ main(int argc, char **argv)
 			if (peer_cert == NULL) {
 				if (mdrd_pack_beresp(&m, buf, sizeof(buf), id,
 				    fd, MDRD_ST_CERTFAIL,
-				    MDRD_BERESP_F_CLOSE, NULL) == MDR_FAIL) {
+				    MDRD_BERESP_F_CLOSE) == MDR_FAIL) {
 					xlog(LOG_ERR, NULL,
 					    "mdrd_pack_beresp: %d", errno);
 					exit(1);
@@ -213,9 +213,8 @@ main(int argc, char **argv)
 			sessions = session;
 		}
 
-		if (mdrd_pack_beresp(&m, buf, sizeof(buf), id,
-		    fd, MDRD_ST_OK, MDRD_BERESP_F_MSG,
-		    &msg) == MDR_FAIL) {
+		if (mdrd_pack_beresp_wmsg(&m, buf, sizeof(buf), id,
+		    fd, MDRD_ST_OK, MDRD_BERESP_F_NONE, &msg) == MDR_FAIL) {
 			xlog_strerror(LOG_ERR, errno, "mdrd_pack_beresp");
 			exit(1);
 		}
