@@ -15,6 +15,10 @@
 extern locale_t log_locale;
 int             verbose = 0;
 
+struct mdr_spec msg_test_0 = {
+	MDR_DCV(0x00000000, 0x0003, 0x0000), { MDR_S }
+};
+
 struct test_status
 {
 	char *msg;
@@ -84,8 +88,8 @@ test_long_str()
 		str[i] = 'a';
 	str[i] = '\0';
 
-	if ((r = mdr_pack(&in, NULL, 0, MDR_F_NONE, MDR_NS_MDR,
-	    MDR_NAME_MDR_TEST, 0, "sN", str, -1)) == MDR_FAIL)
+	if ((r = mdr_pack(&in, NULL, 0, MDR_F_NONE,
+	    msg_test_0.dcv, "sN", str, -1)) == MDR_FAIL)
 		return ERR(errno, "mdr_pack_hdr");
 
 	if (r - mdr_hdr_size(MDR_F_NONE) != 1031)
@@ -118,12 +122,12 @@ test_pack_mdr()
 	struct mdr in_str, in, out, out_str;
 
 	/* Create inner mdr, containing a string */
-	if (mdr_pack(&in_str, in_str_buf, sizeof(in_str_buf), 0, MDR_NS_MDR,
-	    MDR_NAME_MDR_TEST, 0, "sN", str, -1) == MDR_FAIL)
+	if (mdr_pack(&in_str, in_str_buf, sizeof(in_str_buf), MDR_F_NONE,
+	    msg_test_0.dcv, "sN", str, -1) == MDR_FAIL)
 		return ERR(errno, "mdr_pack");
 
-	if (mdr_pack(&in, in_buf, sizeof(in_buf), 0, MDR_NS_MDR,
-	    MDR_NAME_MDR_TEST, 0, "m", &in_str) == MDR_FAIL)
+	if (mdr_pack(&in, in_buf, sizeof(in_buf), MDR_F_NONE,
+	    msg_test_0.dcv, "m", &in_str) == MDR_FAIL)
 		return ERR(errno, "mdr_pack nested");
 
 	if (mdr_unpack(&out, MDR_F_NONE,
@@ -150,8 +154,8 @@ test_pack_space()
 	struct mdr  in, out;
 
 	/* Create an mdr in which we reserve space for a string */
-	if ((r = mdr_pack(&in, buf, sizeof(buf), 0, MDR_NS_MDR,
-	    MDR_NAME_MDR_TEST, 0, "rN", &dst, strlen(str))) == MDR_FAIL)
+	if ((r = mdr_pack(&in, buf, sizeof(buf), MDR_F_NONE,
+	    msg_test_0.dcv, "rN", &dst, strlen(str))) == MDR_FAIL)
 		return ERR(errno, "mdr_pack");
 
 	/* Copy our string in the reserved space */
@@ -169,8 +173,8 @@ test_pack_space()
 		return ERR(0, "bytes ref mismatch");
 
 	/* Try again but with zero space */
-	if ((r = mdr_pack(&in, buf, sizeof(buf), 0, MDR_NS_MDR,
-	    MDR_NAME_MDR_TEST, 0, "rN", &dst, 0)) == MDR_FAIL)
+	if ((r = mdr_pack(&in, buf, sizeof(buf), MDR_F_NONE,
+	    msg_test_0.dcv, "rN", &dst, 0)) == MDR_FAIL)
 		return ERR(errno, "mdr_pack");
 
 	len = sizeof(str);
@@ -209,7 +213,7 @@ test_long_tail_bytes()
 	strab_expected[i] = '\0';
 
 	if (mdr_pack_hdr(&in, buf, sizeof(buf), MDR_F_TAIL_BYTES,
-	    MDR_NS_MDR, MDR_NAME_MDR_TEST, 0) == MDR_FAIL)
+	    msg_test_0.dcv) == MDR_FAIL)
 		return ERR(errno, "mdr_pack_hdr");
 
 	/*
@@ -254,8 +258,8 @@ test_limits()
 	struct mdr echo;
 	char       str[1];
 
-	if (mdr_pack_hdr(&echo, NULL, 0, MDR_F_TAIL_BYTES, MDR_NS_MDR,
-	    MDR_NAME_MDR_TEST, 0) == MDR_FAIL)
+	if (mdr_pack_hdr(&echo, NULL, 0, MDR_F_TAIL_BYTES,
+	    msg_test_0.dcv) == MDR_FAIL)
 		return ERR(errno, "mdr_pack_hdr");
 
 	n = (PTRDIFF_MAX -
@@ -339,8 +343,8 @@ test_pack_array()
 	char       **a_b_out = strarray_alloc(3, 6);
 	uint64_t     a_b_out_sz = 6;
 
-	r = mdr_pack(&in, buf, sizeof(buf), MDR_F_NONE, MDR_NS_MDR,
-	    MDR_NAME_MDR_TEST, 0, "Au32:AsN:AbN",
+	r = mdr_pack(&in, buf, sizeof(buf), MDR_F_NONE,
+	    msg_test_0.dcv, "Au32:AsN:AbN",
 	    a_u32_n, a_u32,
 	    -1, a_s, -1,
 	    3, a_b, 6);
@@ -441,9 +445,9 @@ test_encoding()
 
 	bzero(longarray, sizeof(longarray));
 
+#define mdr_string(str, len) str,(uint64_t)len
 	if (mdr_pack(&in, buf, sizeof(buf), MDR_F_NONE,
-	    MDR_NS_MDR, MDR_NAME_MDR_TEST, 0,
-	    "u64:i8:u16:bN:sN:f32:f64:sN:Au8",
+	    msg_test_0.dcv, "u64:i8:u16:bN:sN:f32:f64:sN:Au8",
 	    // TODO: we need helper macros here, this is horrible
 	    // e.g. mdr_u64(), mdr_sN("allo", 4)
 	    /// Or screw stdarg and just validate the sequence of
@@ -452,7 +456,8 @@ test_encoding()
 	    (uint64_t)111,
 	    -128,
 	    111,
-	    "allo", (uint64_t)4,
+	    mdr_string("allo", 4),
+	    //"allo", (uint64_t)4,
 	    "string", (int64_t)-1,
 	    -111.111,
 	    -11111.11111,
@@ -595,6 +600,7 @@ main(int argc, char **argv)
 
 	if ((log_locale = newlocale(LC_CTYPE_MASK, "C", 0)) == 0)
 		err(1, "newlocale");
+
 
 	for (t = tests; t->fn != NULL; t++) {
 		if (argc == optind && !t->default_set)

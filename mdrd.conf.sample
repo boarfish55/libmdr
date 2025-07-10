@@ -46,7 +46,7 @@ max_payload_size = 16384
 # Put an upper bound to avoid clients sending absurd certs.
 max_cert_size = 4096
 
-allowed_mdr_namespaces = [ 1 ]
+allowed_mdr_domains = [ 1 ]
 
 backend_argv = [
 	"/home/plalonde/prog/mdr/mdrd_backend_echo"

@@ -67,9 +67,9 @@
 #define mdr_unpackf(mdr, fmt, ...) \
 	mdr_unpackf_(MDR_STDARG_COUNT(__VA_ARGS__), mdr, fmt, __VA_ARGS__)
 
-#define mdr_pack(mdr, buf, buf_sz, flags, namespace, id, variant, fmt, ...) \
+#define mdr_pack(mdr, buf, buf_sz, flags, dcv, fmt, ...) \
 	mdr_pack_(MDR_STDARG_COUNT(__VA_ARGS__), mdr, buf, buf_sz, flags, \
-	namespace, id, variant, fmt, __VA_ARGS__)
+	dcv, fmt, __VA_ARGS__)
 
 #define mdr_packf(mdr, fmt, ...) \
 	mdr_packf_(MDR_STDARG_COUNT(__VA_ARGS__), mdr, fmt, __VA_ARGS__)

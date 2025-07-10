@@ -43,8 +43,8 @@ int  debug = 0;
 int  ssl_data_idx;
 char config_file_path[PATH_MAX] = "/etc/mdrd.conf";
 
-uint32_t *allowed_mdr_namespaces = NULL;
-int       allowed_mdr_namespaces_count = 0;
+uint32_t *allowed_mdr_domains = NULL;
+int       allowed_mdr_domains_count = 0;
 
 extern char *optarg;
 extern int   optind, opterr, optopt;
@@ -74,7 +74,7 @@ struct {
 	uint64_t rcvbuf;
 	uint64_t sndbuf;
 
-	uint64_t **allowed_mdr_namespaces;
+	uint64_t **allowed_mdr_domains;
 
 	char **backend_argv;
 	char  *backend_uid;
@@ -239,9 +239,9 @@ struct flatconf flatconf_vars[] = {
 		sizeof(mdrd_conf.sndbuf)
 	},
 	{
-		"allowed_mdr_namespaces",
+		"allowed_mdr_domains",
 		FLATCONF_ALLOCULONGLIST,
-		&mdrd_conf.allowed_mdr_namespaces,
+		&mdrd_conf.allowed_mdr_domains,
 		0
 	},
 	{
@@ -294,8 +294,8 @@ pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 		    "%lu > %lu", __func__, cert_len, mdrd_conf.max_cert_size);
 	}
 
-	if (mdr_pack_hdr(m, NULL, 4096, MDR_F_NONE, MDR_NS_MDRD,
-	    MDR_NAME_MDRD_BEREQ, 0) == MDR_FAIL ||
+	if (mdr_pack_hdr(m, NULL, 4096, MDR_F_NONE,
+	    mdr_mkdcv(MDR_NS_MDRD, MDR_NAME_MDRD_BEREQ, 0)) == MDR_FAIL ||
 	    mdr_pack_uint64(m, id) == MDR_FAIL ||
 	    mdr_pack_int32(m, fd) == MDR_FAIL ||
 	    mdr_pack_mdr(m, msg) == MDR_FAIL ||
@@ -385,8 +385,8 @@ client_close_cb(struct tlsev *t, void *data)
 	struct mdr bemsg;
 	char       buf[mdr_hdr_size(0) + sizeof(uint64_t)];
 
-	if (mdr_pack_hdr(&bemsg, buf, sizeof(buf), MDR_F_NONE, MDR_NS_MDRD,
-	    MDR_NAME_MDRD_BECLOSE, 0) == MDR_FAIL ||
+	if (mdr_pack_hdr(&bemsg, buf, sizeof(buf), MDR_F_NONE,
+	    mdr_mkdcv(MDR_NS_MDRD, MDR_NAME_MDRD_BECLOSE, 0)) == MDR_FAIL ||
 	    mdr_pack_uint64(&bemsg, tlsev_id(t)) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack_hdr", __func__);
 	} else {
@@ -450,16 +450,16 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 
 	counters_incr(COUNTER_MESSAGES_IN);
 
-	for (i = 0; mdrd_conf.allowed_mdr_namespaces &&
-	    mdrd_conf.allowed_mdr_namespaces[i] != NULL; i++) {
-		if (mdr_namespace(&cb_data->msg) ==
-		    *mdrd_conf.allowed_mdr_namespaces[i])
+	for (i = 0; mdrd_conf.allowed_mdr_domains &&
+	    mdrd_conf.allowed_mdr_domains[i] != NULL; i++) {
+		if (mdr_domain(&cb_data->msg) ==
+		    *mdrd_conf.allowed_mdr_domains[i])
 			break;
 	}
-	if (mdrd_conf.allowed_mdr_namespaces[i] == NULL) {
+	if (mdrd_conf.allowed_mdr_domains[i] == NULL) {
 		counters_incr(COUNTER_MESSAGES_IN_DENIED);
 		xlog_strerror(LOG_ERR, errno,
-		    "%s: namespace not allowed", __func__);
+		    "%s: domain not allowed", __func__);
 		return -1;
 	}
 
@@ -510,7 +510,7 @@ backend_msg_in_cb(int fd)
 		goto fail;
 	}
 
-	if (mdr_name(&reply) != MDR_NAME_MDRD_BERESP) {
+	if (mdr_code(&reply) != MDR_NAME_MDRD_BERESP) {
 		xlog(LOG_ERR, NULL,
 		    "%s: unexpected message ID from backend", __func__);
 		goto fail;

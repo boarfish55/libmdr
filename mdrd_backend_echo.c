@@ -103,13 +103,13 @@ main(int argc, char **argv)
 			exit(1);
 		}
 
-		if (mdr_namespace(&m) != MDR_NS_MDRD) {
-			xlog(LOG_ERR, NULL, "invalid mdr namespace %u",
-			    mdr_namespace(&m));
+		if (mdr_domain(&m) != MDR_NS_MDRD) {
+			xlog(LOG_ERR, NULL, "invalid mdr domain %u",
+			    mdr_domain(&m));
 			exit(1);
 		}
 
-		switch (mdr_name(&m)) {
+		switch (mdr_code(&m)) {
 		case MDR_NAME_MDRD_BECLOSE:
 			r = mdrd_unpack_beclose(&m, &id);
 			break;
@@ -143,7 +143,7 @@ main(int argc, char **argv)
 			}
 		}
 
-		if (mdr_name(&m) == MDR_NAME_MDRD_BECLOSE) {
+		if (mdr_code(&m) == MDR_NAME_MDRD_BECLOSE) {
 			/*
 			 * Session was not found but we're cleaning up, so
 			 * nothing to do.

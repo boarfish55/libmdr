@@ -25,7 +25,7 @@ usage()
 	printf("%s: [-dhi] [-n <repeat>] [-t <tls target|->] "
 	    "[-B <rcvbuf>] "
 	    "[-k <key> -c <cert>] "
-	    "<send namespace:name:varian> <format> <args>\n", program);
+	    "<send domain:code:varian> <format> <args>\n", program);
 }
 
 void
@@ -417,9 +417,9 @@ main(int argc, char **argv)
 {
 	unsigned long  l;
 	int            opt;
-	uint32_t       namespace = 0;
-	uint16_t       name = 0, variant = 0;
-	char          *msgname, *p;
+	uint32_t       domain = 0;
+	uint16_t       code = 0, variant = 0;
+	char          *msgcode, *p;
 	char          *format, *spec, *end;
 	int            count, r;
 	const char    *target = NULL;
@@ -472,9 +472,9 @@ main(int argc, char **argv)
 		return 0;
 	}
 
-	msgname = argv[optind++];
+	msgcode = argv[optind++];
 
-	if ((p = strtok(msgname, ":")) == NULL) {
+	if ((p = strtok(msgcode, ":")) == NULL) {
 		usage();
 		exit(1);
 	}
@@ -482,9 +482,9 @@ main(int argc, char **argv)
 	errno = 0;
 	l = strtoul(p, &end, 10);
 	if (errno || *end != '\0')
-		err(1, "invalid namespace");
+		err(1, "invalid domain");
 
-	namespace = l;
+	domain = l;
 
 	if ((p = strtok(NULL, ":")) == NULL) {
 		usage();
@@ -497,8 +497,8 @@ main(int argc, char **argv)
 		err(1, "invalid id");
 
 	if (l > UINT16_MAX)
-		errx(1, "name out of range");
-	name = l;
+		errx(1, "code out of range");
+	code = l;
 
 	if ((p = strtok(NULL, ":")) == NULL) {
 		usage();
@@ -528,7 +528,8 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	r = mdr_pack_hdr(&m, NULL, 0, MDR_F_NONE, namespace, name, variant);
+	r = mdr_pack_hdr(&m, NULL, 0, MDR_F_NONE,
+	    mdr_mkdcv(domain, code, variant));
 	if (r == MDR_FAIL)
 		err(1, "mdr_pack_hdr");
 

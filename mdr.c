@@ -56,10 +56,7 @@ mdr_can_fit(struct mdr *m, size_t n)
 
 		m->size = (uint64_t *)(tmp + ((char *)m->size - m->buf));
 		m->flags = (uint32_t *)(tmp + ((char *)m->flags - m->buf));
-		m->namespace = (uint32_t *)(tmp + ((char *)m->namespace -
-		    m->buf));
-		m->name = (uint16_t *)(tmp + ((char *)m->name - m->buf));
-		m->variant = (uint16_t *)(tmp + ((char *)m->variant - m->buf));
+		m->dcv = (uint64_t *)(tmp + ((char *)m->dcv - m->buf));
 
 		if (mdr_flags(m) & MDR_F_TAIL_BYTES)
 			m->tail_bytes = (uint64_t *)
@@ -460,15 +457,34 @@ mdr_vunpackf(int argc, int validate_argc_only, struct mdr *m, const char *spec,
 	return mdr_tell(m);
 }
 
+uint64_t
+mdr_mkdcv(uint32_t domain, uint16_t code, uint16_t variant)
+{
+	uint64_t dcv = 0;
+	dcv |= (uint64_t)domain << 32;
+	dcv |= (uint64_t)code << 16;
+	dcv |= (uint64_t)variant;
+	return dcv;
+}
+
+uint64_t
+mdr_dcv(const struct mdr *m)
+{
+	if (m == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+	return be64toh(*m->dcv);
+}
+
 ptrdiff_t
 mdr_copy(struct mdr *dst, char *buf, size_t buf_sz, const struct mdr *src)
 {
 	ptrdiff_t r;
 
 	if ((r = mdr_pack_hdr(dst, buf, buf_sz, mdr_flags(src),
-	    mdr_namespace(src), mdr_name(src), mdr_variant(src))) == MDR_FAIL)
+	    mdr_dcv(src))) == MDR_FAIL)
 		return MDR_FAIL;
-
 
 	if (mdr_size(src) > buf_sz) {
 		errno = EOVERFLOW;
@@ -587,33 +603,33 @@ mdr_rewind(struct mdr *m)
 }
 
 uint32_t
-mdr_namespace(const struct mdr *m)
-{
-	if (m == NULL) {
-		errno = EINVAL;
-		return 0;
-	}
-	return be32toh(*m->namespace);
-}
-
-uint32_t
 mdr_flags(const struct mdr *m)
 {
 	if (m == NULL) {
 		errno = EINVAL;
-		return 0;
+		return MDR_FAIL;
 	}
 	return be32toh(*m->flags);
 }
 
-uint16_t
-mdr_name(const struct mdr *m)
+uint32_t
+mdr_domain(const struct mdr *m)
 {
 	if (m == NULL) {
 		errno = EINVAL;
 		return 0;
 	}
-	return be16toh(*m->name);
+	return (uint32_t)(be64toh(*m->dcv) >> 32);
+}
+
+uint16_t
+mdr_code(const struct mdr *m)
+{
+	if (m == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+	return (uint16_t)((be64toh(*m->dcv) & 0x00000000ffff0000) >> 16);
 }
 
 uint16_t
@@ -621,9 +637,9 @@ mdr_variant(const struct mdr *m)
 {
 	if (m == NULL) {
 		errno = EINVAL;
-		return 0;
+		return MDR_FAIL;
 	}
-	return be16toh(*m->variant);
+	return (uint16_t)(be64toh(*m->dcv) & 0x000000000000ffff);
 }
 
 uint64_t
@@ -631,7 +647,7 @@ mdr_tail_bytes(const struct mdr *m)
 {
 	if (m == NULL) {
 		errno = EINVAL;
-		return 0;
+		return MDR_FAIL;
 	}
 	if (!(mdr_flags(m) & MDR_F_TAIL_BYTES))
 		return 0;
@@ -646,13 +662,12 @@ mdr_buf(const struct mdr *m)
 
 ptrdiff_t
 mdr_pack_(int argc, struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
-    uint16_t namespace, uint16_t name, uint16_t variant, const char *spec, ...)
+    uint64_t dcv, const char *spec, ...)
 {
 	ptrdiff_t r;
 	va_list   ap;
 
-	if (mdr_pack_hdr(m, buf, buf_sz, flags, namespace, name,
-	    variant) == MDR_FAIL)
+	if (mdr_pack_hdr(m, buf, buf_sz, flags, dcv) == MDR_FAIL)
 		return MDR_FAIL;
 
 	va_start(ap, spec);
@@ -674,7 +689,7 @@ mdr_pack_(int argc, struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
 
 ptrdiff_t
 mdr_pack_hdr(struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
-    uint16_t namespace, uint16_t name, uint16_t variant)
+    uint64_t dcv)
 {
 	if (m == NULL) {
 		errno = EINVAL;
@@ -704,14 +719,8 @@ mdr_pack_hdr(struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
 	m->flags = (uint32_t *)m->pos;
 	m->pos += sizeof(*m->flags);
 
-	m->namespace = (uint32_t *)m->pos;
-	m->pos += sizeof(*m->namespace);
-
-	m->name = (uint16_t *)m->pos;
-	m->pos += sizeof(*m->name);
-
-	m->variant = (uint16_t *)m->pos;
-	m->pos += sizeof(*m->variant);
+	m->dcv = (uint64_t *)m->pos;
+	m->pos += sizeof(*m->dcv);
 
 	if (flags & MDR_F_TAIL_BYTES) {
 		m->tail_bytes = (uint64_t *)m->pos;
@@ -723,9 +732,7 @@ mdr_pack_hdr(struct mdr *m, char *buf, size_t buf_sz, uint32_t flags,
 	}
 
 	*m->flags = htobe32(flags);
-	*m->namespace = htobe32(namespace);
-	*m->name = htobe16(name);
-	*m->variant = htobe16(variant);
+	*m->dcv = htobe64(dcv);
 
 	return mdr_update_size(m);
 }
@@ -1220,14 +1227,8 @@ mdr_unpack_hdr(struct mdr *m, uint32_t allowed_flags, char *buf, size_t buf_sz)
 		return MDR_FAIL;
 	}
 
-	m->namespace = (uint32_t *)m->pos;
-	m->pos += sizeof(*m->namespace);
-
-	m->name = (uint16_t *)m->pos;
-	m->pos += sizeof(*m->name);
-
-	m->variant = (uint16_t *)m->pos;
-	m->pos += sizeof(*m->variant);
+	m->dcv = (uint64_t *)m->pos;
+	m->pos += sizeof(*m->dcv);
 
 	if (mdr_flags(m) & MDR_F_TAIL_BYTES) {
 		m->tail_bytes = (uint64_t *)m->pos;
@@ -1249,8 +1250,8 @@ mdr_print(FILE *out, const struct mdr *m)
 		return;
 
 	fprintf(out, "  size:        %lu\n", mdr_size(m));
-	fprintf(out, "  namespace:   %u\n", mdr_namespace(m));
-	fprintf(out, "  name:        %u\n", mdr_name(m));
+	fprintf(out, "  domain:      %u\n", mdr_domain(m));
+	fprintf(out, "  code:        %u\n", mdr_code(m));
 	fprintf(out, "  variant:     %u\n", mdr_variant(m));
 	if (mdr_flags(m) & MDR_F_TAIL_BYTES)
 		fprintf(out, "  tail bytes:  %lu\n", mdr_tail_bytes(m));
@@ -1746,8 +1747,9 @@ mdr_unpackf_(int argc, struct mdr *m, const char *spec, ...)
 ptrdiff_t
 mdr_pack_echo(struct mdr *m, const char *echo)
 {
-	return mdr_pack(m, NULL, 0, MDR_F_NONE, MDR_NS_MDR,
-	    MDR_NAME_MDR_ECHO, 0, "sN", echo, -1);
+	return mdr_pack(m, NULL, 0, MDR_F_NONE,
+	    mdr_mkdcv(MDR_NS_MDR, MDR_NAME_MDR_ECHO, 0),
+	    "sN", echo, -1);
 }
 
 ptrdiff_t
