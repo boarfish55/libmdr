@@ -1,6 +1,7 @@
 #include <openssl/err.h>
 #include <openssl/x509.h>
 #include <stdio.h>
+#include <err.h>
 #include <errno.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -19,6 +20,9 @@
 
 X509_STORE     *store;
 X509_STORE_CTX *ctx;
+
+const struct mdr_spec *msg_mdrd_beresp;
+const struct mdr_spec *msg_mdrd_beresp_wmsg;
 
 void
 usage()
@@ -39,7 +43,7 @@ main(int argc, char **argv)
 {
 	int               r;
 	struct mdr        m, msg;
-	char              buf[32768], msg_buf[16384];
+	char              buf[32768];
 	uint64_t          id;
 	int               fd;
 	X509             *peer_cert = NULL;
@@ -47,6 +51,7 @@ main(int argc, char **argv)
 	X509_STORE_CTX   *ctx;
 	X509_LOOKUP      *lookup;
 	struct session   *session, *prev, *sessions = NULL;
+	struct mdr_in     m_in[5];
 
 	if (argc < 3)
 		usage();
@@ -63,6 +68,14 @@ main(int argc, char **argv)
 		return -1;
 
 	xlog_init("mdrd_backend_echo", NULL, NULL, 1);
+
+	if (mdr_register_builtin_specs() == MDR_FAIL)
+                err(1, "mdr_register_builtin_specs");
+	if ((msg_mdrd_beresp = mdr_registry_get(MDR_DCV_MDRD_BERESP)) == NULL)
+                err(1, "mdr_registry_get");
+	if ((msg_mdrd_beresp_wmsg =
+	    mdr_registry_get(MDR_DCV_MDRD_BERESP_WMSG)) == NULL)
+                err(1, "mdr_registry_get");
 
 	if ((ctx = X509_STORE_CTX_new()) == NULL) {
 		xlog(LOG_ERR, NULL, "X509_STORE_CTX_init: %s",
@@ -96,26 +109,25 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	while ((r = mdr_unpack_from_fd(&m, MDR_F_NONE,
-	    0, buf, sizeof(buf))) > 0) {
+	while ((r = mdr_read_from_fd(&m, MDR_F_NONE, 0,
+	    buf, sizeof(buf))) > 0) {
 		if (r == MDR_FAIL) {
 			xlog_strerror(LOG_ERR, errno, "mdr_unpack_from_fd");
 			exit(1);
 		}
 
-		if (mdr_domain(&m) != MDR_NS_MDRD) {
+		if (!mdr_dcv_match(&m, MDR_DOMAIN_MDRD, MDR_MASK_D)) {
 			xlog(LOG_ERR, NULL, "invalid mdr domain %u",
 			    mdr_domain(&m));
 			exit(1);
 		}
 
-		switch (mdr_code(&m)) {
-		case MDR_NAME_MDRD_BECLOSE:
+		switch (mdr_dcv(&m)) {
+		case MDR_DCV_MDRD_BECLOSE:
 			r = mdrd_unpack_beclose(&m, &id);
 			break;
-		case MDR_NAME_MDRD_BEREQ:
-			r = mdrd_unpack_bereq(&m, &id, &fd, &msg, msg_buf,
-			    sizeof(msg_buf), &peer_cert);
+		case MDR_DCV_MDRD_BEREQ:
+			r = mdrd_unpack_bereq(&m, &id, &fd, &msg, &peer_cert);
 			break;
 		default:
 			xlog(LOG_ERR, NULL, "invalid mdr id %u", id);
@@ -143,7 +155,7 @@ main(int argc, char **argv)
 			}
 		}
 
-		if (mdr_code(&m) == MDR_NAME_MDRD_BECLOSE) {
+		if (mdr_dcv(&m) == MDR_DCV_MDRD_BECLOSE) {
 			/*
 			 * Session was not found but we're cleaning up, so
 			 * nothing to do.
@@ -169,9 +181,17 @@ main(int argc, char **argv)
 		if (session == NULL) {
 			xlog(LOG_NOTICE, NULL, "new session for id %lu", id);
 			if (peer_cert == NULL) {
-				if (mdrd_pack_beresp(&m, buf, sizeof(buf), id,
-				    fd, MDRD_ST_CERTFAIL,
-				    MDRD_BERESP_F_CLOSE) == MDR_FAIL) {
+				m_in[0].type = MDR_U64;
+				m_in[0].v.u64 = id;
+				m_in[1].type = MDR_I32;
+				m_in[1].v.i32 = fd;
+				m_in[2].type = MDR_U32;
+				m_in[2].v.i32 = MDRD_ST_CERTFAIL;
+				m_in[3].type = MDR_U32;
+				m_in[3].v.i32 = MDRD_BERESP_F_CLOSE;
+				if (mdr_pack(&m, buf, sizeof(buf),
+				    msg_mdrd_beresp, MDR_F_NONE, m_in, 4)
+				    == MDR_FAIL) {
 					xlog(LOG_ERR, NULL,
 					    "mdrd_pack_beresp: %d", errno);
 					exit(1);
@@ -213,9 +233,19 @@ main(int argc, char **argv)
 			sessions = session;
 		}
 
-		if (mdrd_pack_beresp_wmsg(&m, buf, sizeof(buf), id,
-		    fd, MDRD_ST_OK, MDRD_BERESP_F_NONE, &msg) == MDR_FAIL) {
-			xlog_strerror(LOG_ERR, errno, "mdrd_pack_beresp");
+		m_in[0].type = MDR_U64;
+		m_in[0].v.u64 = id;
+		m_in[1].type = MDR_I32;
+		m_in[1].v.i32 = fd;
+		m_in[2].type = MDR_U32;
+		m_in[2].v.i32 = MDRD_ST_OK;
+		m_in[3].type = MDR_U32;
+		m_in[3].v.i32 = MDRD_BERESP_F_NONE;
+		m_in[4].type = MDR_M;
+		m_in[4].v.m = &msg;
+		if (mdr_pack(&m, buf, sizeof(buf), msg_mdrd_beresp_wmsg,
+		    MDR_F_NONE, m_in, 5) == MDR_FAIL) {
+			xlog_strerror(LOG_ERR, errno, "mdrd_pack_beresp_wmsg");
 			exit(1);
 		}
 

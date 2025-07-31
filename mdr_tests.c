@@ -15,9 +15,84 @@
 extern locale_t log_locale;
 int             verbose = 0;
 
-struct mdr_spec msg_test_0 = {
-	MDR_DCV(0x00000000, 0x0003, 0x0000), { MDR_S }
+#define MDR_DCV_MDR_TEST_1 MDR_DCV(0x00000000, 0x0004, 0x0001)
+#define MDR_DCV_MDR_TEST_2 MDR_DCV(0x00000000, 0x0004, 0x0002)
+#define MDR_DCV_MDR_TEST_3 MDR_DCV(0x00000000, 0x0004, 0x0003)
+#define MDR_DCV_MDR_TEST_4 MDR_DCV(0x00000000, 0x0004, 0x0004)
+#define MDR_DCV_MDR_TEST_5 MDR_DCV(0x00000000, 0x0004, 0x0005)
+
+struct mdr_def msgdef_test_0 = {
+	MDR_DCV_MDR_TEST,
+	"test.0",
+	{
+		MDR_S,
+		MDR_LAST
+	}
 };
+const struct mdr_spec *msg_test_0;
+
+struct mdr_def msgdef_test_1 = {
+	MDR_DCV_MDR_TEST_1,
+	"test.1",
+	{
+		MDR_M,
+		MDR_LAST
+	}
+};
+const struct mdr_spec *msg_test_1;
+
+struct mdr_def msgdef_test_2 = {
+	MDR_DCV_MDR_TEST_2,
+	"test.2",
+	{
+		MDR_B,
+		MDR_LAST
+	}
+};
+const struct mdr_spec *msg_test_2;
+
+struct mdr_def msgdef_test_3 = {
+	MDR_DCV_MDR_TEST_3,
+	"test.3",
+	{
+		MDR_AU32,
+		MDR_AS,
+		MDR_LAST
+	}
+};
+const struct mdr_spec *msg_test_3;
+
+struct mdr_def msgdef_test_4 = {
+	MDR_DCV_MDR_TEST_4,
+	"test.3",
+	{
+		MDR_U64,
+		MDR_I8,
+		MDR_U16,
+		MDR_B,
+		MDR_S,
+		MDR_F32,
+		MDR_F64,
+		MDR_S,
+		MDR_AU8,
+		MDR_LAST
+	}
+};
+const struct mdr_spec *msg_test_4;
+
+struct mdr_def msgdef_test_5 = {
+	MDR_DCV_MDR_TEST_5,
+	"test.3",
+	{
+		MDR_B,
+		MDR_LAST
+	}
+};
+const struct mdr_spec *msg_test_5;
+
+const struct mdr_spec *msg_mdr_echo;
+const struct mdr_spec *msg_mdr_ping;
+
 
 struct test_status
 {
@@ -80,33 +155,35 @@ test_long_str()
 {
 	int        i;
 	uint64_t   r;
-	char       str[1024], str2[1000];
-	uint64_t   len = sizeof(str2);
+	char       str[1024];
 	struct mdr in, out;
+
+	struct mdr_in  m_in[1];
+	struct mdr_out m_out[1];
 
 	for (i = 0; i < sizeof(str) - 1; i++)
 		str[i] = 'a';
 	str[i] = '\0';
 
-	if ((r = mdr_pack(&in, NULL, 0, MDR_F_NONE,
-	    msg_test_0.dcv, "sN", str, -1)) == MDR_FAIL)
+	m_in[0].type = MDR_S;
+	m_in[0].v.s.bytes = str;
+	m_in[0].v.s.sz = -1;
+	if ((r = mdr_pack(&in, NULL, 0, msg_test_0, MDR_F_NONE, m_in, 1))
+	    == MDR_FAIL)
 		return ERR(errno, "mdr_pack_hdr");
 
-	if (r - mdr_hdr_size(MDR_F_NONE) != 1031)
-		return ERR(0, "expected message payload 1031");
+	if (r - mdr_hdr_size(MDR_F_NONE) != 1032)
+		return ERR(0, "expected message payload 1032");
 
-	if ((r = mdr_unpack(&out, MDR_F_NONE,
-	    (void *)mdr_buf(&in), mdr_size(&in), "sN", str2, &len)) == MDR_FAIL)
+	if ((r = mdr_unpack(&out, (void *)mdr_buf(&in), mdr_size(&in),
+	    msg_test_0, MDR_F_NONE, m_out, 1)) == MDR_FAIL)
 		return ERR(errno, "mdr_unpack failed");
 	mdr_free(&in);
 
-	for (i = 0; i < sizeof(str2) - 1; i++)
-		str[i] = 'a';
-	str[i] = '\0';
+	if (m_out[0].type != MDR_S)
+		return ERR(0, "unexpected type returned instead of MDR_S");
 
-	if (strlen(str2) != strlen(str))
-		return ERR(errno, "unpacked strings are not the same length");
-	if (strcmp(str2, str) != 0)
+	if (strcmp(str, m_out[0].v.s.bytes) != 0)
 		return ERR(errno, "unpacked string is not what we expect");
 
 	return success();
@@ -115,75 +192,93 @@ test_long_str()
 struct test_status *
 test_pack_mdr()
 {
-	char       in_str_buf[64], in_buf[64];
-	char       str[32] = "hey hey hey";
-	char       str_out[32] = "";
-	uint64_t   len = sizeof(str_out);
-	struct mdr in_str, in, out, out_str;
+	char            in_str_buf[64], in_buf[64];
+	char            str[32] = "hey hey hey";
+	struct mdr      in_str, in, out, out_str;
+	struct mdr_in   m_in[1];
+	struct mdr_out  m_out[1], m_out_str[1];
 
 	/* Create inner mdr, containing a string */
-	if (mdr_pack(&in_str, in_str_buf, sizeof(in_str_buf), MDR_F_NONE,
-	    msg_test_0.dcv, "sN", str, -1) == MDR_FAIL)
+	m_in[0].type = MDR_S;
+	m_in[0].v.s.bytes = str;
+	m_in[0].v.s.sz = -1;
+	if (mdr_pack(&in_str, in_str_buf, sizeof(in_str_buf), msg_test_0,
+	    MDR_F_NONE, m_in, 1) == MDR_FAIL)
 		return ERR(errno, "mdr_pack");
 
-	if (mdr_pack(&in, in_buf, sizeof(in_buf), MDR_F_NONE,
-	    msg_test_0.dcv, "m", &in_str) == MDR_FAIL)
+	m_in[0].type = MDR_M;
+	m_in[0].v.m = &in_str;
+	if (mdr_pack(&in, in_buf, sizeof(in_buf),
+	    msg_test_1, MDR_F_NONE, m_in, 1) == MDR_FAIL)
 		return ERR(errno, "mdr_pack nested");
 
-	if (mdr_unpack(&out, MDR_F_NONE,
-	    (void *)mdr_buf(&in), mdr_size(&in), "m", &out_str) == MDR_FAIL)
+	if (mdr_unpack(&out, (void *)mdr_buf(&in), mdr_size(&in),
+	    msg_test_1, MDR_F_NONE, m_out, 1) == MDR_FAIL)
 		return ERR(errno, "mdr_unpack nested");
 
-	if (mdr_unpack_string(&out_str, str_out, &len) == MDR_FAIL)
-		return ERR(errno, "mdr_unpack_string");
+	if (m_out[0].type != MDR_M)
+		return ERR(0, "unexpected type returned instead of MDR_M");
 
-	if (strcmp(str, str_out) != 0)
+	if (mdr_unpack(&out_str,
+	    (void *)mdr_buf(&m_out[0].v.m), mdr_size(&m_out[0].v.m),
+	    msg_test_0, MDR_F_NONE, m_out_str, 1) == MDR_FAIL)
+		return ERR(errno, "mdr_unpack_str");
+
+	if (m_out_str[0].type != MDR_S)
+		return ERR(0, "unexpected type returned instead of MDR_S");
+
+	if (strcmp(str, m_out_str[0].v.s.bytes) != 0)
 		return ERR(0, "strings don't match");
 
 	return success();
 }
 
 struct test_status *
-test_pack_space()
+test_pack_reserved_bytes()
 {
-	uint64_t    r, len;
-	char        buf[64];
-	char        str[32] = "hey hey hey";
-	const char *ref;
-	char       *dst;
-	struct mdr  in, out;
+	uint64_t         r;
+	char             buf[64];
+	char             str[32] = "hey hey hey";
+	char            *dst;
+	struct mdr      in, out;
+	struct mdr_in   m_in[1];
+	struct mdr_out  m_out[1];
 
 	/* Create an mdr in which we reserve space for a string */
-	if ((r = mdr_pack(&in, buf, sizeof(buf), MDR_F_NONE,
-	    msg_test_0.dcv, "rN", &dst, strlen(str))) == MDR_FAIL)
-		return ERR(errno, "mdr_pack");
+	m_in[0].type = MDR_RSVB;
+	m_in[0].v.rsvb.dst = &dst;
+	m_in[0].v.rsvb.sz = strlen(str);
+	if (mdr_pack(&in, buf, sizeof(buf), msg_test_2, MDR_F_NONE,
+	    m_in, 1) == MDR_FAIL)
+		return ERR(errno, "mdr_pack nested");
 
-	/* Copy our string in the reserved space */
+	/* Copy our bytes in the reserved space */
 	memcpy(dst, str, strlen(str));
 
-	if (mdr_unpack_hdr(&out, MDR_F_NONE, (void *)mdr_buf(&in),
-	    mdr_size(&in)) == MDR_FAIL)
-		return ERR(errno, "mdr_unpack_hdr");
+	if ((r = mdr_unpack(&out, (void *)mdr_buf(&in), mdr_size(&in),
+	    msg_test_2, MDR_F_NONE, m_out, 1)) == MDR_FAIL)
+		return ERR(errno, "mdr_unpack failed");
 
-	/* Get a pointer to our bytes */
-	if ((r = mdr_unpack_bytes_ref(&out, &ref, &len)) == MDR_FAIL)
-		return ERR(errno, "mdr_unpack_bytes_ref");
+	if (m_out[0].type != MDR_B)
+		return ERR(0, "unexpected type returned instead of MDR_B");
+	if (m_out[0].v.b.sz != strlen(str))
+		return ERR(0, "unexpected length of bytes returned");
 
-	if (memcmp(str, ref, strlen(str)) != 0)
-		return ERR(0, "bytes ref mismatch");
+	if (memcmp(str, m_out[0].v.b.bytes, strlen(str)) != 0)
+		return ERR(0, "bytes mismatch");
 
 	/* Try again but with zero space */
-	if ((r = mdr_pack(&in, buf, sizeof(buf), MDR_F_NONE,
-	    msg_test_0.dcv, "rN", &dst, 0)) == MDR_FAIL)
-		return ERR(errno, "mdr_pack");
-
-	len = sizeof(str);
-	if ((r = mdr_unpack(&out, MDR_F_NONE,
-	    (void *)mdr_buf(&in), mdr_size(&in), "bN", &str, &len)) == MDR_FAIL)
-		return ERR(errno, "mdr_unpack zero bytes");
-
-	if (len != 0)
-		return ERR(errno, "mdr_unpack zero bytes returned bytes");
+	m_in[0].type = MDR_RSVB;
+	m_in[0].v.rsvb.dst = &dst;
+	m_in[0].v.rsvb.sz = 0;
+	if (mdr_pack(&in, buf, sizeof(buf), msg_test_2, MDR_F_NONE,
+	    m_in, 1) == MDR_FAIL)
+		return ERR(errno, "mdr_pack nested");
+	if ((r = mdr_unpack(&out, (void *)mdr_buf(&in), mdr_size(&in),
+	    msg_test_2, MDR_F_NONE, m_out, 1)) == MDR_FAIL)
+		return ERR(errno, "mdr_unpack failed");
+	if (m_out[0].v.b.sz != 0)
+		return ERR(0, "mdr_unpack zero bytes returned non-zero");
 
 	return success();
 }
@@ -212,8 +307,8 @@ test_long_tail_bytes()
 	strb[j] = '\0';
 	strab_expected[i] = '\0';
 
-	if (mdr_pack_hdr(&in, buf, sizeof(buf), MDR_F_TAIL_BYTES,
-	    msg_test_0.dcv) == MDR_FAIL)
+	if (mdr_pack_hdr(&in, buf, sizeof(buf), msg_mdr_ping,
+	    MDR_F_TAIL_BYTES) == MDR_FAIL)
 		return ERR(errno, "mdr_pack_hdr");
 
 	/*
@@ -230,15 +325,14 @@ test_long_tail_bytes()
 	memcpy(buf + r + strlen(stra), strb, strlen(strb));
 
 	/* Test decoding when we disallow tail bytes */
-	r = mdr_unpack_hdr(&out, MDR_F_NONE,
-	    (void *)mdr_buf(&in), mdr_size(&in));
+	r = mdr_unpack_hdr(&out, MDR_F_NONE, (void *)mdr_buf(&in),
+	    mdr_size(&in));
 	if (r != MDR_FAIL || errno != EACCES)
 		return ERR(0, "mdr_unpack_hdr should have failed with EACCES");
 
-	if (mdr_unpack_hdr(&out, MDR_F_TAIL_BYTES,
-	    (void *)mdr_buf(&in), mdr_size(&in)) == MDR_FAIL)
+	if (mdr_unpack_hdr(&out, MDR_F_TAIL_BYTES, (void *)mdr_buf(&in),
+	    mdr_size(&in)) == MDR_FAIL)
 		return ERR(errno, "mdr_unpack_hdr");
-
 
 	/* Copy all tail bytes after payload into strab */
 	bzero(strab, sizeof(strab));
@@ -258,8 +352,8 @@ test_limits()
 	struct mdr echo;
 	char       str[1];
 
-	if (mdr_pack_hdr(&echo, NULL, 0, MDR_F_TAIL_BYTES,
-	    msg_test_0.dcv) == MDR_FAIL)
+	if (mdr_pack_hdr(&echo, NULL, 0, msg_test_5,
+	    MDR_F_TAIL_BYTES) == MDR_FAIL)
 		return ERR(errno, "mdr_pack_hdr");
 
 	n = (PTRDIFF_MAX -
@@ -270,7 +364,11 @@ test_limits()
 		    "but it succeeded");
 	if (errno != EOVERFLOW)
 		return ERR(errno,
-		    "mdr_pack_bytes: expected EOVERFLOW, got %d\n");
+		    "mdr_pack_bytes: expected EOVERFLOW, got %d\n", errno);
+
+	// TODO: we should have a way to retry only what failed but the spec
+	// already moved on.
+	mdr_rewind(&echo);
 
 	n = PTRDIFF_MAX -
 	    (mdr_hdr_size(mdr_flags(&echo)) + sizeof(uint64_t) + 1);
@@ -298,26 +396,30 @@ test_limits()
 struct test_status *
 test_echo()
 {
-	int        i;
-	struct mdr src, dst;
-	char       str[1024];
-	size_t     str_sz;
+	int            i;
+	struct mdr     in, out;
+	char           str[1024];
+	struct mdr_in  m_in[1];
+	struct mdr_out m_out[1];
 
 	bzero(str, sizeof(str));
 	for (i = 0; i < sizeof(str) - 1; i++)
 		str[i] = 'a';
 
-	if (mdr_pack_echo(&src, str) == MDR_FAIL)
+	m_in[0].type = MDR_S;
+	m_in[0].v.s.bytes = str;
+	m_in[0].v.s.sz = -1;
+	if (mdr_pack(&in, NULL, 0, msg_mdr_echo, MDR_F_NONE, m_in, 1) == MDR_FAIL)
 		return ERR(errno, "mdr_pack_echo");
 
-	bzero(str, sizeof(str));
-
-	str_sz = sizeof(str);
-
-	if (mdr_unpack_echo(&dst, (void *)mdr_buf(&src), mdr_size(&src),
-	    str, &str_sz) == MDR_FAIL)
+	if (mdr_unpack(&out, (void *)mdr_buf(&in), mdr_size(&in),
+	    msg_mdr_echo, MDR_F_NONE, m_out, 1) == MDR_FAIL)
 		return ERR(errno, "mdr_unpack_echo");
-	mdr_free(&src);
+
+	if (strcmp(m_out[0].v.s.bytes, str) != 0)
+		return ERR(0, "strings don't match");
+
+	mdr_free(&in);
 
 	return success();
 }
@@ -325,46 +427,57 @@ test_echo()
 struct test_status *
 test_pack_array()
 {
-	struct mdr   in, out;
-	char         buf[1024];
-	uint64_t     r;
+	struct mdr       in, out;
+	char             buf[1024];
+	uint64_t         r;
 
-	uint32_t     a_u32[3] = { 0, 1, 2 };
-	uint32_t     a_u32_n = 3;
-	uint32_t     a_u32_out[3] = { 0, 1, 2 };
+	uint32_t         a_u32[3] = { 0, 1, 2 };
+	uint32_t         a_u32_out[3] = { 0, 0, 0 };
 
-	char        *a_s[] = { "string1", "string2", NULL };
-	uint32_t     a_s_n = 3;
-	char       **a_s_out = strarray_alloc(3, 16);
-	uint64_t     a_s_out_sz = 16;
+	const char      *a_s[] = { "string1", "string2", NULL };
+	const char      *a_s_out[3];
 
-	char        *a_b[] = { "bytes1", "bytes2", "bytes3" };
-	uint32_t     a_b_n = 3;
-	char       **a_b_out = strarray_alloc(3, 6);
-	uint64_t     a_b_out_sz = 6;
+	struct mdr_in    m_in[2];
+	struct mdr_out   m_out[2];
 
-	r = mdr_pack(&in, buf, sizeof(buf), MDR_F_NONE,
-	    msg_test_0.dcv, "Au32:AsN:AbN",
-	    a_u32_n, a_u32,
-	    -1, a_s, -1,
-	    3, a_b, 6);
+	m_in[0].type = MDR_AU32;
+	m_in[0].v.au32.items = a_u32;
+	m_in[0].v.au32.length = 3;
+	m_in[1].type = MDR_AS;
+	m_in[1].v.as.items = a_s;
+	m_in[1].v.as.length = -1;
+	r = mdr_pack(&in, buf, sizeof(buf), msg_test_3, MDR_F_NONE, m_in, 2);
 	if (r == MDR_FAIL)
 		return ERR(errno, "mdr_pack");
 
-	r = mdr_unpack(&out, MDR_F_NONE, buf, r, "Au32:AsN:AbN",
-	    &a_u32_n, a_u32_out,
-	    &a_s_n, a_s_out, &a_s_out_sz,
-	    &a_b_n, a_b_out, &a_b_out_sz);
+	r = mdr_unpack(&out, buf, r, msg_test_3, MDR_F_NONE, m_out, 2);
 	if (r == MDR_FAIL)
 		return ERR(errno, "mdr_unpack");
-	if (a_s_out_sz != strlen("string1") + 1)
-		return ERR(0, "a_s_out_sz should have been %d, was %lu",
-		    strlen("string1") + 1, a_s_out_sz);
-	if (a_b_out_sz != strlen("bytes3"))
-		return ERR(0, "a_b_out_sz should have been %d, was %lu",
-		    strlen("bytes3"), a_b_out_sz);
-	free(a_s_out);
-	free(a_b_out);
+
+	if (m_out[0].type != MDR_AU32)
+		return ERR(0, "first field is not MDR_AU32 as expected");
+	if (m_out[0].v.au32.length != 3)
+		return ERR(0, "first array does not contain 3 items");
+
+	if (mdr_out_array_u32(&m_out[0].v.au32, a_u32_out, 3) == MDR_FAIL)
+		return ERR(errno, "mdr_out_array_u32");
+
+	if (memcmp(a_u32, a_u32_out, sizeof(a_u32)) != 0)
+		return ERR(0, "first array has wrong content");
+
+
+	if (m_out[1].type != MDR_AS)
+		return ERR(0, "second field is not MDR_AS as expected");
+
+	if (mdr_out_array_s(&m_out[1].v.as, a_s_out, 3) == MDR_FAIL)
+		return ERR(errno, "mdr_out_array_s");
+
+	if (strcmp(a_s[0], a_s_out[0]) != 0)
+		return ERR(0, "a_s_out[0] has wrong content");
+	if (strcmp(a_s[1], a_s_out[1]) != 0)
+		return ERR(0, "a_s_out[1] has wrong content");
+	if (a_s_out[2] != NULL)
+		return ERR(0, "a_s_out[2] should be NULL");
 
 	return success();
 }
@@ -374,37 +487,27 @@ test_encoding()
 {
 	struct mdr  in, out;
 	char        buf[1024];
-	uint64_t    u64;
-	uint16_t    u16;
-	int8_t      i8;
-	char        dbytes[1024];
-	uint64_t    dlen = 0;
-	char        dstr[1024];
-	uint64_t    dstr_len;
-	char        dlongstr[1024];
-	uint64_t    dlongstr_len = sizeof(dlongstr);
-	float       f32;
-	double      f64;
 	char       *longstr = "gggggggggggggggggggggggggggggggg"
 	    "gggggggggggggggggggggggggggggggg"
 	    "gggggggggggggggggggggggggggggggg"
 	    "gggggggggggggggggggggggggggggggg";
 	uint8_t     longarray[128];
+	uint8_t     longarray_out[128];
 	uint64_t    longarray_sz = sizeof(longarray) / sizeof(uint8_t);
 	const char encoded[] =
-	    "\x00\x00\x00\x00\x00\x00\x01\x43" /* size */
+	    "\x00\x00\x00\x00\x00\x00\x01\x45" /* size */
 	    "\x00\x00\x00\x00"                 /* flags */
-	    "\x00\x00\x00\x00"                 /* namespace */
-	    "\x00\x03"                         /* name */
-	    "\x00\x00"                         /* variant */
+	    "\x00\x00\x00\x00"                 /* domain */
+	    "\x00\x04"                         /* code */
+	    "\x00\x04"                         /* variant */
 	    "\x00\x00\x00\x00\x00\x00\x00\x6f" /* u64 */
 	    "\x80"                             /* i8 */
 	    "\x00\x6f"                         /* u16 */
-	    "\x04\x61\x6c\x6c\x6f"             /* bN (allo) */
-	    "\x06\x73\x74\x72\x69\x6e\x67"     /* sN (string) */
+	    "\x04\x61\x6c\x6c\x6f"             /* b (allo) */
+	    "\x07\x73\x74\x72\x69\x6e\x67\x00" /* s (string) */
 	    "\xc2\xde\x38\xd5"                 /* f32 */
 	    "\xc0\xc5\xb3\x8e\x38\xda\x3c\x21" /* f64 */
-	    "\x80\x00\x00\x00\x00\x00\x00\x80" /* sN (long string - 128x 'g') */
+	    "\x80\x00\x00\x00\x00\x00\x00\x81" /* sN (long string - 128x 'g') */
 	    "\x67\x67\x67\x67\x67\x67\x67\x67"
 	    "\x67\x67\x67\x67\x67\x67\x67\x67"
 	    "\x67\x67\x67\x67\x67\x67\x67\x67"
@@ -421,6 +524,7 @@ test_encoding()
 	    "\x67\x67\x67\x67\x67\x67\x67\x67"
 	    "\x67\x67\x67\x67\x67\x67\x67\x67"
 	    "\x67\x67\x67\x67\x67\x67\x67\x67"
+	    "\x00"
 	    "\x80\x00\x00\x80"                 /* Au8 (array of 128) */
 	    "\x00\x00\x00\x00\x00\x00\x00\x00"
 	    "\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -441,29 +545,39 @@ test_encoding()
 	    ;
 	size_t encoded_length = sizeof(encoded) - 1;
 
+	struct mdr_in  m_in[9];
+	struct mdr_out m_out[9];
+
 	// TODO: test value overflow/boundaries
 
 	bzero(longarray, sizeof(longarray));
 
-#define mdr_string(str, len) str,(uint64_t)len
-	if (mdr_pack(&in, buf, sizeof(buf), MDR_F_NONE,
-	    msg_test_0.dcv, "u64:i8:u16:bN:sN:f32:f64:sN:Au8",
-	    // TODO: we need helper macros here, this is horrible
-	    // e.g. mdr_u64(), mdr_sN("allo", 4)
-	    /// Or screw stdarg and just validate the sequence of
-	    // mdr_pack_* by keeping the format in the mdr struct and
-	    // making sure we sent everything.
-	    (uint64_t)111,
-	    -128,
-	    111,
-	    mdr_string("allo", 4),
-	    //"allo", (uint64_t)4,
-	    "string", (int64_t)-1,
-	    -111.111,
-	    -11111.11111,
-	    longstr, (int64_t)-1,
-	    longarray_sz, longarray) == MDR_FAIL)
+	m_in[0].type = MDR_U64;
+	m_in[0].v.u64 = 111;
+	m_in[1].type = MDR_I8;
+	m_in[1].v.u64 = -128;
+	m_in[2].type = MDR_U16;
+	m_in[2].v.u16 = 111;
+	m_in[3].type = MDR_B;
+	m_in[3].v.b.bytes = "allo";
+	m_in[3].v.b.sz = 4;
+	m_in[4].type = MDR_S;
+	m_in[4].v.s.bytes = "string";
+	m_in[4].v.s.sz = -1;
+	m_in[5].type = MDR_F32;
+	m_in[5].v.f32 = -111.111;
+	m_in[6].type = MDR_F64;
+	m_in[6].v.f64 = -11111.11111;
+	m_in[7].type = MDR_S;
+	m_in[7].v.s.bytes = longstr;
+	m_in[7].v.s.sz = -1;
+	m_in[8].type = MDR_AU8;
+	m_in[8].v.au8.length = longarray_sz;
+	m_in[8].v.au8.items = longarray;
+	if (mdr_pack(&in, buf, sizeof(buf), msg_test_4, MDR_F_NONE,
+	    m_in, 9) == MDR_FAIL)
 		return ERR(errno, "mdr_pack");
+
 	if (mdr_size(&in) != encoded_length)
 		return ERR(0, "encoded length should be %lu but was %lu",
 		    encoded_length, mdr_size(&in));
@@ -471,47 +585,49 @@ test_encoding()
 	if (memcmp(mdr_buf(&in), encoded, encoded_length) != 0)
 		return ERR(0, "encoding mismatch");
 
-	dlen = sizeof(dbytes);
-	dstr_len = sizeof(dstr);
-	if (mdr_unpack(&out, MDR_F_NONE, (void *)mdr_buf(&in),
-	    mdr_size(&in), "u64:i8:u16:bN:sN:f32:f64:sN:Au8",
-	    &u64,
-	    &i8,
-	    &u16,
-	    dbytes, &dlen,
-	    dstr, &dstr_len,
-	    &f32,
-	    &f64,
-	    dlongstr, &dlongstr_len,
-	    &longarray_sz, longarray) == MDR_FAIL)
+	if (mdr_unpack(&out, (void *)mdr_buf(&in), mdr_size(&in),
+	    msg_test_4, MDR_F_NONE, m_out, 9) == MDR_FAIL)
 		return ERR(errno, "mdr_unpack");
+
 	if (mdr_size(&out) != encoded_length)
 		return ERR(0, "encoded length should be %lu but was %lu",
 		    encoded_length, mdr_size(&out));
 
-	if (u64 != 111)
+	if (m_out[0].v.u64 != 111)
 		return ERR(0, "decoded u64 is not the right value");
-	if (i8 != -128)
+	if (m_out[1].v.i8 != -128)
 		return ERR(0, "decoded i8 is not the right value");
-	if (u16 != 111)
+	if (m_out[2].v.u16 != 111)
 		return ERR(0, "decoded u16 is not the right value");
-	if (memcmp(dbytes, "allo", dlen) != 0)
-		return ERR(0, "decoded bytes are not the right values");
-	if (strcmp(dstr, "string") != 0)
-		return ERR(0, "decoded string is not the right value");
-	if (strcmp(dlongstr, longstr) != 0)
+
+	if (m_out[3].v.b.sz != strlen("allo"))
+		return ERR(0, "decoded bytes size mismatch");
+	if (memcmp(m_out[3].v.b.bytes, "allo", m_out[3].v.b.sz) != 0)
+		return ERR(0, "decoded bytes content mismatch");
+
+	if (strcmp(m_out[4].v.s.bytes, "string") != 0)
 		return ERR(0, "decoded string is not the right value");
 
 	/*
 	 * Equality tests on floats are technically a bug but those have
 	 * been shown to match
 	 */
-	if (f32 != -111.111f)
+	if (m_out[5].v.f32 != -111.111f)
 		return ERR(0, "decoded f32 is not the right value; "
-		    "expected=%f, got=%f", -111.111, f32);
-	if (f64 != -11111.11111)
+		    "expected=%f, got=%f", -111.111, m_out[5].v.f32);
+	if (m_out[6].v.f64 != -11111.11111)
 		return ERR(0, "decoded f64 is not the right value; "
-		    "expected=%f, got=%f", -11111.11111, f64);
+		    "expected=%f, got=%f", -11111.11111, m_out[6].v.f64);
+
+	if (strcmp(m_out[7].v.s.bytes, longstr) != 0)
+		return ERR(0, "decoded long string mismatch");
+
+	if (mdr_out_array_length(&m_out[8].v.au8) != longarray_sz)
+		return ERR(0, "decoded longarray size mismatch");
+	if (mdr_out_array_u8(&m_out[8].v.au8, longarray_out, 128) == MDR_FAIL)
+		return ERR(0, "failed to read longarray");
+	if (memcmp(longarray, longarray_out, longarray_sz) != 0)
+		return ERR(0, "decoded longarray content mismatch");
 
 	return success();
 }
@@ -554,7 +670,7 @@ struct mdr_test {
 	{
 		"pack reserved space",
 		1,
-		&test_pack_space
+		&test_pack_reserved_bytes
 	},
 	{
 		"pack arrays",
@@ -601,6 +717,22 @@ main(int argc, char **argv)
 	if ((log_locale = newlocale(LC_CTYPE_MASK, "C", 0)) == 0)
 		err(1, "newlocale");
 
+	if (mdr_register_builtin_specs() == MDR_FAIL)
+		err(1, "mdr_register_builtin_specs");
+	if ((msg_test_0 = mdr_register_spec(&msgdef_test_0)) == NULL)
+		err(1, "mdr_register_spec");
+	if ((msg_test_1 = mdr_register_spec(&msgdef_test_1)) == NULL)
+		err(1, "mdr_register_spec");
+	if ((msg_test_2 = mdr_register_spec(&msgdef_test_2)) == NULL)
+		err(1, "mdr_register_spec");
+	if ((msg_test_3 = mdr_register_spec(&msgdef_test_3)) == NULL)
+		err(1, "mdr_register_spec");
+	if ((msg_test_4 = mdr_register_spec(&msgdef_test_4)) == NULL)
+		err(1, "mdr_register_spec");
+	if ((msg_test_5 = mdr_register_spec(&msgdef_test_5)) == NULL)
+		err(1, "mdr_register_spec");
+	msg_mdr_echo = mdr_registry_get(MDR_DCV_MDR_ECHO);
+	msg_mdr_ping = mdr_registry_get(MDR_DCV_MDR_PING);
 
 	for (t = tests; t->fn != NULL; t++) {
 		if (argc == optind && !t->default_set)

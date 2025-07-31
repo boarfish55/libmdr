@@ -129,8 +129,8 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 			if (mdr_pack_bytes(m, bytes, i) == MDR_FAIL)
 				err(1, "mdr_pack_bytes");
 		} else if (strcmp(spbuf, "sN") == 0) {
-			if (mdr_pack_string(m, *a++, -1) == MDR_FAIL)
-				err(1, "mdr_pack_string");
+			if (mdr_pack_str(m, *a++, -1) == MDR_FAIL)
+				err(1, "mdr_pack_str");
 		} else if (spbuf[0] == 'u' || spbuf[0] == 'i') {
 			if (strlen(spbuf) < 2)
 				errx(1, "invalid format spec");
@@ -157,12 +157,12 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 				if (spbuf[0] == 'i') {
 					if (i64 > INT8_MAX || i64 < INT8_MIN)
 						errx(1, "invalid value");
-					if (mdr_pack_int8(m, i64) == MDR_FAIL)
+					if (mdr_pack_i8(m, i64) == MDR_FAIL)
 						err(1, "mdr_pack_uint8");
 				} else {
 					if (u64 > UINT8_MAX)
 						errx(1, "invalid value");
-					if (mdr_pack_uint8(m, u64) == MDR_FAIL)
+					if (mdr_pack_u8(m, u64) == MDR_FAIL)
 						err(1, "mdr_pack_uint8");
 				}
 				a++;
@@ -171,12 +171,12 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 				if (spbuf[0] == 'i') {
 					if (i64 > INT16_MAX || i64 < INT16_MIN)
 						errx(1, "invalid value");
-					if (mdr_pack_int16(m, i64) == MDR_FAIL)
+					if (mdr_pack_i16(m, i64) == MDR_FAIL)
 						err(1, "mdr_pack_uint16");
 				} else {
 					if (u64 > UINT16_MAX)
 						errx(1, "invalid value");
-					if (mdr_pack_uint16(m, u64) == MDR_FAIL)
+					if (mdr_pack_u16(m, u64) == MDR_FAIL)
 						err(1, "mdr_pack_uint16");
 				}
 				a++;
@@ -185,22 +185,22 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 				if (spbuf[0] == 'i') {
 					if (i64 > INT32_MAX || i64 < INT32_MIN)
 						errx(1, "invalid value");
-					if (mdr_pack_int32(m, i64) == MDR_FAIL)
+					if (mdr_pack_i32(m, i64) == MDR_FAIL)
 						err(1, "mdr_pack_uint32");
 				} else {
 					if (u64 > UINT32_MAX)
 						errx(1, "invalid value");
-					if (mdr_pack_uint32(m, u64) == MDR_FAIL)
+					if (mdr_pack_u32(m, u64) == MDR_FAIL)
 						err(1, "mdr_pack_uint32");
 				}
 				a++;
 				break;
 			case 64:
 				if (spbuf[0] == 'i') {
-					if (mdr_pack_uint64(m, i64) == MDR_FAIL)
+					if (mdr_pack_u64(m, i64) == MDR_FAIL)
 						err(1, "mdr_pack_uint64");
 				} else {
-					if (mdr_pack_int64(m, u64) == MDR_FAIL)
+					if (mdr_pack_i64(m, u64) == MDR_FAIL)
 						err(1, "mdr_pack_uint64");
 				}
 				a++;

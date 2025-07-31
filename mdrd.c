@@ -46,6 +46,12 @@ char config_file_path[PATH_MAX] = "/etc/mdrd.conf";
 uint32_t *allowed_mdr_domains = NULL;
 int       allowed_mdr_domains_count = 0;
 
+const struct mdr_spec *msg_mdrd_error;
+const struct mdr_spec *msg_mdrd_bereq;
+const struct mdr_spec *msg_mdrd_beresp;
+const struct mdr_spec *msg_mdrd_beresp_wmsg;
+const struct mdr_spec *msg_mdrd_beclose;
+
 extern char *optarg;
 extern int   optind, opterr, optopt;
 
@@ -280,8 +286,9 @@ struct flatconf flatconf_vars[] = {
 static int
 pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 {
-	size_t                    cert_len;
-	unsigned char            *cert_buf;
+	size_t         cert_len;
+	unsigned char *cert_buf;
+	struct mdr_in  m_in[4];
 
 	cert_len = i2d_X509(peer_cert, NULL);
 	if (cert_len < 0) {
@@ -294,12 +301,17 @@ pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 		    "%lu > %lu", __func__, cert_len, mdrd_conf.max_cert_size);
 	}
 
-	if (mdr_pack_hdr(m, NULL, 4096, MDR_F_NONE,
-	    mdr_mkdcv(MDR_NS_MDRD, MDR_NAME_MDRD_BEREQ, 0)) == MDR_FAIL ||
-	    mdr_pack_uint64(m, id) == MDR_FAIL ||
-	    mdr_pack_int32(m, fd) == MDR_FAIL ||
-	    mdr_pack_mdr(m, msg) == MDR_FAIL ||
-	    mdr_pack_space(m, (char **)&cert_buf, cert_len) == MDR_FAIL) {
+	m_in[0].type = MDR_U64;
+	m_in[0].v.u64 = id;
+	m_in[1].type = MDR_I32;
+	m_in[1].v.i32 = fd;
+	m_in[2].type = MDR_M;
+	m_in[2].v.m = msg;
+	m_in[3].type = MDR_RSVB;
+	m_in[3].v.rsvb.dst = (char **)&cert_buf;
+	m_in[3].v.rsvb.sz = cert_len;
+	if (mdr_pack(m, NULL, 4096, msg_mdrd_bereq, MDR_F_NONE, m_in, 4)
+	    == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack", __func__);
 		return -1;
 	}
@@ -382,12 +394,14 @@ struct client_cb_data {
 void
 client_close_cb(struct tlsev *t, void *data)
 {
-	struct mdr bemsg;
-	char       buf[mdr_hdr_size(0) + sizeof(uint64_t)];
+	struct mdr    bemsg;
+	char          buf[mdr_hdr_size(0) + sizeof(uint64_t)];
+	struct mdr_in m_in[1];
 
-	if (mdr_pack_hdr(&bemsg, buf, sizeof(buf), MDR_F_NONE,
-	    mdr_mkdcv(MDR_NS_MDRD, MDR_NAME_MDRD_BECLOSE, 0)) == MDR_FAIL ||
-	    mdr_pack_uint64(&bemsg, tlsev_id(t)) == MDR_FAIL) {
+	m_in[0].type = MDR_U64;
+	m_in[0].v.u64 = tlsev_id(t);
+	if (mdr_pack(&bemsg, buf, sizeof(buf), msg_mdrd_beclose,
+	    MDR_F_NONE, m_in, 1) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack_hdr", __func__);
 	} else {
 		if (writeall(backend_wfd, mdr_buf(&bemsg),
@@ -440,12 +454,24 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 	memcpy(cb_data->buf + cb_data->len, buf, n);
 	cb_data->len += n;
 
-	if (mdr_unpack_all(&cb_data->msg, MDR_F_NONE, cb_data->buf,
-	    cb_data->len, mdrd_conf.max_payload_size) == MDR_FAIL) {
+	if (mdr_unpack_hdr(&cb_data->msg, MDR_F_NONE, cb_data->buf,
+	    cb_data->len) == MDR_FAIL) {
 		if (errno == EAGAIN)
 			return 0;
-		xlog_strerror(LOG_ERR, errno, "%s: mdr_unpack_all", __func__);
+		xlog_strerror(LOG_ERR, errno, "%s: mdr_unpack_hdr", __func__);
 		return -1;
+	}
+
+	if (mdr_size(&cb_data->msg) > mdrd_conf.max_payload_size) {
+		xlog_strerror(LOG_ERR, errno, "%s: mdr size is above our "
+		    "configured maximum size of %lu", __func__,
+		    mdrd_conf.max_payload_size);
+		return -1;
+	}
+
+	if (mdr_pending(&cb_data->msg) > 0) {
+		errno = EAGAIN;
+		return 0;
 	}
 
 	counters_incr(COUNTER_MESSAGES_IN);
@@ -489,15 +515,16 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 int
 backend_msg_in_cb(int fd)
 {
-	struct mdr    reply, msg;
-	char          reply_buf[mdrd_conf.max_payload_size + 4096];
-	char          msg_buf[mdrd_conf.max_payload_size];
-	struct tlsev *t;
-	uint64_t      id;
-	int           tlsfd, r;
-	uint32_t      resp_status, resp_flags;
+	struct mdr     reply, msg;
+	char           reply_buf[mdrd_conf.max_payload_size + 4096];
+	char           msg_buf[mdrd_conf.max_payload_size];
+	struct tlsev  *t;
+	uint64_t       id;
+	int            tlsfd, r;
+	uint32_t       resp_status, resp_flags;
+	struct mdr_in  m_in[2];
 
-	if ((r = mdr_unpack_from_fd(&reply, MDR_F_NONE, fd,
+	if ((r = mdr_read_from_fd(&reply, MDR_F_NONE, fd,
 	    reply_buf, sizeof(reply_buf))) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: mdr_unpack_from_fd", __func__);
@@ -510,34 +537,34 @@ backend_msg_in_cb(int fd)
 		goto fail;
 	}
 
-	if (mdr_code(&reply) != MDR_NAME_MDRD_BERESP) {
+	if (mdr_dcv_match(&reply, MDR_DCV_MDRD_BERESP, MDR_MASK_DC)) {
 		xlog(LOG_ERR, NULL,
 		    "%s: unexpected message ID from backend", __func__);
 		goto fail;
 	}
 
 	// TODO: clean this up
-	if (mdr_unpack_uint64(&reply, &id) == MDR_FAIL) {
+	if (mdr_unpack_u64(&reply, &id) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: failed to unpack message client connection ID",
 		    __func__);
 		goto fail;
 	}
 
-	if (mdr_unpack_int32(&reply, &tlsfd) == MDR_FAIL) {
+	if (mdr_unpack_i32(&reply, &tlsfd) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: failed to unpack client file descriptor", __func__);
 		goto fail;
 	}
 
-	if (mdr_unpack_uint32(&reply, &resp_status) == MDR_FAIL) {
+	if (mdr_unpack_u32(&reply, &resp_status) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: failed to unpack response status from backend",
 		    __func__);
 		goto fail;
 	}
 
-	if (mdr_unpack_uint32(&reply, &resp_flags) == MDR_FAIL) {
+	if (mdr_unpack_u32(&reply, &resp_flags) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: failed to unpack response flags from backend",
 		    __func__);
@@ -559,8 +586,8 @@ backend_msg_in_cb(int fd)
 
 	switch (resp_status) {
 	case MDRD_ST_OK:
-		if (mdr_variant(&reply) == 1) {
-			if (mdr_unpack_mdr_ref(&reply, &msg) == MDR_FAIL) {
+		if (mdr_dcv(&reply) != MDR_DCV_MDRD_BERESP_WMSG) {
+			if (mdr_unpack_mdr(&reply, &msg) == MDR_FAIL) {
 				xlog_strerror(LOG_ERR, errno,
 				    "%s: reply from backend is invalid",
 				    __func__);
@@ -569,8 +596,13 @@ backend_msg_in_cb(int fd)
 		}
 		break;
 	case MDRD_ST_DENIED:
-		if (mdrd_pack_error(&msg, msg_buf, sizeof(msg_buf),
-		    resp_status, "access denied") == MDR_FAIL) {
+		m_in[0].type = MDR_U32;
+		m_in[0].v.u32 = resp_status;
+		m_in[1].type = MDR_S;
+		m_in[1].v.s.bytes = "access denied";
+		m_in[1].v.s.sz = -1;
+		if (mdr_pack(&msg, msg_buf, sizeof(msg_buf), msg_mdrd_error,
+		    MDR_F_NONE, m_in, 2) == MDR_FAIL) {
 			xlog(LOG_ERR, NULL, "%s: failed to pack error for "
 			    "client after resp_status %u",
 			    __func__, resp_status);
@@ -578,8 +610,13 @@ backend_msg_in_cb(int fd)
 		}
 		break;
 	case MDRD_ST_CERTFAIL:
-		if (mdrd_pack_error(&msg, msg_buf, sizeof(msg_buf),
-		    resp_status, "certificate validation failed") == MDR_FAIL) {
+		m_in[0].type = MDR_U32;
+		m_in[0].v.u32 = resp_status;
+		m_in[1].type = MDR_S;
+		m_in[1].v.s.bytes = "certificate validation failed";
+		m_in[1].v.s.sz = -1;
+		if (mdr_pack(&msg, msg_buf, sizeof(msg_buf), msg_mdrd_error,
+		    MDR_F_NONE, m_in, 2) == MDR_FAIL) {
 			xlog(LOG_ERR, NULL, "%s: failed to pack error for "
 			    "client after resp_status %u",
 			    __func__, resp_status);
@@ -1017,6 +1054,21 @@ main(int argc, char **argv)
 		usage();
 		errx(1, "unknown command");
 	}
+
+	if (mdr_register_builtin_specs() == MDR_FAIL)
+                err(1, "mdr_register_builtin_specs");
+
+	if ((msg_mdrd_error = mdr_registry_get(MDR_DCV_MDRD_ERROR)) == NULL)
+                err(1, "mdr_registry_get");
+	if ((msg_mdrd_bereq = mdr_registry_get(MDR_DCV_MDRD_BEREQ)) == NULL)
+                err(1, "mdr_registry_get");
+	if ((msg_mdrd_beresp = mdr_registry_get(MDR_DCV_MDRD_BERESP)) == NULL)
+                err(1, "mdr_registry_get");
+	if ((msg_mdrd_beresp_wmsg =
+	    mdr_registry_get(MDR_DCV_MDRD_BERESP_WMSG)) == NULL)
+                err(1, "mdr_registry_get");
+	if ((msg_mdrd_beclose = mdr_registry_get(MDR_DCV_MDRD_BECLOSE)) == NULL)
+                err(1, "mdr_registry_get");
 
 	if (mdrd_conf.backend_argv == NULL)
 		errx(1, "no backend_argv specified");
