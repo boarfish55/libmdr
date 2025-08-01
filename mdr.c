@@ -1438,117 +1438,6 @@ mdr_pack_array(struct mdr *m, uint8_t type, int32_t n, void *a)
 	return mdr_tell(m);
 }
 
-ptrdiff_t
-mdr_unpack(struct mdr *m, char *buf, size_t buf_sz, const struct mdr_spec *spec,
-    uint32_t accept_flags, struct mdr_out *out, size_t out_sz)
-{
-	ptrdiff_t r;
-	int       i;
-
-	if (mdr_unpack_hdr(m, accept_flags, buf, buf_sz) == MDR_FAIL)
-		return MDR_FAIL;
-
-	if (spec == NULL) {
-		if ((m->spec = mdr_registry_get(mdr_dcv(m))) == NULL) {
-			if (errno == ENOENT)
-				errno = ENOTSUP;
-			return MDR_FAIL;
-		}
-	} else
-		m->spec = spec;
-
-	for (i = 0; i < out_sz && i < m->spec->types_count; i++) {
-		out[i].type = m->spec->types[i];
-
-		switch (m->spec->types[i]) {
-		case MDR_U8:
-			r = mdr_unpack_u8(m, &out[i].v.u8);
-			break;
-		case MDR_U16:
-			r = mdr_unpack_u16(m, &out[i].v.u16);
-			break;
-		case MDR_U32:
-			r = mdr_unpack_u32(m, &out[i].v.u32);
-			break;
-		case MDR_U64:
-			r = mdr_unpack_u64(m, &out[i].v.u64);
-			break;
-		case MDR_I8:
-			r = mdr_unpack_i8(m, &out[i].v.i8);
-			break;
-		case MDR_I16:
-			r = mdr_unpack_i16(m, &out[i].v.i16);
-			break;
-		case MDR_I32:
-			r = mdr_unpack_i32(m, &out[i].v.i32);
-			break;
-		case MDR_I64:
-			r = mdr_unpack_i64(m, &out[i].v.i64);
-			break;
-		case MDR_F32:
-			r = mdr_unpack_f32(m, &out[i].v.f32);
-			break;
-		case MDR_F64:
-			r = mdr_unpack_f64(m, &out[i].v.f64);
-			break;
-		case MDR_B:
-			r = mdr_unpack_bytes(m, &out[i].v.b.bytes,
-			    &out[i].v.b.sz);
-			break;
-		case MDR_S:
-			r = mdr_unpack_str(m, &out[i].v.s.bytes,
-			    &out[i].v.s.sz);
-			break;
-		case MDR_M:
-			r = mdr_unpack_mdr(m, &out[i].v.m);
-			break;
-		case MDR_AU8:
-			r = mdr_unpack_array(m, MDR_AU8, &out[i].v.au8);
-			break;
-		case MDR_AU16:
-			r = mdr_unpack_array(m, MDR_AU16, &out[i].v.au16);
-			break;
-		case MDR_AU32:
-			r = mdr_unpack_array(m, MDR_AU32, &out[i].v.au32);
-			break;
-		case MDR_AU64:
-			r = mdr_unpack_array(m, MDR_AU64, &out[i].v.au64);
-			break;
-		case MDR_AI8:
-			r = mdr_unpack_array(m, MDR_AI8, &out[i].v.ai8);
-			break;
-		case MDR_AI16:
-			r = mdr_unpack_array(m, MDR_AI16, &out[i].v.ai16);
-			break;
-		case MDR_AI32:
-			r = mdr_unpack_array(m, MDR_AI32, &out[i].v.ai32);
-			break;
-		case MDR_AI64:
-			r = mdr_unpack_array(m, MDR_AI64, &out[i].v.ai64);
-			break;
-		case MDR_AF32:
-			r = mdr_unpack_array(m, MDR_AF32, &out[i].v.af32);
-			break;
-		case MDR_AF64:
-			r = mdr_unpack_array(m, MDR_AF64, &out[i].v.af64);
-			break;
-		case MDR_AS:
-			r = mdr_unpack_array(m, MDR_AS, &out[i].v.as);
-			break;
-		case MDR_AM:
-			r = mdr_unpack_array(m, MDR_AM, &out[i].v.am);
-			break;
-		default:
-			errno = EINVAL;
-			return MDR_FAIL;
-		}
-		if (r == MDR_FAIL)
-			return MDR_FAIL;
-	}
-
-	return mdr_tell(m);
-}
-
 /*
  * fd must be blocking.
  */
@@ -1675,6 +1564,128 @@ mdr_unpack_hdr(struct mdr *m, uint32_t accept_flags, void *buf, size_t buf_sz)
 		m->acct_id = NULL;
 
 	return mdr_tell(m);
+}
+
+ptrdiff_t
+mdr_unpack_payload(struct mdr *m, const struct mdr_spec *spec,
+    struct mdr_out *out, size_t out_sz)
+{
+	ptrdiff_t r;
+	int       i;
+
+	if (m == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	if (spec == NULL) {
+		if ((m->spec = mdr_registry_get(mdr_dcv(m))) == NULL) {
+			if (errno == ENOENT)
+				errno = ENOTSUP;
+			return MDR_FAIL;
+		}
+	} else
+		m->spec = spec;
+
+	for (i = 0; i < out_sz && i < m->spec->types_count; i++) {
+		out[i].type = m->spec->types[i];
+
+		switch (m->spec->types[i]) {
+		case MDR_U8:
+			r = mdr_unpack_u8(m, &out[i].v.u8);
+			break;
+		case MDR_U16:
+			r = mdr_unpack_u16(m, &out[i].v.u16);
+			break;
+		case MDR_U32:
+			r = mdr_unpack_u32(m, &out[i].v.u32);
+			break;
+		case MDR_U64:
+			r = mdr_unpack_u64(m, &out[i].v.u64);
+			break;
+		case MDR_I8:
+			r = mdr_unpack_i8(m, &out[i].v.i8);
+			break;
+		case MDR_I16:
+			r = mdr_unpack_i16(m, &out[i].v.i16);
+			break;
+		case MDR_I32:
+			r = mdr_unpack_i32(m, &out[i].v.i32);
+			break;
+		case MDR_I64:
+			r = mdr_unpack_i64(m, &out[i].v.i64);
+			break;
+		case MDR_F32:
+			r = mdr_unpack_f32(m, &out[i].v.f32);
+			break;
+		case MDR_F64:
+			r = mdr_unpack_f64(m, &out[i].v.f64);
+			break;
+		case MDR_B:
+			r = mdr_unpack_bytes(m, &out[i].v.b.bytes,
+			    &out[i].v.b.sz);
+			break;
+		case MDR_S:
+			r = mdr_unpack_str(m, &out[i].v.s.bytes,
+			    &out[i].v.s.sz);
+			break;
+		case MDR_M:
+			r = mdr_unpack_mdr(m, &out[i].v.m);
+			break;
+		case MDR_AU8:
+			r = mdr_unpack_array(m, MDR_AU8, &out[i].v.au8);
+			break;
+		case MDR_AU16:
+			r = mdr_unpack_array(m, MDR_AU16, &out[i].v.au16);
+			break;
+		case MDR_AU32:
+			r = mdr_unpack_array(m, MDR_AU32, &out[i].v.au32);
+			break;
+		case MDR_AU64:
+			r = mdr_unpack_array(m, MDR_AU64, &out[i].v.au64);
+			break;
+		case MDR_AI8:
+			r = mdr_unpack_array(m, MDR_AI8, &out[i].v.ai8);
+			break;
+		case MDR_AI16:
+			r = mdr_unpack_array(m, MDR_AI16, &out[i].v.ai16);
+			break;
+		case MDR_AI32:
+			r = mdr_unpack_array(m, MDR_AI32, &out[i].v.ai32);
+			break;
+		case MDR_AI64:
+			r = mdr_unpack_array(m, MDR_AI64, &out[i].v.ai64);
+			break;
+		case MDR_AF32:
+			r = mdr_unpack_array(m, MDR_AF32, &out[i].v.af32);
+			break;
+		case MDR_AF64:
+			r = mdr_unpack_array(m, MDR_AF64, &out[i].v.af64);
+			break;
+		case MDR_AS:
+			r = mdr_unpack_array(m, MDR_AS, &out[i].v.as);
+			break;
+		case MDR_AM:
+			r = mdr_unpack_array(m, MDR_AM, &out[i].v.am);
+			break;
+		default:
+			errno = EINVAL;
+			return MDR_FAIL;
+		}
+		if (r == MDR_FAIL)
+			return MDR_FAIL;
+	}
+
+	return mdr_tell(m);
+}
+
+ptrdiff_t
+mdr_unpack(struct mdr *m, char *buf, size_t buf_sz, const struct mdr_spec *spec,
+    uint32_t accept_flags, struct mdr_out *out, size_t out_sz)
+{
+	if (mdr_unpack_hdr(m, accept_flags, buf, buf_sz) == MDR_FAIL)
+		return MDR_FAIL;
+	return mdr_unpack_payload(m, spec, out, out_sz);
 }
 
 static ptrdiff_t
