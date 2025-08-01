@@ -1164,7 +1164,7 @@ mdr_pack_bytes(struct mdr *m, const void *bytes, uint64_t bytes_sz)
 ptrdiff_t
 mdr_pack_rsvb(struct mdr *m, void **dst, uint64_t bytes_sz)
 {
-	if (m == NULL || bytes_sz & 0X8000000000000000) {
+	if (m == NULL || bytes_sz & 0x8000000000000000) {
 		errno = EINVAL;
 		return MDR_FAIL;
 	}
