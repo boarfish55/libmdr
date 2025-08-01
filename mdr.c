@@ -140,7 +140,7 @@ readall(int fd, void *buf, size_t count)
 static int
 mdr_can_fit(struct mdr *m, size_t n)
 {
-	char *tmp;
+	uint8_t *tmp;
 
 	if ((PTRDIFF_MAX - mdr_tell(m)) < n) {
 		errno = EOVERFLOW;
@@ -162,13 +162,28 @@ mdr_can_fit(struct mdr *m, size_t n)
 	if (tmp != m->buf) {
 		m->pos = tmp + mdr_tell(m);
 
-		m->size = (uint64_t *)(tmp + ((char *)m->size - m->buf));
-		m->flags = (uint32_t *)(tmp + ((char *)m->flags - m->buf));
-		m->dcv = (uint64_t *)(tmp + ((char *)m->dcv - m->buf));
+		m->size = (uint64_t *)(tmp +
+		    ((uint8_t *)m->size - (uint8_t *)m->buf));
+		m->flags = (uint32_t *)(tmp +
+		    ((uint8_t *)m->flags - (uint8_t *)m->buf));
+		m->dcv = (uint64_t *)(tmp +
+		    ((uint8_t *)m->dcv - (uint8_t *)m->buf));
 
 		if (mdr_flags(m) & MDR_F_TAIL_BYTES)
-			m->tail_bytes = (uint64_t *)
-			    (tmp + ((char *)m->tail_bytes - m->buf));
+			m->tail_bytes = (uint64_t *)(tmp +
+			    ((uint8_t *)m->tail_bytes - (uint8_t *)m->buf));
+
+		if (mdr_flags(m) & MDR_F_STREAM_ID)
+			m->stream_id = (uint64_t *)(tmp +
+			    ((uint8_t *)m->stream_id - (uint8_t *)m->buf));
+
+		if (mdr_flags(m) & MDR_F_ACCT_ID)
+			m->acct_id = (uint64_t *)(tmp +
+			    ((uint8_t *)m->acct_id - (uint8_t *)m->buf));
+
+		if (mdr_flags(m) & MDR_F_TRACE_ID)
+			m->trace_id = (uint8_t *)(tmp +
+			    ((uint8_t *)m->trace_id - (uint8_t *)m->buf));
 
 		m->buf = tmp;
 	}
@@ -227,7 +242,7 @@ mdr_pack_num_nochk(struct mdr *m, uint8_t type, union mdr_num_v v)
 }
 
 static ptrdiff_t
-mdr_pack_bytes_nochk(struct mdr *m, const void *bytes, uint64_t bytes_sz)
+mdr_pack_bytes_nochk(struct mdr *m, const uint8_t *bytes, uint64_t bytes_sz)
 {
 	if (bytes_sz & 0x8000000000000000) {
 		errno = EINVAL;
@@ -270,7 +285,7 @@ mdr_pack_str_nochk(struct mdr *m, const char *bytes, int64_t maxlen)
 		return MDR_FAIL;
 	}
 
-	return mdr_pack_bytes_nochk(m, bytes, MIN(len, maxlen));
+	return mdr_pack_bytes_nochk(m, (uint8_t *)bytes, MIN(len, maxlen));
 }
 
 ptrdiff_t
@@ -491,7 +506,7 @@ mdr_out_array_sm(struct mdr_out_array_handle *h, uint8_t type, void *dst,
 		} else if (type == MDR_M) {
 			sz = be64toh(*(uint64_t *)pos);
 			if (mdr_unpack_hdr(((struct mdr *)dst) + i, MDR_F_NONE,
-			    (char *)pos, sz) == MDR_FAIL)
+			    (uint8_t *)pos, sz) == MDR_FAIL)
 				return MDR_FAIL;
 			pos += sz;
 		}
@@ -605,7 +620,7 @@ mdr_dcv_match(const struct mdr *m, uint64_t dcv, uint64_t mask)
 }
 
 ptrdiff_t
-mdr_copy(struct mdr *dst, char *buf, size_t buf_sz, const struct mdr *src,
+mdr_copy(struct mdr *dst, void *buf, size_t buf_sz, const struct mdr *src,
     const struct mdr_spec *spec)
 {
 	ptrdiff_t r;
@@ -649,13 +664,22 @@ mdr_hdr_size(uint32_t flags)
 	 *  - domain:     uint32_t
 	 *  - code:       uint16_t
 	 *  - variant:    uint16_t
-	 *  - tail_bytes: uint64_t (optional)
+	 *  - tail_bytes: uint64_t    (optional)
+	 *  - stream_id:  uint64_t    (optional)
+	 *  - acct_id:    uint64_t    (optional)
+	 *  - trace_id:   uint8_t[16] (optional)
 	 */
 	n = sizeof(uint64_t) +
 	    (2 * sizeof(uint32_t)) +
 	    (2 * sizeof(uint16_t));
 	if (flags & MDR_F_TAIL_BYTES)
 		n += sizeof(uint64_t);
+	if (flags & MDR_F_STREAM_ID)
+		n += sizeof(uint64_t);
+	if (flags & MDR_F_ACCT_ID)
+		n += sizeof(uint64_t);
+	if (flags & MDR_F_TRACE_ID)
+		n += sizeof(uint8_t[16]);
 	return n;
 }
 
@@ -744,7 +768,7 @@ mdr_variant(const struct mdr *m)
 }
 
 uint64_t
-mdr_tail_bytes(const struct mdr *m)
+mdr_tail_bytes(const struct mdr *m, void **dst)
 {
 	if (m == NULL) {
 		errno = EINVAL;
@@ -752,10 +776,47 @@ mdr_tail_bytes(const struct mdr *m)
 	}
 	if (!(mdr_flags(m) & MDR_F_TAIL_BYTES))
 		return 0;
+	if (dst != NULL)
+		*dst = (uint8_t *)mdr_buf(m) + mdr_size(m);
 	return be64toh(*m->tail_bytes);
 }
 
-// TODO: functions return char *... fix inconsistency
+uint64_t
+mdr_stream_id(const struct mdr *m)
+{
+	if (m == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+	if (!(mdr_flags(m) & MDR_F_STREAM_ID))
+		return 0;
+	return be64toh(*m->stream_id);
+}
+
+uint64_t
+mdr_acct_id(const struct mdr *m)
+{
+	if (m == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+	if (!(mdr_flags(m) & MDR_F_ACCT_ID))
+		return 0;
+	return be64toh(*m->acct_id);
+}
+
+const uint8_t *
+mdr_trace_id(const struct mdr *m)
+{
+	if (m == NULL) {
+		errno = EINVAL;
+		return NULL;
+	}
+	if (!(mdr_flags(m) & MDR_F_TRACE_ID))
+		return NULL;
+	return m->trace_id;
+}
+
 const void *
 mdr_buf(const struct mdr *m)
 {
@@ -942,9 +1003,31 @@ mdr_pack_hdr(struct mdr *m, char *buf, size_t buf_sz,
 		m->pos += sizeof(*m->tail_bytes);
 		*m->tail_bytes = 0;
 
-	} else {
+	} else
 		m->tail_bytes = NULL;
-	}
+
+	if (flags & MDR_F_STREAM_ID) {
+		m->stream_id = (uint64_t *)m->pos;
+		m->pos += sizeof(*m->stream_id);
+		*m->stream_id = 0;
+
+	} else
+		m->stream_id = NULL;
+
+	if (flags & MDR_F_ACCT_ID) {
+		m->acct_id = (uint64_t *)m->pos;
+		m->pos += sizeof(*m->acct_id);
+		*m->acct_id = 0;
+
+	} else
+		m->acct_id = NULL;
+
+	if (flags & MDR_F_TRACE_ID) {
+		m->trace_id = (uint8_t *)m->pos;
+		m->pos += sizeof(uint8_t) * 16;
+		bzero(m->trace_id, sizeof(uint8_t) * 16);
+	} else
+		m->trace_id = NULL;
 
 	*m->flags = htobe32(flags);
 	*m->dcv = htobe64(spec->dcv);
@@ -1074,7 +1157,7 @@ mdr_pack_bytes(struct mdr *m, const void *bytes, uint64_t bytes_sz)
 }
 
 ptrdiff_t
-mdr_pack_rsvb(struct mdr *m, char **dst, uint64_t bytes_sz)
+mdr_pack_rsvb(struct mdr *m, void **dst, uint64_t bytes_sz)
 {
 	if (m == NULL || bytes_sz & 0X8000000000000000) {
 		errno = EINVAL;
@@ -1120,13 +1203,64 @@ mdr_add_tail_bytes(struct mdr *m, uint64_t bytes_sz)
 		return MDR_FAIL;
 	}
 
-	if (UINT64_MAX - mdr_tail_bytes(m) < bytes_sz) {
+	if (UINT64_MAX - mdr_tail_bytes(m, NULL) < bytes_sz) {
 		errno = EOVERFLOW;
 		return MDR_FAIL;
 	}
 
-	*m->tail_bytes = htobe64(mdr_tail_bytes(m) + bytes_sz);
+	*m->tail_bytes = htobe64(mdr_tail_bytes(m, NULL) + bytes_sz);
 
+	return mdr_update_size(m);
+}
+
+ptrdiff_t
+mdr_set_stream_id(struct mdr *m, uint64_t id)
+{
+	if (m == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	if (!(mdr_flags(m) & MDR_F_STREAM_ID)) {
+		errno = EPERM;
+		return MDR_FAIL;
+	}
+
+	*m->stream_id = htobe64(id);
+	return mdr_update_size(m);
+}
+
+ptrdiff_t
+mdr_set_acct_id(struct mdr *m, uint64_t id)
+{
+	if (m == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	if (!(mdr_flags(m) & MDR_F_ACCT_ID)) {
+		errno = EPERM;
+		return MDR_FAIL;
+	}
+
+	*m->acct_id = htobe64(id);
+	return mdr_update_size(m);
+}
+
+ptrdiff_t
+mdr_set_trace_id(struct mdr *m, const uint8_t *id)
+{
+	if (m == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	if (!(mdr_flags(m) & MDR_F_TRACE_ID)) {
+		errno = EPERM;
+		return MDR_FAIL;
+	}
+
+	memcpy(m->trace_id, id, sizeof(uint8_t) * 16);
 	return mdr_update_size(m);
 }
 
@@ -1421,7 +1555,7 @@ mdr_unpack(struct mdr *m, char *buf, size_t buf_sz, const struct mdr_spec *spec,
 // TODO: should we provide a generic function with a read callback?
 ptrdiff_t
 mdr_read_from_fd(struct mdr *m, uint32_t accept_flags, int fd,
-    char *buf, size_t buf_sz)
+    void *buf, size_t buf_sz)
 {
 	int r;
 
@@ -1465,7 +1599,7 @@ mdr_read_from_fd(struct mdr *m, uint32_t accept_flags, int fd,
 }
 
 ptrdiff_t
-mdr_unpack_hdr(struct mdr *m, uint32_t accept_flags, char *buf, size_t buf_sz)
+mdr_unpack_hdr(struct mdr *m, uint32_t accept_flags, void *buf, size_t buf_sz)
 {
 	if (m == NULL || buf == NULL) {
 		errno = EINVAL;
@@ -1525,9 +1659,20 @@ mdr_unpack_hdr(struct mdr *m, uint32_t accept_flags, char *buf, size_t buf_sz)
 	if (mdr_flags(m) & MDR_F_TAIL_BYTES) {
 		m->tail_bytes = (uint64_t *)m->pos;
 		m->pos += sizeof(*m->tail_bytes);
-	} else {
+	} else
 		m->tail_bytes = NULL;
-	}
+
+	if (mdr_flags(m) & MDR_F_STREAM_ID) {
+		m->stream_id = (uint64_t *)m->pos;
+		m->pos += sizeof(*m->stream_id);
+	} else
+		m->stream_id = NULL;
+
+	if (mdr_flags(m) & MDR_F_ACCT_ID) {
+		m->acct_id = (uint64_t *)m->pos;
+		m->pos += sizeof(*m->acct_id);
+	} else
+		m->acct_id = NULL;
 
 	return mdr_tell(m);
 }
@@ -1840,7 +1985,11 @@ mdr_print(FILE *out, const struct mdr *m)
 	fprintf(out, "  code:        %u\n", mdr_code(m));
 	fprintf(out, "  variant:     %u\n", mdr_variant(m));
 	if (mdr_flags(m) & MDR_F_TAIL_BYTES)
-		fprintf(out, "  tail bytes:  %lu\n", mdr_tail_bytes(m));
+		fprintf(out, "  tail bytes:  %lu\n", mdr_tail_bytes(m, NULL));
+	if (mdr_flags(m) & MDR_F_STREAM_ID)
+		fprintf(out, "  stream ID:  %lu\n", mdr_tail_bytes(m, NULL));
+	if (mdr_flags(m) & MDR_F_ACCT_ID)
+		fprintf(out, "  accounting ID:  %lu\n", mdr_tail_bytes(m, NULL));
 	fprintf(out, "\n");
 	fprintf(out, "  payload (%lu bytes):\n",
 	    mdr_size(m) - mdr_hdr_size(mdr_flags(m)));

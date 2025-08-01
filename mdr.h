@@ -77,7 +77,11 @@ struct mdr {
 #define MDR_F_NONE       0x00000000
 #define MDR_F_TAIL_BYTES 0x00000001 /* Arbitrary bytes follow
 				       the strucutred payload */
-	/* Other flags reserved for future use */
+#define MDR_F_STREAM_ID  0x00000002 /* A field with stream ID is present */
+#define MDR_F_ACCT_ID    0x00000004 /* A field with a generic accounting ID
+				       is present */
+#define MDR_F_TRACE_ID   0x00000008 /* A field with a trace ID (e.g. UUID)
+				       is present */
 
 	/*
 	 * Domain, code and variant is used to identify the data structure
@@ -90,15 +94,18 @@ struct mdr {
 	 */
 	uint64_t *dcv;         /* domain/code/variant */
 	uint64_t *tail_bytes;  /* tail bytes are NOT accounted for in size */
+	uint64_t *stream_id;
+	uint64_t *acct_id;
+	uint8_t  *trace_id;
 
 	/*
 	 * Internal only; not part of wire payload.
 	 */
 	const struct mdr_spec *spec;
 	int                    spec_fld_idx;
-	char                  *buf;
+	void                  *buf;
 	size_t                 buf_sz;
-	char                  *pos;
+	void                  *pos;
 	int                    dyn;
 };
 
@@ -107,8 +114,8 @@ struct mdr_in {
 	union {
 		uint8_t u8;
 		struct {
-			int32_t   length;
-			uint8_t  *items;
+			int32_t  length;
+			uint8_t *items;
 		} au8;
 
 		uint16_t u16;
@@ -131,38 +138,38 @@ struct mdr_in {
 
 		int8_t i8;
 		struct {
-			int32_t   length;
-			int8_t   *items;
+			int32_t  length;
+			int8_t  *items;
 		} ai8;
 
 		int16_t i16;
 		struct {
-			int32_t   length;
-			int16_t  *items;
+			int32_t  length;
+			int16_t *items;
 		} ai16;
 
 		int32_t i32;
 		struct {
-			int32_t   length;
-			int32_t  *items;
+			int32_t  length;
+			int32_t *items;
 		} ai32;
 
 		int64_t i64;
 		struct {
-			int32_t   length;
-			int64_t  *items;
+			int32_t  length;
+			int64_t *items;
 		} ai64;
 
 		float f32;
 		struct {
-			int32_t   length;
-			float    *items;
+			int32_t  length;
+			float   *items;
 		} af32;
 
 		double f64;
 		struct {
-			int32_t   length;
-			double   *items;
+			int32_t  length;
+			double  *items;
 		} af64;
 
 		const struct mdr *m;
@@ -174,15 +181,20 @@ struct mdr_in {
 		struct {
 			const char *bytes;
 			uint64_t    sz;
-		} s, b;
+		} s;
 
 		struct {
-			int32_t                     length;
+			const void *bytes;
+			uint64_t    sz;
+		} b;
+
+		struct {
+			int32_t      length;
 			const char **items;
 		} as;
 
 		struct {
-			char     **dst;
+			void     **dst;
 			uint64_t   sz;
 		} rsvb;
 	} v;
@@ -252,18 +264,20 @@ size_t      mdr_hdr_size(uint32_t);
 int         mdr_rewind(struct mdr *);
 ptrdiff_t   mdr_tell(const struct mdr *);
 uint64_t    mdr_pending(const struct mdr *);
-ptrdiff_t   mdr_copy(struct mdr *, char *, size_t, const struct mdr *,
+ptrdiff_t   mdr_copy(struct mdr *, void *, size_t, const struct mdr *,
                 const struct mdr_spec *);
+uint64_t    mdr_mkdcv(uint32_t, uint16_t, uint16_t);
 
-uint64_t mdr_mkdcv(uint32_t, uint16_t, uint16_t);
-
-uint32_t mdr_flags(const struct mdr *);
-uint32_t mdr_domain(const struct mdr *);
-uint16_t mdr_code(const struct mdr *);
-uint16_t mdr_variant(const struct mdr *);
-uint64_t mdr_dcv(const struct mdr *);
-uint64_t mdr_tail_bytes(const struct mdr *);
-int      mdr_dcv_match(const struct mdr *, uint64_t, uint64_t);
+uint32_t       mdr_flags(const struct mdr *);
+uint32_t       mdr_domain(const struct mdr *);
+uint16_t       mdr_code(const struct mdr *);
+uint16_t       mdr_variant(const struct mdr *);
+uint64_t       mdr_dcv(const struct mdr *);
+uint64_t       mdr_tail_bytes(const struct mdr *, void **dst);
+uint64_t       mdr_stream_id(const struct mdr *);
+uint64_t       mdr_acct_id(const struct mdr *);
+const uint8_t *mdr_trace_id(const struct mdr *);
+int            mdr_dcv_match(const struct mdr *, uint64_t, uint64_t);
 
 ptrdiff_t mdr_pack_hdr(struct mdr *, char *, size_t, const struct mdr_spec *,
               uint32_t);
@@ -280,14 +294,17 @@ ptrdiff_t mdr_pack_u64(struct mdr *, uint64_t);
 ptrdiff_t mdr_pack_f32(struct mdr *, float);
 ptrdiff_t mdr_pack_f64(struct mdr *, double);
 ptrdiff_t mdr_pack_bytes(struct mdr *, const void *, uint64_t);
-ptrdiff_t mdr_pack_rsvb(struct mdr *, char **, uint64_t);
+ptrdiff_t mdr_pack_rsvb(struct mdr *, void **, uint64_t);
 ptrdiff_t mdr_pack_str(struct mdr *, const char *, int64_t);
 ptrdiff_t mdr_pack_mdr(struct mdr *, const struct mdr *);
 ptrdiff_t mdr_pack_array(struct mdr *, uint8_t, int32_t, void *);
 ptrdiff_t mdr_add_tail_bytes(struct mdr *, uint64_t);
+ptrdiff_t mdr_set_stream_id(struct mdr *, uint64_t);
+ptrdiff_t mdr_set_acct_id(struct mdr *, uint64_t);
+ptrdiff_t mdr_set_trace_id(struct mdr *, const uint8_t *);
 
-ptrdiff_t mdr_read_from_fd(struct mdr *, uint32_t, int, char *, size_t);
-ptrdiff_t mdr_unpack_hdr(struct mdr *, uint32_t, char *, size_t);
+ptrdiff_t mdr_read_from_fd(struct mdr *, uint32_t, int, void *, size_t);
+ptrdiff_t mdr_unpack_hdr(struct mdr *, uint32_t, void *, size_t);
 ptrdiff_t mdr_unpack(struct mdr *, char *, size_t, const struct mdr_spec *,
               uint32_t, struct mdr_out *, size_t);
 ptrdiff_t mdr_unpack_i8(struct mdr *, int8_t *);

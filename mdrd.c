@@ -308,7 +308,7 @@ pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 	m_in[2].type = MDR_M;
 	m_in[2].v.m = msg;
 	m_in[3].type = MDR_RSVB;
-	m_in[3].v.rsvb.dst = (char **)&cert_buf;
+	m_in[3].v.rsvb.dst = (void **)&cert_buf;
 	m_in[3].v.rsvb.sz = cert_len;
 	if (mdr_pack(m, NULL, 4096, msg_mdrd_bereq, MDR_F_NONE, m_in, 4)
 	    == MDR_FAIL) {

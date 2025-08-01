@@ -239,7 +239,7 @@ test_pack_reserved_bytes()
 	uint64_t         r;
 	char             buf[64];
 	char             str[32] = "hey hey hey";
-	char            *dst;
+	void            *dst;
 	struct mdr      in, out;
 	struct mdr_in   m_in[1];
 	struct mdr_out  m_out[1];
@@ -286,13 +286,14 @@ test_pack_reserved_bytes()
 struct test_status *
 test_long_tail_bytes()
 {
-	uint64_t   r;
-	struct mdr in, out;
-	char       buf[4096];
-	char       stra[1024];
-	char       strb[128];
-	char       strab_expected[2048], strab[2048];
-	int        i, j;
+	uint64_t    r, tbsz;
+	struct mdr  in, out;
+	char        buf[4096];
+	char        stra[1024];
+	char        strb[128];
+	void       *dst;
+	char        strab_expected[2048], strab[2048];
+	int         i, j;
 
 	for (i = 0; i < sizeof(stra) - 1; i++) {
 		stra[i] = 'a';
@@ -336,10 +337,11 @@ test_long_tail_bytes()
 
 	/* Copy all tail bytes after payload into strab */
 	bzero(strab, sizeof(strab));
-	memcpy(strab, mdr_buf(&out) + mdr_tell(&out), mdr_tail_bytes(&out));
+	tbsz = mdr_tail_bytes(&out, &dst);
+	memcpy(strab, dst, tbsz);
 
 	/* Then compare */
-	if (memcmp(strab, strab_expected, mdr_tail_bytes(&out)) != 0)
+	if (memcmp(strab, strab_expected, tbsz) != 0)
 		return ERR(0, "bytes don't match");
 
 	return success();
