@@ -336,4 +336,6 @@ const struct mdr_spec *mdr_registry_get(uint64_t);
 #define MDR_DCV_MDRD_BERESP_WMSG MDR_DCV(0x00000001, 0x0003, 0x0001)
 #define MDR_DCV_MDRD_BECLOSE     MDR_DCV(0x00000001, 0x0004, 0x0000)
 
+#define MDR_DOMAIN_CERTALATOR    0x00000002
+
 #endif
