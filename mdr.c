@@ -25,23 +25,21 @@ union mdr_num_v {
 	double   f64;
 };
 
-struct mdr_def mdr_ping = {
+static struct mdr_def mdr_ping = {
 	MDR_DCV_MDR_PING,
 	"mdr.ping",
 	{
 		MDR_LAST
 	}
 };
-
-struct mdr_def mdr_pong = {
+static struct mdr_def mdr_pong = {
 	MDR_DCV_MDR_PONG,
 	"mdr.pong",
 	{
 		MDR_LAST
 	}
 };
-
-struct mdr_def mdr_echo = {
+static struct mdr_def mdr_echo = {
 	MDR_DCV_MDR_ECHO,
 	"mdr.echo",
 	{
@@ -50,14 +48,14 @@ struct mdr_def mdr_echo = {
 	}
 };
 
-struct mdr_def mdrd_error = {
+static struct mdr_def mdrd_error = {
 	MDR_DCV_MDRD_ERROR,
 	"mdrd.error",
 	{
 		MDR_LAST
 	}
 };
-struct mdr_def mdrd_bereq = {
+static struct mdr_def mdrd_bereq = {
 	MDR_DCV_MDRD_BEREQ,
 	"mdrd.bereq",
 	{
@@ -68,7 +66,7 @@ struct mdr_def mdrd_bereq = {
 		MDR_LAST
 	}
 };
-struct mdr_def mdrd_beresp = {
+static struct mdr_def mdrd_beresp = {
 	MDR_DCV_MDRD_BERESP,
 	"mdrd.beresp",
 	{
@@ -79,7 +77,7 @@ struct mdr_def mdrd_beresp = {
 		MDR_LAST
 	}
 };
-struct mdr_def mdrd_beresp_wmsg = {
+static struct mdr_def mdrd_beresp_wmsg = {
 	MDR_DCV_MDRD_BERESP_WMSG,
 	"mdrd.beresp_wmsg",
 	{
@@ -91,7 +89,7 @@ struct mdr_def mdrd_beresp_wmsg = {
 		MDR_LAST
 	}
 };
-struct mdr_def mdrd_beclose = {
+static struct mdr_def mdrd_beclose = {
 	MDR_DCV_MDRD_BECLOSE,
 	"mdrd.beclose",
 	{
@@ -193,73 +191,6 @@ mdr_update_size(struct mdr *m)
 	 * in a buffer.
 	 */
 	return mdr_tell(m);
-}
-
-int
-mdr_register_builtin_specs()
-{
-	if (mdr_register_spec(&mdr_ping) == NULL ||
-	    mdr_register_spec(&mdr_pong) == NULL ||
-	    mdr_register_spec(&mdr_echo) == NULL ||
-	    mdr_register_spec(&mdrd_error) == NULL ||
-	    mdr_register_spec(&mdrd_bereq) == NULL ||
-	    mdr_register_spec(&mdrd_beresp) == NULL ||
-	    mdr_register_spec(&mdrd_beresp_wmsg) == NULL ||
-	    mdr_register_spec(&mdrd_beclose) == NULL)
-		return MDR_FAIL;
-
-	return 0;
-}
-
-const struct mdr_spec *
-mdr_register_spec(struct mdr_def *def)
-{
-	int              n;
-	struct mdr_spec *spec;
-	size_t           label_sz;
-
-	if (def == NULL) {
-		errno = EINVAL;
-		return NULL;
-	}
-
-	for (n = 0; def->types[n] != MDR_LAST; n++)
-		;
-
-	label_sz = strlen(def->label);
-
-	spec = malloc(sizeof(struct mdr_spec) + (n * sizeof(uint8_t)) +
-	    label_sz);
-	if (spec == NULL)
-		return NULL;
-
-	spec->dcv = def->dcv;
-	spec->types_count = n;
-	memcpy(spec->types, def->types, n * sizeof(uint8_t));
-	spec->label = (char *)spec->types + (n * sizeof(uint8_t));
-	memcpy(spec->label, def->label, label_sz);
-
-	if (RB_INSERT(mdr_registry_tree, &mdr_registry.head, spec) != NULL) {
-		free(spec);
-		return NULL;
-	}
-
-	mdr_registry.count++;
-
-	return spec;
-}
-
-const struct mdr_spec *
-mdr_registry_get(uint64_t dcv)
-{
-	struct mdr_spec  key;
-	struct mdr_spec *r;
-
-	key.dcv = dcv;
-	r = RB_FIND(mdr_registry_tree, &mdr_registry.head, &key);
-	if (r == NULL)
-		errno = ENOENT;
-	return r;
 }
 
 static ptrdiff_t
@@ -570,10 +501,77 @@ mdr_out_array_sm(struct mdr_out_array_handle *h, uint8_t type, void *dst,
 	 * For convience, if there is still room in the string array for
 	 * a NULL pointer, add it.
 	 */
-	if (type == MDR_S && i < (maxlen - 1))
+	if (type == MDR_S && i < maxlen)
 		((const char **)dst)[i] = NULL;
 
 	return MIN(maxlen, h->length);
+}
+
+int
+mdr_register_builtin_specs()
+{
+	if (mdr_register_spec(&mdr_ping) == NULL ||
+	    mdr_register_spec(&mdr_pong) == NULL ||
+	    mdr_register_spec(&mdr_echo) == NULL ||
+	    mdr_register_spec(&mdrd_error) == NULL ||
+	    mdr_register_spec(&mdrd_bereq) == NULL ||
+	    mdr_register_spec(&mdrd_beresp) == NULL ||
+	    mdr_register_spec(&mdrd_beresp_wmsg) == NULL ||
+	    mdr_register_spec(&mdrd_beclose) == NULL)
+		return MDR_FAIL;
+
+	return 0;
+}
+
+const struct mdr_spec *
+mdr_register_spec(struct mdr_def *def)
+{
+	int              n;
+	struct mdr_spec *spec;
+	size_t           label_sz;
+
+	if (def == NULL) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	for (n = 0; def->types[n] != MDR_LAST; n++)
+		;
+
+	label_sz = strlen(def->label);
+
+	spec = malloc(sizeof(struct mdr_spec) + (n * sizeof(uint8_t)) +
+	    label_sz);
+	if (spec == NULL)
+		return NULL;
+
+	spec->dcv = def->dcv;
+	spec->types_count = n;
+	memcpy(spec->types, def->types, n * sizeof(uint8_t));
+	spec->label = (char *)spec->types + (n * sizeof(uint8_t));
+	memcpy(spec->label, def->label, label_sz);
+
+	if (RB_INSERT(mdr_registry_tree, &mdr_registry.head, spec) != NULL) {
+		free(spec);
+		return NULL;
+	}
+
+	mdr_registry.count++;
+
+	return spec;
+}
+
+const struct mdr_spec *
+mdr_registry_get(uint64_t dcv)
+{
+	struct mdr_spec  key;
+	struct mdr_spec *r;
+
+	key.dcv = dcv;
+	r = RB_FIND(mdr_registry_tree, &mdr_registry.head, &key);
+	if (r == NULL)
+		errno = ENOENT;
+	return r;
 }
 
 uint64_t

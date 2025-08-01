@@ -435,7 +435,7 @@ test_pack_array()
 	uint32_t         a_u32_out[3] = { 0, 0, 0 };
 
 	const char      *a_s[] = { "string1", "string2", NULL };
-	const char      *a_s_out[3];
+	const char      *a_s_out[3] = { "", "", "" };
 
 	struct mdr_in    m_in[2];
 	struct mdr_out   m_out[2];
