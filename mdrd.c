@@ -660,7 +660,7 @@ load_keys()
 	X509_LOOKUP *lookup;
 
 	if ((f = fopen(mdrd_conf.key_file, "r")) == NULL)
-		err(1, "fopen");
+		err(1, "fopen: %s", mdrd_conf.key_file);
 	if ((priv_key = PEM_read_PrivateKey(f, NULL, NULL, NULL)) == NULL) {
 		ERR_print_errors_fp(stderr);
 		exit(1);
@@ -668,7 +668,7 @@ load_keys()
 	fclose(f);
 
 	if ((f = fopen(mdrd_conf.ca_file, "r")) == NULL)
-		err(1, "fopen");
+		err(1, "fopen: %s", mdrd_conf.ca_file);
 	if ((ca_crt = PEM_read_X509(f, NULL, NULL, NULL)) == NULL) {
 		ERR_print_errors_fp(stderr);
 		exit(1);
@@ -972,7 +972,7 @@ send_shutdown()
 	pid_t pid;
 
 	if ((f = fopen(mdrd_conf.pid_file, "r")) == NULL)
-		err(1, "fopen");
+		err(1, "fopen: %s", mdrd_conf.pid_file);
 	if (fgets(p, sizeof(p), f) == NULL) {
 		if (ferror(f))
 			err(1, "fgets");
