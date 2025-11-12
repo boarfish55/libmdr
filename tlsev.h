@@ -13,6 +13,8 @@
 #define TLSEV_IO_SIZE     32768
 #define TLSEV_MAX_CLIENTS 1000000000
 
+__BEGIN_DECLS
+
 struct tlsev;
 
 struct tlsev_fd_cb {
@@ -112,10 +114,12 @@ int                  tlsev_run(struct tlsev_listener *);
 void                 tlsev_shutdown(struct tlsev_listener *);
 X509                *tlsev_peer_cert(struct tlsev *);
 struct sockaddr_in6 *tlsev_peer(struct tlsev *);
-int                  tlsev_reply(struct tlsev *, const char *, int);
+int                  tlsev_reply(struct tlsev *, const unsigned char *, int);
 void                 tlsev_drain(struct tlsev *);
 uint64_t             tlsev_id(struct tlsev *);
 int                  tlsev_fd(struct tlsev *);
 struct tlsev *       tlsev_get(struct tlsev_listener *, int);
+
+__END_DECLS
 
 #endif

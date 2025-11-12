@@ -1,6 +1,8 @@
 #ifndef COUNTER_NAMES_H
 #define COUNTER_NAMES_H
 
+__BEGIN_DECLS
+
 const char *counter_names[] = {
 	"restarts",             /* COUNTER_RESTARTS */
 	"messages_in",          /* COUNTER_MESSAGES_IN */
@@ -15,5 +17,7 @@ const char *counter_names[] = {
 	"read_pauses",          /* COUNTER_READ_PAUSES */
 	"wake_for_accept"       /* COUNTER_WAKE_FOR_ACCEPT */
 };
+
+__END_DECLS
 
 #endif

@@ -11,7 +11,8 @@
 #include <openssl/ssl.h>
 #include "mdr.h"
 
-const char *program = "mdrc";
+const char            *program = "mdrc";
+const struct mdr_spec *m_spec;
 
 int debug = 0;
 int delay = 0;
@@ -100,7 +101,7 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 				err(1, "mdr_unpack_hdr");
 			if (mdr_pack_mdr(m, &m2) == MDR_FAIL)
 				err(1, "mdr_pack_mdr");
-		} else if (strcmp(spbuf, "bN") == 0) {
+		} else if (strcmp(spbuf, "b") == 0) {
 			for (i = 0, bytes_p = *a++;
 			    *bytes_p != '\0' && i < sizeof(bytes); i++) {
 				if (*bytes_p++ != 'x')
@@ -128,7 +129,7 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 			}
 			if (mdr_pack_bytes(m, bytes, i) == MDR_FAIL)
 				err(1, "mdr_pack_bytes");
-		} else if (strcmp(spbuf, "sN") == 0) {
+		} else if (strcmp(spbuf, "s") == 0) {
 			if (mdr_pack_str(m, *a++, -1) == MDR_FAIL)
 				err(1, "mdr_pack_str");
 		} else if (spbuf[0] == 'u' || spbuf[0] == 'i') {
@@ -528,8 +529,11 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	r = mdr_pack_hdr(&m, NULL, 0, MDR_F_NONE,
-	    mdr_mkdcv(domain, code, variant));
+	if (mdr_register_builtin_specs() == MDR_FAIL)
+		err(1, "mdr_register_builtin_specs");
+	m_spec = mdr_registry_get(mdr_mkdcv(domain, code, variant));
+
+	r = mdr_pack_hdr(&m, NULL, 0, m_spec, MDR_F_NONE);
 	if (r == MDR_FAIL)
 		err(1, "mdr_pack_hdr");
 

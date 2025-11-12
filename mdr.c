@@ -32,6 +32,7 @@ static struct mdr_def mdr_ping = {
 		MDR_LAST
 	}
 };
+const struct mdr_spec *mdr_msg_ping;
 static struct mdr_def mdr_pong = {
 	MDR_DCV_MDR_PONG,
 	"mdr.pong",
@@ -39,6 +40,7 @@ static struct mdr_def mdr_pong = {
 		MDR_LAST
 	}
 };
+const struct mdr_spec *mdr_msg_pong;
 static struct mdr_def mdr_echo = {
 	MDR_DCV_MDR_ECHO,
 	"mdr.echo",
@@ -47,6 +49,7 @@ static struct mdr_def mdr_echo = {
 		MDR_LAST
 	}
 };
+const struct mdr_spec *mdr_msg_echo;
 
 static struct mdr_def mdrd_error = {
 	MDR_DCV_MDRD_ERROR,
@@ -55,40 +58,46 @@ static struct mdr_def mdrd_error = {
 		MDR_LAST
 	}
 };
+const struct mdr_spec *mdr_msg_mdrd_error;
 static struct mdr_def mdrd_bereq = {
 	MDR_DCV_MDRD_BEREQ,
 	"mdrd.bereq",
 	{
-		MDR_U64,
-		MDR_I32,
-		MDR_M,
-		MDR_B,
+		MDR_U64, /* id */
+		MDR_I32, /* fd */
+		MDR_B,   /* peer IP address */
+		MDR_U16, /* peer port */
+		MDR_M,   /* msg */
+		MDR_B,   /* peer cert */
 		MDR_LAST
 	}
 };
+const struct mdr_spec *mdr_msg_mdrd_bereq;
 static struct mdr_def mdrd_beresp = {
 	MDR_DCV_MDRD_BERESP,
 	"mdrd.beresp",
 	{
-		MDR_U64,
-		MDR_I32,
-		MDR_U32,
-		MDR_U32,
+		MDR_U64, /* id */
+		MDR_I32, /* fd */
+		MDR_U32, /* status */
+		MDR_U32, /* flags */
 		MDR_LAST
 	}
 };
+const struct mdr_spec *mdr_msg_mdrd_beresp;
 static struct mdr_def mdrd_beresp_wmsg = {
 	MDR_DCV_MDRD_BERESP_WMSG,
 	"mdrd.beresp_wmsg",
 	{
-		MDR_U64,
-		MDR_I32,
-		MDR_U32,
-		MDR_U32,
-		MDR_M,
+		MDR_U64, /* id */
+		MDR_I32, /* fd */
+		MDR_U32, /* status */
+		MDR_U32, /* flags */
+		MDR_M,   /* msg */
 		MDR_LAST
 	}
 };
+const struct mdr_spec *mdr_msg_mdrd_beresp_wmsg;
 static struct mdr_def mdrd_beclose = {
 	MDR_DCV_MDRD_BECLOSE,
 	"mdrd.beclose",
@@ -97,6 +106,7 @@ static struct mdr_def mdrd_beclose = {
 		MDR_LAST
 	}
 };
+const struct mdr_spec *mdr_msg_mdrd_beclose;
 
 static int
 speccmp(struct mdr_spec *s1, struct mdr_spec *s2)
@@ -415,6 +425,11 @@ mdr_unpack_mdr_nochk(struct mdr *m, struct mdr *dst)
 static int
 mdr_check_next_type(struct mdr *m, uint8_t type)
 {
+	if (m->spec == NULL) {
+		errno = EINVAL;
+		return 0;
+	}
+
 	if (m->spec_fld_idx >= m->spec->types_count) {
 		errno = ERANGE;
 		return 0;
@@ -530,14 +545,15 @@ mdr_out_array_sm(struct mdr_out_array_handle *h, uint8_t type, void *dst,
 int
 mdr_register_builtin_specs()
 {
-	if (mdr_register_spec(&mdr_ping) == NULL ||
-	    mdr_register_spec(&mdr_pong) == NULL ||
-	    mdr_register_spec(&mdr_echo) == NULL ||
-	    mdr_register_spec(&mdrd_error) == NULL ||
-	    mdr_register_spec(&mdrd_bereq) == NULL ||
-	    mdr_register_spec(&mdrd_beresp) == NULL ||
-	    mdr_register_spec(&mdrd_beresp_wmsg) == NULL ||
-	    mdr_register_spec(&mdrd_beclose) == NULL)
+	if ((mdr_msg_ping = mdr_register_spec(&mdr_ping)) == NULL ||
+	    (mdr_msg_pong = mdr_register_spec(&mdr_pong)) == NULL ||
+	    (mdr_msg_echo = mdr_register_spec(&mdr_echo)) == NULL ||
+	    (mdr_msg_mdrd_error = mdr_register_spec(&mdrd_error)) == NULL ||
+	    (mdr_msg_mdrd_bereq = mdr_register_spec(&mdrd_bereq)) == NULL ||
+	    (mdr_msg_mdrd_beresp = mdr_register_spec(&mdrd_beresp)) == NULL ||
+	    (mdr_msg_mdrd_beresp_wmsg =
+	     mdr_register_spec(&mdrd_beresp_wmsg)) == NULL ||
+	    (mdr_msg_mdrd_beclose = mdr_register_spec(&mdrd_beclose)) == NULL)
 		return MDR_FAIL;
 
 	return 0;
@@ -622,30 +638,6 @@ mdr_dcv_match(const struct mdr *m, uint64_t dcv, uint64_t mask)
 		return MDR_FAIL;
 	}
 	return (be64toh(*m->dcv) & mask) == (dcv & mask);
-}
-
-ptrdiff_t
-mdr_copy(struct mdr *dst, void *buf, size_t buf_sz, const struct mdr *src,
-    const struct mdr_spec *spec)
-{
-	ptrdiff_t r;
-
-	if ((r = mdr_pack_hdr(dst, buf, buf_sz, spec,
-	    mdr_flags(src))) == MDR_FAIL)
-		return MDR_FAIL;
-
-	if (mdr_size(src) > buf_sz) {
-		errno = EOVERFLOW;
-		return MDR_FAIL;
-	}
-
-	memcpy(dst->pos, mdr_buf(src) + mdr_hdr_size(mdr_flags(src)),
-	    mdr_size(src) - mdr_hdr_size(mdr_flags(src)));
-
-	*dst->size = htobe64(mdr_size(dst) +
-	    (mdr_size(src) - mdr_hdr_size(mdr_flags(src))));
-
-	return 0;
 }
 
 void
@@ -1007,7 +999,6 @@ mdr_pack_hdr(struct mdr *m, void *buf, size_t buf_sz,
 		m->tail_bytes = (uint64_t *)m->pos;
 		m->pos += sizeof(*m->tail_bytes);
 		*m->tail_bytes = 0;
-
 	} else
 		m->tail_bytes = NULL;
 
@@ -1015,7 +1006,6 @@ mdr_pack_hdr(struct mdr *m, void *buf, size_t buf_sz,
 		m->stream_id = (uint64_t *)m->pos;
 		m->pos += sizeof(*m->stream_id);
 		*m->stream_id = 0;
-
 	} else
 		m->stream_id = NULL;
 
@@ -1023,7 +1013,6 @@ mdr_pack_hdr(struct mdr *m, void *buf, size_t buf_sz,
 		m->acct_id = (uint64_t *)m->pos;
 		m->pos += sizeof(*m->acct_id);
 		*m->acct_id = 0;
-
 	} else
 		m->acct_id = NULL;
 
@@ -1038,6 +1027,58 @@ mdr_pack_hdr(struct mdr *m, void *buf, size_t buf_sz,
 	*m->dcv = htobe64(spec->dcv);
 
 	return mdr_update_size(m);
+}
+
+ptrdiff_t
+mdr_copy(struct mdr *dst, const struct mdr *src)
+{
+	if (dst == NULL || src == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	dst->buf = src->buf;
+	dst->buf_sz = src->buf_sz;
+	dst->dyn = 0;
+
+	dst->spec = src->spec;
+	dst->spec_fld_idx = 0;
+	dst->pos = dst->buf;
+
+	dst->size = (uint64_t *)dst->pos;
+	dst->pos += sizeof(*dst->size);
+
+	dst->flags = (uint32_t *)dst->pos;
+	dst->pos += sizeof(*dst->flags);
+
+	dst->dcv = (uint64_t *)dst->pos;
+	dst->pos += sizeof(*dst->dcv);
+
+	if (mdr_flags(dst) & MDR_F_TAIL_BYTES) {
+		dst->tail_bytes = (uint64_t *)dst->pos;
+		dst->pos += sizeof(*dst->tail_bytes);
+	} else
+		dst->tail_bytes = NULL;
+
+	if (mdr_flags(dst) & MDR_F_STREAM_ID) {
+		dst->stream_id = (uint64_t *)dst->pos;
+		dst->pos += sizeof(*dst->stream_id);
+	} else
+		dst->stream_id = NULL;
+
+	if (mdr_flags(dst) & MDR_F_ACCT_ID) {
+		dst->acct_id = (uint64_t *)dst->pos;
+		dst->pos += sizeof(*dst->acct_id);
+	} else
+		dst->acct_id = NULL;
+
+	if (mdr_flags(dst) & MDR_F_TRACE_ID) {
+		dst->trace_id = (uint8_t *)dst->pos;
+		dst->pos += sizeof(uint8_t) * 16;
+	} else
+		dst->trace_id = NULL;
+
+	return mdr_tell(dst);
 }
 
 static ptrdiff_t

@@ -718,7 +718,7 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 }
 
 int
-tlsev_reply(struct tlsev *t, const char *buf, int len)
+tlsev_reply(struct tlsev *t, const unsigned char *buf, int len)
 {
 	int                r;
 #ifdef __linux__

@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <sys/tree.h>
 
+__BEGIN_DECLS
+
 struct mdr_def {
 	uint64_t    dcv;     /* domain/code/variant */
 	const char *label;
@@ -263,9 +265,8 @@ uint64_t    mdr_size(const struct mdr *);
 size_t      mdr_hdr_size(uint32_t);
 int         mdr_rewind(struct mdr *);
 ptrdiff_t   mdr_tell(const struct mdr *);
+ptrdiff_t   mdr_copy(struct mdr *, const struct mdr *);
 uint64_t    mdr_pending(const struct mdr *);
-ptrdiff_t   mdr_copy(struct mdr *, void *, size_t, const struct mdr *,
-                const struct mdr_spec *);
 uint64_t    mdr_mkdcv(uint32_t, uint16_t, uint16_t);
 
 uint32_t       mdr_flags(const struct mdr *);
@@ -342,19 +343,30 @@ const struct mdr_spec *mdr_registry_get(uint64_t);
  * variant are 16 bits.
  */
 
-#define MDR_DOMAIN_MDR           0x00000000
+#define MDR_DOMAIN_MDR           MDR_DCV(0x00000000, 0, 0)
 #define MDR_DCV_MDR_PING         MDR_DCV(0x00000000, 0x0001, 0x0000)
 #define MDR_DCV_MDR_PONG         MDR_DCV(0x00000000, 0x0002, 0x0000)
 #define MDR_DCV_MDR_ECHO         MDR_DCV(0x00000000, 0x0003, 0x0000)
 #define MDR_DCV_MDR_TEST         MDR_DCV(0x00000000, 0x0004, 0x0000)
+extern const struct mdr_spec *mdr_msg_ping;
+extern const struct mdr_spec *mdr_msg_pong;
+extern const struct mdr_spec *mdr_msg_echo;
+extern const struct mdr_spec *mdr_msg_test;
 
-#define MDR_DOMAIN_MDRD          0x00000001
+#define MDR_DOMAIN_MDRD          MDR_DCV(0x00000001, 0, 0)
 #define MDR_DCV_MDRD_ERROR       MDR_DCV(0x00000001, 0x0001, 0x0000)
 #define MDR_DCV_MDRD_BEREQ       MDR_DCV(0x00000001, 0x0002, 0x0000)
 #define MDR_DCV_MDRD_BERESP      MDR_DCV(0x00000001, 0x0003, 0x0000)
 #define MDR_DCV_MDRD_BERESP_WMSG MDR_DCV(0x00000001, 0x0003, 0x0001)
 #define MDR_DCV_MDRD_BECLOSE     MDR_DCV(0x00000001, 0x0004, 0x0000)
+extern const struct mdr_spec *mdr_msg_mdrd_error;
+extern const struct mdr_spec *mdr_msg_mdrd_bereq;
+extern const struct mdr_spec *mdr_msg_mdrd_beresp;
+extern const struct mdr_spec *mdr_msg_mdrd_beresp_wmsg;
+extern const struct mdr_spec *mdr_msg_mdrd_beclose;
 
-#define MDR_DOMAIN_CERTALATOR    0x00000002
+#define MDR_DOMAIN_CERTALATOR    MDR_DCV(0x00000002, 0, 0)
+
+__END_DECLS
 
 #endif

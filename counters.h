@@ -4,6 +4,8 @@
 #include <semaphore.h>
 #include <stdint.h>
 
+__BEGIN_DECLS
+
 enum {
 	COUNTER_RESTARTS = 0,
 	COUNTER_MESSAGES_IN,
@@ -41,5 +43,7 @@ int      counters_arena_count();
 int      counters_set_arena(int);
 void     counters_set_pid(pid_t);
 int      counters_find_arena(pid_t);
+
+__END_DECLS
 
 #endif

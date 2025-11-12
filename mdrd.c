@@ -22,7 +22,7 @@
 #include "counters.h"
 #include "flatconf.h"
 #include "mdr.h"
-#include "mdr_mdrd.h"
+#include "mdrd.h"
 #include "util.h"
 #include "tlsev.h"
 #include "xlog.h"
@@ -45,12 +45,6 @@ char config_file_path[PATH_MAX] = "/etc/mdrd.conf";
 
 uint32_t *allowed_mdr_domains = NULL;
 int       allowed_mdr_domains_count = 0;
-
-const struct mdr_spec *msg_mdrd_error;
-const struct mdr_spec *msg_mdrd_bereq;
-const struct mdr_spec *msg_mdrd_beresp;
-const struct mdr_spec *msg_mdrd_beresp_wmsg;
-const struct mdr_spec *msg_mdrd_beclose;
 
 extern char *optarg;
 extern int   optind, opterr, optopt;
@@ -286,9 +280,11 @@ struct flatconf flatconf_vars[] = {
 static int
 pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 {
-	size_t         cert_len;
-	unsigned char *cert_buf;
-	struct mdr_in  m_in[4];
+	size_t               cert_len;
+	unsigned char       *cert_buf;
+	struct mdr_in        m_in[6];
+	struct sockaddr_in6  peer;
+	socklen_t            slen = sizeof(peer);
 
 	cert_len = i2d_X509(peer_cert, NULL);
 	if (cert_len < 0) {
@@ -301,16 +297,34 @@ pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 		    "%lu > %lu", __func__, cert_len, mdrd_conf.max_cert_size);
 	}
 
+	if (getpeername(fd, (struct sockaddr *)&peer, &slen) == -1) {
+		xlog_strerror(LOG_ERR, errno, "%s: getpeername");
+		return -1;
+	}
+	if (slen > sizeof(peer)) {
+		xlog(LOG_ERR, NULL, "%s: sock name does not fit in sockaddr");
+		return -1;
+	}
+
 	m_in[0].type = MDR_U64;
 	m_in[0].v.u64 = id;
 	m_in[1].type = MDR_I32;
 	m_in[1].v.i32 = fd;
-	m_in[2].type = MDR_M;
-	m_in[2].v.m = msg;
-	m_in[3].type = MDR_RSVB;
-	m_in[3].v.rsvb.dst = (void **)&cert_buf;
-	m_in[3].v.rsvb.sz = cert_len;
-	if (mdr_pack(m, NULL, 4096, msg_mdrd_bereq, MDR_F_NONE, m_in, 4)
+	m_in[2].type = MDR_B;
+	m_in[2].v.b.bytes = (peer.sin6_family == AF_INET6)
+	    ? peer.sin6_addr.s6_addr
+	    : (uint8_t *)&(((struct sockaddr_in *)&peer)->sin_addr.s_addr);
+	m_in[2].v.b.sz = (peer.sin6_family == AF_INET6) ? 16 : 4;
+	m_in[3].type = MDR_U16;
+	m_in[3].v.u16 = (peer.sin6_family == AF_INET6)
+	    ? ntohs(peer.sin6_port)
+	    : ntohs(((struct sockaddr_in *)&peer)->sin_port);
+	m_in[4].type = MDR_M;
+	m_in[4].v.m = msg;
+	m_in[5].type = MDR_RSVB;
+	m_in[5].v.rsvb.dst = (void **)&cert_buf;
+	m_in[5].v.rsvb.sz = cert_len;
+	if (mdr_pack(m, NULL, 4096, mdr_msg_mdrd_bereq, MDR_F_NONE, m_in, 6)
 	    == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack", __func__);
 		return -1;
@@ -400,7 +414,7 @@ client_close_cb(struct tlsev *t, void *data)
 
 	m_in[0].type = MDR_U64;
 	m_in[0].v.u64 = tlsev_id(t);
-	if (mdr_pack(&bemsg, buf, sizeof(buf), msg_mdrd_beclose,
+	if (mdr_pack(&bemsg, buf, sizeof(buf), mdr_msg_mdrd_beclose,
 	    MDR_F_NONE, m_in, 1) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack_hdr", __func__);
 	} else {
@@ -515,17 +529,19 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 int
 backend_msg_in_cb(int fd)
 {
-	struct mdr     reply, msg;
-	char           reply_buf[mdrd_conf.max_payload_size + 4096];
-	char           msg_buf[mdrd_conf.max_payload_size];
-	struct tlsev  *t;
-	uint64_t       id;
-	int            tlsfd, r;
-	uint32_t       resp_status, resp_flags;
-	struct mdr_in  m_in[2];
+	struct mdr           beresp, reply;
+	char                 beresp_buf[mdrd_conf.max_payload_size + 4096];
+	char                 reply_buf[mdrd_conf.max_payload_size];
+	struct tlsev        *t;
+	uint64_t             id;
+	int                  tlsfd, r;
+	uint32_t             resp_status, resp_flags;
+	struct mdr           msg;
+	struct mdr_in        m_in[2];
+	struct mdr_out       m_out[5];
 
-	if ((r = mdr_read_from_fd(&reply, MDR_F_NONE, fd,
-	    reply_buf, sizeof(reply_buf))) == MDR_FAIL) {
+	if ((r = mdr_read_from_fd(&beresp, MDR_F_NONE, fd,
+	    beresp_buf, sizeof(beresp_buf))) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: mdr_unpack_from_fd", __func__);
 		goto fail;
@@ -537,37 +553,37 @@ backend_msg_in_cb(int fd)
 		goto fail;
 	}
 
-	if (mdr_dcv_match(&reply, MDR_DCV_MDRD_BERESP, MDR_MASK_DC)) {
-		xlog(LOG_ERR, NULL,
-		    "%s: unexpected message ID from backend", __func__);
-		goto fail;
-	}
-
-	// TODO: clean this up
-	if (mdr_unpack_u64(&reply, &id) == MDR_FAIL) {
+	switch (mdr_dcv(&beresp)) {
+	case MDR_DCV_MDRD_BERESP:
+		if (mdr_unpack_payload(&beresp, mdr_msg_mdrd_beresp, m_out, 4)
+		    == MDR_FAIL) {
+			xlog_strerror(LOG_ERR, errno,
+			    "%s: mdr_unpack_payload/mdr_msg_mdrd_beresp",
+			    __func__);
+			goto fail;
+		}
+		id = m_out[0].v.u64;
+		tlsfd = m_out[1].v.i32;
+		resp_status = m_out[2].v.u32;
+		resp_flags = m_out[3].v.u32;
+		break;
+	case MDR_DCV_MDRD_BERESP_WMSG:
+		if (mdr_unpack_payload(&beresp, mdr_msg_mdrd_beresp_wmsg,
+		    m_out, 5) == MDR_FAIL) {
+			xlog_strerror(LOG_ERR, errno,
+			    "%s: mdr_unpack_payload/mdr_msg_mdrd_beresp_wmsg",
+			    __func__);
+			goto fail;
+		}
+		id = m_out[0].v.u64;
+		tlsfd = m_out[1].v.i32;
+		resp_status = m_out[2].v.u32;
+		resp_flags = m_out[3].v.u32;
+		mdr_copy(&msg, &m_out[4].v.m);
+		break;
+	default:
 		xlog_strerror(LOG_ERR, errno,
-		    "%s: failed to unpack message client connection ID",
-		    __func__);
-		goto fail;
-	}
-
-	if (mdr_unpack_i32(&reply, &tlsfd) == MDR_FAIL) {
-		xlog_strerror(LOG_ERR, errno,
-		    "%s: failed to unpack client file descriptor", __func__);
-		goto fail;
-	}
-
-	if (mdr_unpack_u32(&reply, &resp_status) == MDR_FAIL) {
-		xlog_strerror(LOG_ERR, errno,
-		    "%s: failed to unpack response status from backend",
-		    __func__);
-		goto fail;
-	}
-
-	if (mdr_unpack_u32(&reply, &resp_flags) == MDR_FAIL) {
-		xlog_strerror(LOG_ERR, errno,
-		    "%s: failed to unpack response flags from backend",
-		    __func__);
+		    "%s: unknown response from backend", __func__);
 		goto fail;
 	}
 
@@ -579,20 +595,18 @@ backend_msg_in_cb(int fd)
 
 	if (tlsev_id(t) != id) {
 		xlog(LOG_ERR, NULL,
-		    "%s: received reply from backend for a client that is "
+		    "%s: received beresp from backend for a client that is "
 		    " gone on fd %d", __func__, tlsfd);
 		return 1;
 	}
 
 	switch (resp_status) {
 	case MDRD_ST_OK:
-		if (mdr_dcv(&reply) != MDR_DCV_MDRD_BERESP_WMSG) {
-			if (mdr_unpack_mdr(&reply, &msg) == MDR_FAIL) {
-				xlog_strerror(LOG_ERR, errno,
-				    "%s: reply from backend is invalid",
-				    __func__);
-				goto fail;
-			}
+		if (mdr_dcv(&beresp) != MDR_DCV_MDRD_BERESP_WMSG) {
+			xlog_strerror(LOG_ERR, errno,
+			    "%s: beresp from backend did not contain a "
+			    "message payload", __func__);
+			goto fail;
 		}
 		break;
 	case MDRD_ST_DENIED:
@@ -601,8 +615,8 @@ backend_msg_in_cb(int fd)
 		m_in[1].type = MDR_S;
 		m_in[1].v.s.bytes = "access denied";
 		m_in[1].v.s.sz = -1;
-		if (mdr_pack(&msg, msg_buf, sizeof(msg_buf), msg_mdrd_error,
-		    MDR_F_NONE, m_in, 2) == MDR_FAIL) {
+		if (mdr_pack(&reply, reply_buf, sizeof(reply_buf),
+		    mdr_msg_mdrd_error, MDR_F_NONE, m_in, 2) == MDR_FAIL) {
 			xlog(LOG_ERR, NULL, "%s: failed to pack error for "
 			    "client after resp_status %u",
 			    __func__, resp_status);
@@ -615,8 +629,8 @@ backend_msg_in_cb(int fd)
 		m_in[1].type = MDR_S;
 		m_in[1].v.s.bytes = "certificate validation failed";
 		m_in[1].v.s.sz = -1;
-		if (mdr_pack(&msg, msg_buf, sizeof(msg_buf), msg_mdrd_error,
-		    MDR_F_NONE, m_in, 2) == MDR_FAIL) {
+		if (mdr_pack(&reply, reply_buf, sizeof(reply_buf),
+		    mdr_msg_mdrd_error, MDR_F_NONE, m_in, 2) == MDR_FAIL) {
 			xlog(LOG_ERR, NULL, "%s: failed to pack error for "
 			    "client after resp_status %u",
 			    __func__, resp_status);
@@ -642,12 +656,17 @@ backend_msg_in_cb(int fd)
 	 * This only matters in a "streaming" situation where we don't
 	 * have 1:1 requests/replies. We'll need a message serial number
 	 * to properly inform the backend where to resme.
-	 * The code above assumes we get a "reply" from the backend,
+	 * The code above assumes we get a "beresp" from the backend,
 	 * always, so it's not yet able to support this kind of streaming.
 	 */
 
 	return 1;
 fail:
+	/*
+	 * We completely shutdown when getting we can't properly decode
+	 * from the backend because chances are we may not be able to
+	 * recover.
+	 */
 	tlsev_shutdown(&listener);
 	shutdown_triggered = 1;
 	return 0;
@@ -1057,18 +1076,6 @@ main(int argc, char **argv)
 
 	if (mdr_register_builtin_specs() == MDR_FAIL)
                 err(1, "mdr_register_builtin_specs");
-
-	if ((msg_mdrd_error = mdr_registry_get(MDR_DCV_MDRD_ERROR)) == NULL)
-                err(1, "mdr_registry_get");
-	if ((msg_mdrd_bereq = mdr_registry_get(MDR_DCV_MDRD_BEREQ)) == NULL)
-                err(1, "mdr_registry_get");
-	if ((msg_mdrd_beresp = mdr_registry_get(MDR_DCV_MDRD_BERESP)) == NULL)
-                err(1, "mdr_registry_get");
-	if ((msg_mdrd_beresp_wmsg =
-	    mdr_registry_get(MDR_DCV_MDRD_BERESP_WMSG)) == NULL)
-                err(1, "mdr_registry_get");
-	if ((msg_mdrd_beclose = mdr_registry_get(MDR_DCV_MDRD_BECLOSE)) == NULL)
-                err(1, "mdr_registry_get");
 
 	if (mdrd_conf.backend_argv == NULL)
 		errx(1, "no backend_argv specified");

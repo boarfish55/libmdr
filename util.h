@@ -3,6 +3,8 @@
 
 #include "xlog.h"
 
+__BEGIN_DECLS
+
 struct spawnproc {
 	int sock;
 };
@@ -24,5 +26,7 @@ int    spawn(char *const[], int *, int *, const char *,
 
 char **strarray_alloc(size_t, size_t);
 char **strarray_add(char **, const char *);
+
+__END_DECLS
 
 #endif

@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <syslog.h>
 
+__BEGIN_DECLS
+
 enum xerr_space {
 	XLOG_NONE = 0,
 	XLOG_APP,      /* App-internal error */
@@ -86,5 +88,7 @@ void xlog_strerror(int, int, const char *, ...);
 void xerr_print(const struct xerr *);
 int  xerr_prepend(struct xerr *, const char *);
 #define XERR_PREPENDFN(e) xerr_prepend(e, __func__)
+
+__END_DECLS
 
 #endif
