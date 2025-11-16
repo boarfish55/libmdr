@@ -42,9 +42,10 @@ int
 main(int argc, char **argv)
 {
 	int                  r;
-	struct mdr           m, reply;
-	struct mdr           msg;
-	char                 buf[32768], reply_buf[32768];
+	struct umdr          m_in, msg;
+	struct pmdr          reply;
+	struct pmdr_vec      pv[5];
+	char                 m_in_buf[4096], reply_buf[4096], msg_buf[4096];
 	uint64_t             id;
 	int                  fd;
 	X509                *peer_cert = NULL;
@@ -52,7 +53,6 @@ main(int argc, char **argv)
 	X509_STORE_CTX      *ctx;
 	X509_LOOKUP         *lookup;
 	struct session      *session, *prev, *sessions = NULL;
-	struct mdr_in        m_in[5];
 	struct sockaddr_in6  peer;
 	socklen_t            slen = sizeof(peer);
 	char                 hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
@@ -108,25 +108,36 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	while ((r = mdr_read_from_fd(&m, MDR_F_NONE, 0,
-	    buf, sizeof(buf))) > 0) {
+	pmdr_init(&reply, reply_buf, sizeof(reply_buf), MDR_FNONE);
+
+	while ((r = mdr_buf_from_fd(0, m_in_buf, sizeof(m_in_buf))) > 0) {
 		if (r == MDR_FAIL) {
-			xlog_strerror(LOG_ERR, errno, "mdr_unpack_from_fd");
-			exit(1);
+			xlog_strerror(LOG_ERR, errno, "mdr_buf_from_fd");
+			continue;
 		}
 
-		if (!mdr_dcv_match(&m, MDR_DOMAIN_MDRD, MDR_MASK_D)) {
+		if (umdr_init(&m_in, m_in_buf, sizeof(m_in_buf), MDR_FNONE)
+		    == MDR_FAIL) {
+			xlog_strerror(LOG_ERR, errno, "umdr_init");
+			continue;
+		}
+
+		if (!umdr_dcv_match(&m_in, MDR_DOMAIN_MDRD, MDR_MASK_D)) {
 			xlog(LOG_ERR, NULL, "invalid mdr domain %u",
-			    mdr_domain(&m));
-			exit(1);
+			    umdr_domain(&m_in));
+			continue;
 		}
 
-		switch (mdr_dcv(&m)) {
+		switch (umdr_dcv(&m_in)) {
 		case MDR_DCV_MDRD_BECLOSE:
-			r = mdrd_unpack_beclose(&m, &id);
+			// TODO: must init here, because we choose the buf
+			// and flags.
+			r = mdrd_unpack_beclose(&m_in, &id);
 			break;
 		case MDR_DCV_MDRD_BEREQ:
-			r = mdrd_unpack_bereq(&m, &id, &fd,
+			// TODO: must init0 for &msg.
+			umdr_init0(&msg, msg_buf, sizeof(msg_buf), MDR_FNONE);
+			r = mdrd_unpack_bereq(&m_in, &id, &fd,
 			    (struct sockaddr *)&peer, &slen, &msg, &peer_cert);
 			break;
 		default:
@@ -147,7 +158,7 @@ main(int argc, char **argv)
 			xlog(LOG_ERR, NULL, "getnameinfo: %s", gai_strerror(r));
 
 		xlog(LOG_NOTICE, NULL, "received message for id %lu, size=%lu, "
-		    "from %s:%s", id, mdr_size(&m), hbuf, sbuf);
+		    "from %s:%s", id, umdr_size(&m_in), hbuf, sbuf);
 
 		/* Lookup which session this message is for */
 		for (session = sessions, prev = NULL;
@@ -160,7 +171,7 @@ main(int argc, char **argv)
 			}
 		}
 
-		if (mdr_dcv(&m) == MDR_DCV_MDRD_BECLOSE) {
+		if (umdr_dcv(&m_in) == MDR_DCV_MDRD_BECLOSE) {
 			/*
 			 * Session was not found but we're cleaning up, so
 			 * nothing to do.
@@ -186,23 +197,22 @@ main(int argc, char **argv)
 		if (session == NULL) {
 			xlog(LOG_NOTICE, NULL, "new session for id %lu", id);
 			if (peer_cert == NULL) {
-				m_in[0].type = MDR_U64;
-				m_in[0].v.u64 = id;
-				m_in[1].type = MDR_I32;
-				m_in[1].v.i32 = fd;
-				m_in[2].type = MDR_U32;
-				m_in[2].v.u32 = MDRD_ST_CERTFAIL;
-				m_in[3].type = MDR_U32;
-				m_in[3].v.u32 = MDRD_BERESP_F_CLOSE;
-				if (mdr_pack(&reply, reply_buf,
-				    sizeof(reply_buf), mdr_msg_mdrd_beresp,
-				    MDR_F_NONE, m_in, 4) == MDR_FAIL) {
+				pv[0].type = MDR_U64;
+				pv[0].v.u64 = id;
+				pv[1].type = MDR_I32;
+				pv[1].v.i32 = fd;
+				pv[2].type = MDR_U32;
+				pv[2].v.u32 = MDRD_ST_CERTFAIL;
+				pv[3].type = MDR_U32;
+				pv[3].v.u32 = MDRD_BERESP_FCLOSE;
+				if (pmdr_pack(&reply, mdr_msg_mdrd_beresp,
+				    pv, PMDRVECLEN(pv)) == MDR_FAIL) {
 					xlog(LOG_ERR, NULL,
 					    "mdr_pack/mdrd_beresp: %d", errno);
 					exit(1);
 				}
-				if (write(1, mdr_buf(&reply), mdr_size(&reply))
-				    < mdr_size(&reply)) {
+				if (write(1, pmdr_buf(&reply),
+				    pmdr_size(&reply)) < pmdr_size(&reply)) {
 					xlog_strerror(LOG_ERR, errno, "malloc");
 					exit(1);
 				}
@@ -238,26 +248,25 @@ main(int argc, char **argv)
 			sessions = session;
 		}
 
-		m_in[0].type = MDR_U64;
-		m_in[0].v.u64 = id;
-		m_in[1].type = MDR_I32;
-		m_in[1].v.i32 = fd;
-		m_in[2].type = MDR_U32;
-		m_in[2].v.u32 = MDRD_ST_OK;
-		m_in[3].type = MDR_U32;
-		m_in[3].v.u32 = MDRD_BERESP_F_NONE;
-		m_in[4].type = MDR_M;
-		m_in[4].v.m = &msg;
-		if (mdr_pack(&reply, reply_buf, sizeof(reply_buf),
-		    mdr_msg_mdrd_beresp_wmsg, MDR_F_NONE,
-		    m_in, 5) == MDR_FAIL) {
+		pv[0].type = MDR_U64;
+		pv[0].v.u64 = id;
+		pv[1].type = MDR_I32;
+		pv[1].v.i32 = fd;
+		pv[2].type = MDR_U32;
+		pv[2].v.u32 = MDRD_ST_OK;
+		pv[3].type = MDR_U32;
+		pv[3].v.u32 = MDRD_BERESP_FNONE;
+		pv[4].type = MDR_M;
+		pv[4].v.umdr = &msg;
+		if (pmdr_pack(&reply, mdr_msg_mdrd_beresp_wmsg, pv,
+		    PMDRVECLEN(pv)) == MDR_FAIL) {
 			xlog_strerror(LOG_ERR, errno,
 			    "mdr_pack/mdrd_beresp_wmsg");
 			exit(1);
 		}
 
-		if (write(1, mdr_buf(&reply), mdr_size(&reply))
-		    < mdr_size(&reply)) {
+		if (write(1, pmdr_buf(&reply), pmdr_size(&reply))
+		    < pmdr_size(&reply)) {
 			xlog_strerror(LOG_ERR, errno, "writeall");
 			exit(1);
 		}

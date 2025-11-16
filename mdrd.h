@@ -14,15 +14,15 @@
 #define MDRD_ST_NOCERT   3  /* Client certificate is missing */
 
 /* Backend response flags */
-#define MDRD_BERESP_F_NONE  0x00000000
-#define MDRD_BERESP_F_CLOSE 0x00000001  /* Client connection should be closed */
+#define MDRD_BERESP_FNONE  0x00000000
+#define MDRD_BERESP_FCLOSE 0x00000001  /* Client connection should be closed */
 
 __BEGIN_DECLS
 
-int mdrd_unpack_beclose(struct mdr *, uint64_t *);
-int mdrd_unpack_bereq(struct mdr *, uint64_t *, int *, struct sockaddr *,
-        socklen_t *, struct mdr *, X509 **);
-int mdrd_unpack_error(struct mdr *, uint32_t *, const char **, uint64_t *);
+int mdrd_unpack_beclose(struct umdr *, uint64_t *);
+int mdrd_unpack_bereq(struct umdr *, uint64_t *, int *, struct sockaddr *,
+        socklen_t *, struct umdr *, X509 **);
+int mdrd_unpack_error(struct umdr *, uint32_t *, const char **, uint64_t *);
 
 __END_DECLS
 

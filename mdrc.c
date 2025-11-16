@@ -30,20 +30,27 @@ usage()
 }
 
 void
-pack(struct mdr *m, const char *spec, const char **args, int count)
+pack(struct pmdr *m, const char *spec, const char **args, int count)
 {
-	int             finish = 0;
-	const char     *p, *prev;
-	char           *end;
-	char            bytes[1024];
-	const char     *bytes_p;
-	const char    **a;
-	char            b;
-	uint64_t        bits;
-	uint64_t        u64;
-	int64_t         i64;
-	int             i;
-	struct mdr      m2;
+	int               finish = 0;
+	const char       *p, *prev;
+	char             *end;
+	char              bytes[1024];
+	const char       *bytes_p;
+	const char      **a;
+	char              b;
+	uint64_t          bits;
+	uint64_t          u64;
+	int64_t           i64;
+	float             f32;
+	double            f64;
+	int               i;
+	struct pmdr_vec   pv[count];
+	int               pvi = 0;
+	struct pmdr       subm[count];
+	unsigned char    *subm_bytes[count];
+
+	bzero(subm_bytes, sizeof(subm_bytes));
 
 	/*
 	 * A uint64 can render up to 20 digits, plus one for the 'b'
@@ -57,7 +64,8 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 	 *   i8, i16, i32, i64
 	 *   bN, sN
 	 */
-	for (p = spec, prev = spec, a = args; !finish; p++) {
+	for (p = spec, prev = spec, a = args;
+	    !finish && a - args < count; p++) {
 		if (*p == '\0')
 			finish = 1;
 
@@ -71,7 +79,7 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 			errx(1, "invalid format spec");
 
 		if (strcmp(spbuf, "m") == 0) {
-			for (i = 0, bytes_p = *a++;
+			for (i = 0, bytes_p = *a;
 			    *bytes_p != '\0' && i < sizeof(bytes); i++) {
 				if (*bytes_p++ != 'x')
 					errx(1, "invalid value");
@@ -96,13 +104,16 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 				else
 					bytes[i] |= (b - 'a' + 10);
 			}
-			if (mdr_unpack_hdr(&m2, MDR_F_NONE,
-			    bytes, i) == MDR_FAIL)
-				err(1, "mdr_unpack_hdr");
-			if (mdr_pack_mdr(m, &m2) == MDR_FAIL)
-				err(1, "mdr_pack_mdr");
+			if ((subm_bytes[pvi] = malloc(i)) == NULL)
+				err(1, "malloc");
+			memcpy(subm_bytes[pvi], bytes, i);
+			if (pmdr_init(&subm[pvi], subm_bytes[pvi], i, MDR_FNONE)
+			    == MDR_FAIL)
+				err(1, "umdr_init");
+			pv[pvi].type = MDR_M;
+			pv[pvi].v.pmdr = &subm[pvi];
 		} else if (strcmp(spbuf, "b") == 0) {
-			for (i = 0, bytes_p = *a++;
+			for (i = 0, bytes_p = *a;
 			    *bytes_p != '\0' && i < sizeof(bytes); i++) {
 				if (*bytes_p++ != 'x')
 					errx(1, "invalid value");
@@ -127,11 +138,15 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 				else
 					bytes[i] |= (b - 'a' + 10);
 			}
-			if (mdr_pack_bytes(m, bytes, i) == MDR_FAIL)
-				err(1, "mdr_pack_bytes");
+			if ((subm_bytes[pvi] = malloc(i)) == NULL)
+				err(1, "malloc");
+			memcpy(subm_bytes[pvi], bytes, i);
+			pv[pvi].type = MDR_B;
+			pv[pvi].v.b.bytes = subm_bytes[pvi];
+			pv[pvi].v.b.sz = i;
 		} else if (strcmp(spbuf, "s") == 0) {
-			if (mdr_pack_str(m, *a++, -1) == MDR_FAIL)
-				err(1, "mdr_pack_str");
+			pv[pvi].type = MDR_S;
+			pv[pvi].v.s = *a;
 		} else if (spbuf[0] == 'u' || spbuf[0] == 'i') {
 			if (strlen(spbuf) < 2)
 				errx(1, "invalid format spec");
@@ -158,53 +173,79 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 				if (spbuf[0] == 'i') {
 					if (i64 > INT8_MAX || i64 < INT8_MIN)
 						errx(1, "invalid value");
-					if (mdr_pack_i8(m, i64) == MDR_FAIL)
-						err(1, "mdr_pack_uint8");
+					pv[pvi].type = MDR_I8;
+					pv[pvi].v.i8 = i64;
 				} else {
 					if (u64 > UINT8_MAX)
 						errx(1, "invalid value");
-					if (mdr_pack_u8(m, u64) == MDR_FAIL)
-						err(1, "mdr_pack_uint8");
+					pv[pvi].type = MDR_U8;
+					pv[pvi].v.u8 = u64;
 				}
-				a++;
 				break;
 			case 16:
 				if (spbuf[0] == 'i') {
 					if (i64 > INT16_MAX || i64 < INT16_MIN)
 						errx(1, "invalid value");
-					if (mdr_pack_i16(m, i64) == MDR_FAIL)
-						err(1, "mdr_pack_uint16");
+					pv[pvi].type = MDR_I16;
+					pv[pvi].v.i16 = i64;
 				} else {
 					if (u64 > UINT16_MAX)
 						errx(1, "invalid value");
-					if (mdr_pack_u16(m, u64) == MDR_FAIL)
-						err(1, "mdr_pack_uint16");
+					pv[pvi].type = MDR_U16;
+					pv[pvi].v.u16 = u64;
 				}
-				a++;
 				break;
 			case 32:
 				if (spbuf[0] == 'i') {
 					if (i64 > INT32_MAX || i64 < INT32_MIN)
 						errx(1, "invalid value");
-					if (mdr_pack_i32(m, i64) == MDR_FAIL)
-						err(1, "mdr_pack_uint32");
+					pv[pvi].type = MDR_I32;
+					pv[pvi].v.i32 = i64;
 				} else {
 					if (u64 > UINT32_MAX)
 						errx(1, "invalid value");
-					if (mdr_pack_u32(m, u64) == MDR_FAIL)
-						err(1, "mdr_pack_uint32");
+					pv[pvi].type = MDR_U32;
+					pv[pvi].v.u32 = u64;
 				}
-				a++;
 				break;
 			case 64:
 				if (spbuf[0] == 'i') {
-					if (mdr_pack_u64(m, i64) == MDR_FAIL)
-						err(1, "mdr_pack_uint64");
+					pv[pvi].type = MDR_I64;
+					pv[pvi].v.i64 = i64;
 				} else {
-					if (mdr_pack_i64(m, u64) == MDR_FAIL)
-						err(1, "mdr_pack_uint64");
+					pv[pvi].type = MDR_U64;
+					pv[pvi].v.u64 = u64;
 				}
-				a++;
+				break;
+			default:
+				errx(1, "invalid format spec");
+			}
+			a++;
+		} else if (spbuf[0] == 'f') {
+			if (strlen(spbuf) < 3)
+				errx(1, "invalid format spec");
+
+			errno = 0;
+			bits = strtoull(spbuf + 1, &end, 10);
+			if (errno || *end != '\0')
+				errx(1, "invalid format spec");
+
+			switch (bits) {
+			case 32:
+				errno = 0;
+				f32 = strtof(*a, &end);
+				if (errno || *end != '\0')
+					err(1, "invalid value");
+				pv[pvi].type = MDR_F32;
+				pv[pvi].v.f32 = f32;
+				break;
+			case 64:
+				errno = 0;
+				f64 = strtod(*a, &end);
+				if (errno || *end != '\0')
+					err(1, "invalid value");
+				pv[pvi].type = MDR_F64;
+				pv[pvi].v.f64 = f64;
 				break;
 			default:
 				errx(1, "invalid format spec");
@@ -213,8 +254,15 @@ pack(struct mdr *m, const char *spec, const char **args, int count)
 			/* Unknown type specifier */
 			errx(1, "invalid format spec");
 		}
+		a++;
+		pvi++;
 		prev = p + 1;
 	}
+	if (pmdr_pack(m, m_spec, pv, count) == MDR_FAIL)
+		err(1, "pmdr_pack");
+	for (i = 0; i < count; i++)
+		if (subm_bytes[i] != NULL)
+			free(subm_bytes[i]);
 }
 
 void
@@ -226,7 +274,7 @@ ssl_err()
 }
 
 void
-do_tls(struct mdr *m, const char *target, const char *key_path,
+do_tls(struct pmdr *m, const char *target, const char *key_path,
     const char *crt_path)
 {
 	SSL_CTX         *ctx;
@@ -236,10 +284,10 @@ do_tls(struct mdr *m, const char *target, const char *key_path,
 	int              fd;
 	char            *buf;
 	size_t           buf_sz;
-	struct mdr       reply;
+	struct umdr      reply;
 	struct timespec  delay_ns;
 
-	if (mdr_size(m) >= INT_MAX)
+	if (pmdr_size(m) >= INT_MAX)
 		errx(1, "payload too large for sending");
 
 	if ((ctx = SSL_CTX_new(TLS_client_method())) == NULL)
@@ -290,18 +338,19 @@ do_tls(struct mdr *m, const char *target, const char *key_path,
 		if (i > 0)
 			printf("\n");
 		printf("Sent:\n");
-		mdr_print(stdout, m);
+		pmdr_print(stdout, m);
 
 		if (delay == 0) {
-			if ((r = BIO_write(b, mdr_buf(m), mdr_size(m))) == -1)
+			if ((r = BIO_write(b, pmdr_buf(m), pmdr_size(m))) == -1)
 				ssl_err();
-			else if (r < mdr_size(m))
-				errx(1, "short write: %d < %lu", r, mdr_size(m));
+			else if (r < pmdr_size(m))
+				errx(1, "short write: %d < %lu", r,
+				    pmdr_size(m));
 		} else {
-			for (j = 0; j < mdr_size(m); j++) {
+			for (j = 0; j < pmdr_size(m); j++) {
 				delay_ns.tv_sec = delay / 1000;
 				delay_ns.tv_nsec = (delay % 1000) * 1000000;
-				if ((r = BIO_write(b, mdr_buf(m) + j, 1)) == -1)
+				if ((r = BIO_write(b, pmdr_buf(m) + j, 1)) == -1)
 					ssl_err();
 				else if (r < 1)
 					errx(1, "short write: %d < 1", r);
@@ -317,29 +366,33 @@ do_tls(struct mdr *m, const char *target, const char *key_path,
 			if (r <= 0 && !BIO_should_retry(b))
 				ssl_err();
 			len += r;
-			if (mdr_unpack_hdr(&reply, MDR_F_NONE,
-			    buf, len) == MDR_FAIL) {
+			/*
+			 * We re-init everytime in case our buffer
+			 * moved after realloc() below.
+			 */
+			if (umdr_init(&reply, buf, len, MDR_FNONE)
+			    == MDR_FAIL) {
 				if (errno == EAGAIN)
 					continue;
 				else
-					err(1, "mdr_unpack_hdr");
+					err(1, "mdr_init_unpack");
 			}
-			if (!mdr_pending(&reply))
+			if (!umdr_pending(&reply))
 				break;
-			if (buf_sz >= mdr_size(&reply))
+			if (buf_sz >= umdr_size(&reply))
 				continue;
-			if (mdr_size(&reply) >= INT_MAX)
+			if (umdr_size(&reply) >= INT_MAX)
 				errx(1, "payload too large for receiving");
-			buf_sz = mdr_size(&reply);
+			buf_sz = umdr_size(&reply);
 			buf = realloc(buf, buf_sz);
 			if (buf == NULL)
 				err(1, "realloc");
 		}
 		printf("\nReceived:\n");
-		mdr_print(stdout, &reply);
+		umdr_print(stdout, &reply);
 		free(buf);
 	}
-	mdr_free(m);
+	pmdr_free(m);
 	BIO_free_all(b);
 	SSL_CTX_free(ctx);
 }
@@ -347,10 +400,10 @@ do_tls(struct mdr *m, const char *target, const char *key_path,
 void
 do_stdin()
 {
-	int         r, len;
-	char       *buf;
-	size_t      buf_sz;
-	struct mdr  reply;
+	int          r, len;
+	char        *buf;
+	size_t       buf_sz;
+	struct umdr  reply;
 
 	for (;;) {
 		buf_sz = 4096;
@@ -367,50 +420,50 @@ do_stdin()
 			}
 
 			len += r;
-			if (mdr_unpack_hdr(&reply, MDR_F_NONE,
-			    buf, len) == MDR_FAIL) {
+			if (umdr_init(&reply, buf, len, MDR_FNONE)
+			    == MDR_FAIL) {
 				if (errno == EAGAIN)
 					continue;
 				else
-					err(1, "mdr_unpack_hdr");
+					err(1, "mdr_init_unpack");
 			}
-			if (!mdr_pending(&reply))
+			if (!umdr_pending(&reply))
 				break;
-			if (buf_sz >= mdr_size(&reply))
+			if (buf_sz >= umdr_size(&reply))
 				continue;
-			if (mdr_size(&reply) >= INT_MAX)
+			if (umdr_size(&reply) >= INT_MAX)
 				errx(1, "payload too large for receiving");
-			buf = realloc(buf, mdr_size(&reply));
+			buf = realloc(buf, umdr_size(&reply));
 			if (buf == NULL)
 				err(1, "realloc");
-			buf_sz = mdr_size(&reply);
+			buf_sz = umdr_size(&reply);
 		}
 		printf("\nReceived:\n");
-		mdr_print(stdout, &reply);
+		umdr_print(stdout, &reply);
 		free(buf);
 	}
 }
 
 void
-do_stdout(struct mdr *m)
+do_stdout(struct pmdr *m)
 {
 	int i, r;
 
-	if (mdr_size(m) >= INT_MAX)
+	if (pmdr_size(m) >= INT_MAX)
 		errx(1, "payload too large for sending");
 
 	for (i = 0; i < repeat; i++) {
 		if (i > 0)
 			printf("\n");
 		fprintf(stderr, "Sent:\n");
-		mdr_print(stderr, m);
+		pmdr_print(stderr, m);
 
-		if ((r = write(1, mdr_buf(m), mdr_size(m))) == -1)
+		if ((r = write(1, pmdr_buf(m), pmdr_size(m))) == -1)
 			err(1, "write");
-		else if (r < mdr_size(m))
-			errx(1, "short write: %d < %lu", r, mdr_size(m));
+		else if (r < pmdr_size(m))
+			errx(1, "short write: %d < %lu", r, pmdr_size(m));
 	}
-	mdr_free(m);
+	pmdr_free(m);
 }
 
 int
@@ -426,7 +479,7 @@ main(int argc, char **argv)
 	const char    *target = NULL;
 	const char    *key_path = NULL;
 	const char    *crt_path = NULL;
-	struct mdr     m;
+	struct pmdr    m;
 
 	while ((opt = getopt(argc, argv, "hdit:k:c:n:D:B:")) != -1) {
 		switch (opt) {
@@ -533,15 +586,15 @@ main(int argc, char **argv)
 		err(1, "mdr_register_builtin_specs");
 	m_spec = mdr_registry_get(mdr_mkdcv(domain, code, variant));
 
-	r = mdr_pack_hdr(&m, NULL, 0, m_spec, MDR_F_NONE);
+	r = pmdr_init(&m, NULL, 0, MDR_FNONE);
 	if (r == MDR_FAIL)
-		err(1, "mdr_pack_hdr");
+		err(1, "mdr_init_pack");
 
 	pack(&m, format, (const char **)argv + optind, argc - optind);
 
 	if (target == NULL) {
-		mdr_print(stdout, &m);
-		mdr_free(&m);
+		pmdr_print(stdout, &m);
+		pmdr_free(&m);
 		return 0;
 	} else if (strcmp(target, "-") == 0) {
 		do_stdout(&m);

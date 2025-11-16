@@ -278,11 +278,11 @@ struct flatconf flatconf_vars[] = {
 };
 
 static int
-pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
+pack_bereq(struct pmdr *m, uint64_t id, int fd, struct umdr *msg, X509 *peer_cert)
 {
 	size_t               cert_len;
 	unsigned char       *cert_buf;
-	struct mdr_in        m_in[6];
+	struct pmdr_vec      pv[6];
 	struct sockaddr_in6  peer;
 	socklen_t            slen = sizeof(peer);
 
@@ -306,26 +306,29 @@ pack_bereq(struct mdr *m, uint64_t id, int fd, struct mdr *msg, X509 *peer_cert)
 		return -1;
 	}
 
-	m_in[0].type = MDR_U64;
-	m_in[0].v.u64 = id;
-	m_in[1].type = MDR_I32;
-	m_in[1].v.i32 = fd;
-	m_in[2].type = MDR_B;
-	m_in[2].v.b.bytes = (peer.sin6_family == AF_INET6)
+	if (pmdr_init(m, NULL, 4096, MDR_FNONE) == MDR_FAIL) {
+		xlog_strerror(LOG_ERR, errno, "%s: pmdr_init", __func__);
+		return -1;
+	}
+	pv[0].type = MDR_U64;
+	pv[0].v.u64 = id;
+	pv[1].type = MDR_I32;
+	pv[1].v.i32 = fd;
+	pv[2].type = MDR_B;
+	pv[2].v.b.bytes = (peer.sin6_family == AF_INET6)
 	    ? peer.sin6_addr.s6_addr
 	    : (uint8_t *)&(((struct sockaddr_in *)&peer)->sin_addr.s_addr);
-	m_in[2].v.b.sz = (peer.sin6_family == AF_INET6) ? 16 : 4;
-	m_in[3].type = MDR_U16;
-	m_in[3].v.u16 = (peer.sin6_family == AF_INET6)
+	pv[2].v.b.sz = (peer.sin6_family == AF_INET6) ? 16 : 4;
+	pv[3].type = MDR_U16;
+	pv[3].v.u16 = (peer.sin6_family == AF_INET6)
 	    ? ntohs(peer.sin6_port)
 	    : ntohs(((struct sockaddr_in *)&peer)->sin_port);
-	m_in[4].type = MDR_M;
-	m_in[4].v.m = msg;
-	m_in[5].type = MDR_RSVB;
-	m_in[5].v.rsvb.dst = (void **)&cert_buf;
-	m_in[5].v.rsvb.sz = cert_len;
-	if (mdr_pack(m, NULL, 4096, mdr_msg_mdrd_bereq, MDR_F_NONE, m_in, 6)
-	    == MDR_FAIL) {
+	pv[4].type = MDR_M;
+	pv[4].v.umdr = msg;
+	pv[5].type = MDR_RSVB;
+	pv[5].v.rsvb.dst = (void **)&cert_buf;
+	pv[5].v.rsvb.sz = cert_len;
+	if (pmdr_pack(m, mdr_msg_mdrd_bereq, pv, PMDRVECLEN(pv)) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack", __func__);
 		return -1;
 	}
@@ -398,28 +401,29 @@ handle_signals(int sig)
 }
 
 struct client_cb_data {
-	size_t      len;
-	char       *buf;
-	size_t      buf_sz;
-	struct mdr  msg;
-	int         send_cert;
+	size_t       len;
+	char        *buf;
+	size_t       buf_sz;
+	struct umdr  msg;
+	int          send_cert;
 };
 
 void
 client_close_cb(struct tlsev *t, void *data)
 {
-	struct mdr    bemsg;
-	char          buf[mdr_hdr_size(0) + sizeof(uint64_t)];
-	struct mdr_in m_in[1];
+	struct pmdr     bemsg;
+	struct pmdr_vec pv[1];
+	char            buf[mdr_hdr_size(0) + sizeof(uint64_t)];
 
-	m_in[0].type = MDR_U64;
-	m_in[0].v.u64 = tlsev_id(t);
-	if (mdr_pack(&bemsg, buf, sizeof(buf), mdr_msg_mdrd_beclose,
-	    MDR_F_NONE, m_in, 1) == MDR_FAIL) {
-		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack_hdr", __func__);
+	pmdr_init(&bemsg, buf, sizeof(buf), MDR_FNONE);
+	pv[0].type = MDR_U64;
+	pv[0].v.u64 = tlsev_id(t);
+	if (pmdr_pack(&bemsg, mdr_msg_mdrd_beclose, pv,
+	    PMDRVECLEN(pv)) == MDR_FAIL) {
+		xlog_strerror(LOG_ERR, errno, "%s: pmdr_pack", __func__);
 	} else {
-		if (writeall(backend_wfd, mdr_buf(&bemsg),
-		    mdr_size(&bemsg)) == -1)
+		if (writeall(backend_wfd, pmdr_buf(&bemsg),
+		    pmdr_size(&bemsg)) == -1)
 			xlog_strerror(LOG_ERR, errno, "%s: writeall", __func__);
 	}
 
@@ -429,13 +433,17 @@ client_close_cb(struct tlsev *t, void *data)
 	free(cb_data);
 }
 
+/*
+ * Message is coming from remote client, we're passing it to the
+ * backend.
+ */
 int
 client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 {
 	struct client_cb_data *cb_data = (struct client_cb_data *)(*data);
-	void                     *tmp;
-	struct mdr                bemsg;
-	int                       status, i;
+	void                  *tmp;
+	struct pmdr            bereq, bemsg;
+	int                    status, i;
 
 	if (cb_data == NULL) {
 		*data = malloc(sizeof(struct client_cb_data));
@@ -468,22 +476,23 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 	memcpy(cb_data->buf + cb_data->len, buf, n);
 	cb_data->len += n;
 
-	if (mdr_unpack_hdr(&cb_data->msg, MDR_F_NONE, cb_data->buf,
-	    cb_data->len) == MDR_FAIL) {
-		if (errno == EAGAIN)
-			return 0;
-		xlog_strerror(LOG_ERR, errno, "%s: mdr_unpack_hdr", __func__);
+	if (umdr_init(&cb_data->msg, cb_data->buf, cb_data->len,
+	    MDR_FNONE) == MDR_FAIL) {
+		// TODO: send an error to the client, possibly
+		// that we couldn't support the extensions, or that
+		// the payload was too large.
+		xlog_strerror(LOG_ERR, errno, "%s: umdr_init", __func__);
 		return -1;
 	}
 
-	if (mdr_size(&cb_data->msg) > mdrd_conf.max_payload_size) {
+	if (umdr_size(&cb_data->msg) > mdrd_conf.max_payload_size) {
 		xlog_strerror(LOG_ERR, errno, "%s: mdr size is above our "
 		    "configured maximum size of %lu", __func__,
 		    mdrd_conf.max_payload_size);
 		return -1;
 	}
 
-	if (mdr_pending(&cb_data->msg) > 0) {
+	if (umdr_pending(&cb_data->msg) > 0) {
 		errno = EAGAIN;
 		return 0;
 	}
@@ -492,7 +501,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 
 	for (i = 0; mdrd_conf.allowed_mdr_domains &&
 	    mdrd_conf.allowed_mdr_domains[i] != NULL; i++) {
-		if (mdr_domain(&cb_data->msg) ==
+		if (umdr_domain(&cb_data->msg) ==
 		    *mdrd_conf.allowed_mdr_domains[i])
 			break;
 	}
@@ -503,7 +512,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		return -1;
 	}
 
-	if ((status = pack_bereq(&bemsg, tlsev_id(t), tlsev_fd(t),
+	if ((status = pack_bereq(&bereq, tlsev_id(t), tlsev_fd(t),
 	    &cb_data->msg,
 	    (cb_data->send_cert) ? tlsev_peer_cert(t) : NULL)) == 0) {
 		/*
@@ -512,74 +521,84 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		 */
 		cb_data->send_cert = 0;
 
-		if ((status = writeall(backend_wfd, mdr_buf(&bemsg),
-		    mdr_size(&bemsg))) == -1) {
+		if ((status = writeall(backend_wfd, pmdr_buf(&bereq),
+		    pmdr_size(&bereq))) == -1) {
 			xlog_strerror(LOG_ERR, errno, "%s: writeall", __func__);
 		}
 	}
 
-	mdr_free(&bemsg);
+	pmdr_free(&bemsg);
 
-	memmove(cb_data->buf, cb_data->buf + mdr_size(&cb_data->msg),
-	    cb_data->len - mdr_size(&cb_data->msg));
-	cb_data->len -= mdr_size(&cb_data->msg);
+	memmove(cb_data->buf, cb_data->buf + umdr_size(&cb_data->msg),
+	    cb_data->len - umdr_size(&cb_data->msg));
+	cb_data->len -= umdr_size(&cb_data->msg);
 	return status;
 }
 
+/*
+ * A message comes from our backend, destined for the remote client.
+ */
 int
 backend_msg_in_cb(int fd)
 {
-	struct mdr           beresp, reply;
-	char                 beresp_buf[mdrd_conf.max_payload_size + 4096];
-	char                 reply_buf[mdrd_conf.max_payload_size];
-	struct tlsev        *t;
-	uint64_t             id;
-	int                  tlsfd, r;
-	uint32_t             resp_status, resp_flags;
-	struct mdr           msg;
-	struct mdr_in        m_in[2];
-	struct mdr_out       m_out[5];
+	struct umdr      beresp;
+	struct pmdr      reply;
+	char             beresp_buf[mdrd_conf.max_payload_size + 4096];
+	char             reply_buf[mdrd_conf.max_payload_size];
+	struct tlsev    *t;
+	uint64_t         id;
+	int              tlsfd, r;
+	uint32_t         resp_status, resp_flags;
+	struct pmdr_vec  pv[2];
+	struct umdr_vec  uv[5];
 
-	if ((r = mdr_read_from_fd(&beresp, MDR_F_NONE, fd,
-	    beresp_buf, sizeof(beresp_buf))) == MDR_FAIL) {
+	if ((r = mdr_buf_from_fd(fd, beresp_buf,
+	    sizeof(beresp_buf))) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
-		    "%s: mdr_unpack_from_fd", __func__);
+		    "%s: mdr_buf_from_fd", __func__);
 		goto fail;
 	}
 
 	if (r == 0) {
 		xlog(LOG_ERR, NULL,
-		    "%s: mdr_unpack_from_fd: EOF from backend", __func__);
+		    "%s: mdr_buf_from_fd: EOF from backend", __func__);
 		goto fail;
 	}
 
-	switch (mdr_dcv(&beresp)) {
+	if (umdr_init(&beresp, beresp_buf, r, MDR_FNONE) == MDR_FAIL) {
+		xlog_strerror(LOG_ERR, errno,
+		    "%s: umdr_init/beresp", __func__);
+		goto fail;
+	}
+
+	switch (umdr_dcv(&beresp)) {
 	case MDR_DCV_MDRD_BERESP:
-		if (mdr_unpack_payload(&beresp, mdr_msg_mdrd_beresp, m_out, 4)
-		    == MDR_FAIL) {
+		if (umdr_unpack(&beresp, mdr_msg_mdrd_beresp,
+		    uv, UMDRVECLEN(uv)) == MDR_FAIL) {
 			xlog_strerror(LOG_ERR, errno,
-			    "%s: mdr_unpack_payload/mdr_msg_mdrd_beresp",
+			    "%s: umdr_unpack/mdr_msg_mdrd_beresp",
 			    __func__);
 			goto fail;
 		}
-		id = m_out[0].v.u64;
-		tlsfd = m_out[1].v.i32;
-		resp_status = m_out[2].v.u32;
-		resp_flags = m_out[3].v.u32;
+		id = uv[0].v.u64;
+		tlsfd = uv[1].v.i32;
+		resp_status = uv[2].v.u32;
+		resp_flags = uv[3].v.u32;
 		break;
 	case MDR_DCV_MDRD_BERESP_WMSG:
-		if (mdr_unpack_payload(&beresp, mdr_msg_mdrd_beresp_wmsg,
-		    m_out, 5) == MDR_FAIL) {
+		if (umdr_unpack(&beresp, mdr_msg_mdrd_beresp_wmsg,
+		    uv, UMDRVECLEN(uv)) == MDR_FAIL) {
 			xlog_strerror(LOG_ERR, errno,
 			    "%s: mdr_unpack_payload/mdr_msg_mdrd_beresp_wmsg",
 			    __func__);
 			goto fail;
 		}
-		id = m_out[0].v.u64;
-		tlsfd = m_out[1].v.i32;
-		resp_status = m_out[2].v.u32;
-		resp_flags = m_out[3].v.u32;
-		mdr_copy(&msg, &m_out[4].v.m);
+		id = uv[0].v.u64;
+		tlsfd = uv[1].v.i32;
+		resp_status = uv[2].v.u32;
+		resp_flags = uv[3].v.u32;
+		// TODO: Do a shallow copy... ?
+		//umdr_scopy(&msg, &uv[4].v.m);
 		break;
 	default:
 		xlog_strerror(LOG_ERR, errno,
@@ -600,9 +619,11 @@ backend_msg_in_cb(int fd)
 		return 1;
 	}
 
+	pmdr_init(&reply, reply_buf, sizeof(reply_buf), MDR_FNONE);
+
 	switch (resp_status) {
 	case MDRD_ST_OK:
-		if (mdr_dcv(&beresp) != MDR_DCV_MDRD_BERESP_WMSG) {
+		if (umdr_dcv(&beresp) != MDR_DCV_MDRD_BERESP_WMSG) {
 			xlog_strerror(LOG_ERR, errno,
 			    "%s: beresp from backend did not contain a "
 			    "message payload", __func__);
@@ -610,13 +631,12 @@ backend_msg_in_cb(int fd)
 		}
 		break;
 	case MDRD_ST_DENIED:
-		m_in[0].type = MDR_U32;
-		m_in[0].v.u32 = resp_status;
-		m_in[1].type = MDR_S;
-		m_in[1].v.s.bytes = "access denied";
-		m_in[1].v.s.sz = -1;
-		if (mdr_pack(&reply, reply_buf, sizeof(reply_buf),
-		    mdr_msg_mdrd_error, MDR_F_NONE, m_in, 2) == MDR_FAIL) {
+		pv[0].type = MDR_U32;
+		pv[0].v.u32 = resp_status;
+		pv[1].type = MDR_S;
+		pv[1].v.s = "access denied";
+		if (pmdr_pack(&reply, mdr_msg_mdrd_error, pv,
+		    PMDRVECLEN(pv)) == MDR_FAIL) {
 			xlog(LOG_ERR, NULL, "%s: failed to pack error for "
 			    "client after resp_status %u",
 			    __func__, resp_status);
@@ -624,13 +644,12 @@ backend_msg_in_cb(int fd)
 		}
 		break;
 	case MDRD_ST_CERTFAIL:
-		m_in[0].type = MDR_U32;
-		m_in[0].v.u32 = resp_status;
-		m_in[1].type = MDR_S;
-		m_in[1].v.s.bytes = "certificate validation failed";
-		m_in[1].v.s.sz = -1;
-		if (mdr_pack(&reply, reply_buf, sizeof(reply_buf),
-		    mdr_msg_mdrd_error, MDR_F_NONE, m_in, 2) == MDR_FAIL) {
+		pv[0].type = MDR_U32;
+		pv[0].v.u32 = resp_status;
+		pv[1].type = MDR_S;
+		pv[1].v.s = "certificate validation failed";
+		if (pmdr_pack(&reply, mdr_msg_mdrd_error, pv,
+		    PMDRVECLEN(pv)) == MDR_FAIL) {
 			xlog(LOG_ERR, NULL, "%s: failed to pack error for "
 			    "client after resp_status %u",
 			    __func__, resp_status);
@@ -643,8 +662,9 @@ backend_msg_in_cb(int fd)
 		goto fail;
 	}
 
-	if ((r = tlsev_reply(t, mdr_buf(&msg), mdr_size(&msg))) <= 0 ||
-	    resp_flags & MDRD_BERESP_F_CLOSE)
+	if ((r = tlsev_reply(t, umdr_buf(&uv[4].v.m),
+	    umdr_size(&uv[4].v.m))) <= 0 ||
+	    resp_flags & MDRD_BERESP_FCLOSE)
 		tlsev_drain(t);
 
 	counters_incr(COUNTER_MESSAGES_OUT);
