@@ -740,6 +740,7 @@ load_keys()
 void
 cleanup()
 {
+	mdr_registry_clear();
 	flatconf_free(flatconf_vars);
 	if (ca_crt != NULL) {
 		X509_free(ca_crt);
@@ -882,10 +883,9 @@ counters_sig_handler(int sig)
 		return;
 	}
 	shutdown_triggered = 1;
-	exit(0);
 }
 
-int
+void
 counter_reader()
 {
 	int                lsock, sock, i, c;
@@ -895,13 +895,6 @@ counter_reader()
 	pid_t              pid;
 	uint64_t           v[COUNTER_LAST];
 	struct sigaction   act;
-
-	if ((pid = fork()) == -1) {
-		xlog_strerror(LOG_ERR, errno, "fork");
-		return -1;
-	}
-	if (pid > 0)
-		return 0;
 
 	setproctitle("counters");
 	xlog_init(program, NULL, NULL, 1);
@@ -993,10 +986,11 @@ again:
 			}
 		}
 end:
+		cleanup();
 		exit(0);
 	}
-	/* Never reached */
-	return 0;
+	cleanup();
+	exit(0);
 }
 
 void
@@ -1224,8 +1218,15 @@ main(int argc, char **argv)
 			xlog_strerror(LOG_ERR, errno, "counters_init");
 			exit(1);
 		}
-		if (counter_reader() == -1)
-			exit(1);
+
+		if ((pid = fork()) == -1) {
+			xlog_strerror(LOG_ERR, errno, "fork");
+			return -1;
+		} else if (pid == 0) {
+			SSL_CTX_free(ctx);
+			counter_reader();
+		}
+
 		if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
 		    &backend_wfd, &backend_reader.fd, mdrd_conf.backend_uid,
 		    mdrd_conf.backend_gid, xerrz(&e)) == -1) {
@@ -1239,8 +1240,14 @@ main(int argc, char **argv)
 		xlog_strerror(LOG_ERR, errno, "counters_init");
 		exit(1);
 	}
-	if (counter_reader() == -1)
-		exit(1);
+
+	if ((pid = fork()) == -1) {
+		xlog_strerror(LOG_ERR, errno, "fork");
+		return -1;
+	} else if (pid == 0) {
+		SSL_CTX_free(ctx);
+		counter_reader();
+	}
 
 	for (n_children = 0; n_children < mdrd_conf.prefork; n_children++) {
 		if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
@@ -1347,7 +1354,6 @@ main(int argc, char **argv)
 	}
 	SSL_CTX_free(ctx);
 	tlsev_destroy(&listener);
-	mdr_registry_clear();
 	xlog(LOG_NOTICE, NULL, "all children exited");
 	return 0;
 }
