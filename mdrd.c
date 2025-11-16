@@ -306,10 +306,6 @@ pack_bereq(struct pmdr *m, uint64_t id, int fd, struct umdr *msg, X509 *peer_cer
 		return -1;
 	}
 
-	if (pmdr_init(m, NULL, 4096, MDR_FNONE) == MDR_FAIL) {
-		xlog_strerror(LOG_ERR, errno, "%s: pmdr_init", __func__);
-		return -1;
-	}
 	pv[0].type = MDR_U64;
 	pv[0].v.u64 = id;
 	pv[1].type = MDR_I32;
@@ -443,6 +439,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 	struct client_cb_data *cb_data = (struct client_cb_data *)(*data);
 	void                  *tmp;
 	struct pmdr            bereq;
+	char                   bereq_buf[mdrd_conf.max_payload_size + 4096];
 	int                    status, i;
 
 	if (cb_data == NULL) {
@@ -512,6 +509,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		return -1;
 	}
 
+	pmdr_init(&bereq, bereq_buf, sizeof(bereq_buf), MDR_FNONE);
 	if ((status = pack_bereq(&bereq, tlsev_id(t), tlsev_fd(t),
 	    &cb_data->msg,
 	    (cb_data->send_cert) ? tlsev_peer_cert(t) : NULL)) == 0) {
@@ -1065,7 +1063,7 @@ main(int argc, char **argv)
 	case 1:
 		errx(1, "flatconf: configuration is not valid");
 	case 2:
-		errx(1, "flatconf: memory exchaused by parser");
+		errx(1, "flatconf: memory exhausted by parser");
 	default:
 		err(1, "flatconf_read");
 	}

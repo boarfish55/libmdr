@@ -596,6 +596,14 @@ flatconf_free(struct flatconf *vars)
 				cv->dst_sz = 0;
 			}
 			break;
+		case FLATCONF_ALLOCULONGLIST:
+			/* Only free if we actually allocated this variable */
+			if (cv->dst_sz > 0) {
+				free(*(uint64_t ***)cv->dst);
+				cv->dst = NULL;
+				cv->dst_sz = 0;
+			}
+			break;
 		default:
 			/* Nothing allocated */
 			break;

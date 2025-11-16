@@ -1,5 +1,7 @@
 #!/bin/sh
 
+set -e
+
 rm -rf ca
 mkdir -p ca/certs ca/private
 chmod 700 ca/private
@@ -7,7 +9,7 @@ echo "01" > ca/serial
 touch ca/index.txt
 
 # Create self-signed root certificate
-openssl req -x509 -nodes -config mdrd_ssl.cnf -newkey rsa \
+openssl req -x509 -nodes -config mdrd_ssl.cnf -newkey ed25519 \
 	-keyout ca/private/overnet_key.pem \
 	-out ca/overnet.pem -outform PEM -days 3650 \
 	-extensions root_ext \
@@ -16,7 +18,7 @@ openssl req -x509 -nodes -config mdrd_ssl.cnf -newkey rsa \
 # Create a "client1" cert request
 rm -f client1/*
 mkdir -p client1
-openssl req -nodes -config mdrd_ssl.cnf -newkey rsa \
+openssl req -nodes -config mdrd_ssl.cnf -newkey ed25519 \
 	-keyout client1/key.pem -keyform PEM \
 	-out client1/req.pem -outform PEM \
 	-subj "/O=Overnet/CN=client1.overnet.ca" \
@@ -29,7 +31,7 @@ openssl verify -CAfile ca/overnet.pem client1/cert.pem
 # Create a "client2" cert request
 rm -f client2/*
 mkdir -p client2
-openssl req -nodes -config mdrd_ssl.cnf -newkey rsa \
+openssl req -nodes -config mdrd_ssl.cnf -newkey ed25519 \
 	-keyout client2/key.pem -keyform PEM \
 	-out client2/req.pem -outform PEM \
 	-subj "/O=Overnet/CN=client2.overnet.ca" \
@@ -43,7 +45,9 @@ openssl ca -config mdrd_ssl.cnf -revoke client2/cert.pem
 # Generate CRL
 openssl ca -config mdrd_ssl.cnf -gencrl -out ca/overnet.crl
 openssl verify -CAfile ca/overnet.pem -CRLfile ca/overnet.crl \
-	-crl_check client2/cert.pem
+	-crl_check client2/cert.pem || true
 
 # View it and verify signature
 openssl crl -in ca/overnet.crl -text -noout -CAfile ca/overnet.pem
+
+echo "All good!"
