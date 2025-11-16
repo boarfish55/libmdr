@@ -1960,30 +1960,6 @@ umdr_init0(struct umdr *um, const void *buf, size_t buf_sz,
 	m->dcv = (uint64_t *)m->pos;
 	m->pos += sizeof(*m->dcv);
 
-	if (mdr_features(m) & MDR_FTAILBYTES) {
-		m->tail_bytes = (uint64_t *)m->pos;
-		m->pos += sizeof(*m->tail_bytes);
-	} else
-		m->tail_bytes = NULL;
-
-	if (mdr_features(m) & MDR_FSTREAMID) {
-		m->stream_id = (uint64_t *)m->pos;
-		m->pos += sizeof(*m->stream_id);
-	} else
-		m->stream_id = NULL;
-
-	if (mdr_features(m) & MDR_FACCTID) {
-		m->acct_id = (uint64_t *)m->pos;
-		m->pos += sizeof(*m->acct_id);
-	} else
-		m->acct_id = NULL;
-
-	if (mdr_features(m) & MDR_FTRACEID) {
-		m->trace_id = (uint8_t *)m->pos;
-		m->pos += sizeof(union mdr_trace_id);
-	} else
-		m->trace_id = NULL;
-
 	*m->size = 0;
 	*m->features = 0;
 	*m->dcv = 0;

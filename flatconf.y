@@ -546,7 +546,8 @@ flatconf_set_var(const char *var) {
 		flatconf_free_values();
 		return r;
 	}
-	return 1;
+	yyerror("unknown variable %s", var);
+	return 0;
 }
 
 int

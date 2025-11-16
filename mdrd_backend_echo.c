@@ -273,5 +273,6 @@ main(int argc, char **argv)
 	}
 	X509_STORE_CTX_free(ctx);
 	X509_STORE_free(store);
+	mdr_registry_clear();
 	return 0;
 }
