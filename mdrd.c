@@ -442,7 +442,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 {
 	struct client_cb_data *cb_data = (struct client_cb_data *)(*data);
 	void                  *tmp;
-	struct pmdr            bereq, bemsg;
+	struct pmdr            bereq;
 	int                    status, i;
 
 	if (cb_data == NULL) {
@@ -526,8 +526,6 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 			xlog_strerror(LOG_ERR, errno, "%s: writeall", __func__);
 		}
 	}
-
-	pmdr_free(&bemsg);
 
 	memmove(cb_data->buf, cb_data->buf + umdr_size(&cb_data->msg),
 	    cb_data->len - umdr_size(&cb_data->msg));
@@ -1351,6 +1349,7 @@ main(int argc, char **argv)
 	}
 	SSL_CTX_free(ctx);
 	tlsev_destroy(&listener);
+	mdr_registry_clear();
 	xlog(LOG_NOTICE, NULL, "all children exited");
 	return 0;
 }

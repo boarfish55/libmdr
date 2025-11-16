@@ -602,5 +602,6 @@ main(int argc, char **argv)
 	}
 
 	do_tls(&m, target, key_path, crt_path);
+	mdr_registry_clear();
 	return 0;
 }
