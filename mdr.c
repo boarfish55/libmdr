@@ -1023,6 +1023,19 @@ mdr_registry_get(uint64_t dcv)
 	return r;
 }
 
+void
+mdr_registry_clear()
+{
+	struct mdr_spec *s, *next;
+
+	for (s = RB_MIN(mdr_registry_tree, &mdr_registry.head);
+	    s != NULL; s = next) {
+		next = RB_NEXT(mdr_registry_tree, &mdr_registry.head, s);
+		RB_REMOVE(mdr_registry_tree, &mdr_registry.head, s);
+		free(s);
+	}
+}
+
 void *
 pmdr_buf(struct pmdr *m)
 {
@@ -2009,54 +2022,54 @@ umdr_unpack(struct umdr *um, const struct mdr_spec *spec, struct umdr_vec *uvec,
 		union mdr_num_v nv;
 		switch (m->spec->types[i]) {
 		case MDR_U8:
-			if (mdr_unpack_num(m, MDR_U8, &nv, sizeof(uint8_t)) == MDR_FAIL)
-				return MDR_FAIL;
-			uvec[i].v.u8 = nv.u8;
+			r = mdr_unpack_num(m, MDR_U8, &nv, sizeof(uint8_t));
+			if (r != MDR_FAIL)
+				uvec[i].v.u8 = nv.u8;
 			break;
 		case MDR_U16:
-			if (mdr_unpack_num(m, MDR_U16, &nv, sizeof(uint16_t)) == MDR_FAIL)
-				return MDR_FAIL;
-			uvec[i].v.u16 = nv.u16;
+			r = mdr_unpack_num(m, MDR_U16, &nv, sizeof(uint16_t));
+			if (r != MDR_FAIL)
+				uvec[i].v.u16 = nv.u16;
 			break;
 		case MDR_U32:
-			if (mdr_unpack_num(m, MDR_U32, &nv, sizeof(uint32_t)) == MDR_FAIL)
-				return MDR_FAIL;
-			uvec[i].v.u32 = nv.u32;
+			r = mdr_unpack_num(m, MDR_U32, &nv, sizeof(uint32_t));
+			if (r != MDR_FAIL)
+				uvec[i].v.u32 = nv.u32;
 			break;
 		case MDR_U64:
-			if (mdr_unpack_num(m, MDR_U64, &nv, sizeof(uint64_t)) == MDR_FAIL)
-				return MDR_FAIL;
-			uvec[i].v.u64 = nv.u64;
+			r = mdr_unpack_num(m, MDR_U64, &nv, sizeof(uint64_t));
+			if (r != MDR_FAIL)
+				uvec[i].v.u64 = nv.u64;
 			break;
 		case MDR_I8:
-			if (mdr_unpack_num(m, MDR_I8, &nv, sizeof(int8_t)) == MDR_FAIL)
-				return MDR_FAIL;
-			uvec[i].v.i8 = nv.i8;
+			r = mdr_unpack_num(m, MDR_I8, &nv, sizeof(int8_t));
+			if (r != MDR_FAIL)
+				uvec[i].v.i8 = nv.i8;
 			break;
 		case MDR_I16:
-			if (mdr_unpack_num(m, MDR_I16, &nv, sizeof(int16_t)) == MDR_FAIL)
-				return MDR_FAIL;
-			uvec[i].v.i16 = nv.i16;
+			r = mdr_unpack_num(m, MDR_I16, &nv, sizeof(int16_t));
+			if (r != MDR_FAIL)
+				uvec[i].v.i16 = nv.i16;
 			break;
 		case MDR_I32:
-			if (mdr_unpack_num(m, MDR_I32, &nv, sizeof(int32_t)) == MDR_FAIL)
-				return MDR_FAIL;
-			uvec[i].v.i32 = nv.i32;
+			r = mdr_unpack_num(m, MDR_I32, &nv, sizeof(int32_t));
+			if (r != MDR_FAIL)
+				uvec[i].v.i32 = nv.i32;
 			break;
 		case MDR_I64:
-			if (mdr_unpack_num(m, MDR_I64, &nv, sizeof(int64_t)) == MDR_FAIL)
-				return MDR_FAIL;
-			uvec[i].v.i64 = nv.i64;
+			r = mdr_unpack_num(m, MDR_I64, &nv, sizeof(int64_t));
+			if (r != MDR_FAIL)
+				uvec[i].v.i64 = nv.i64;
 			break;
 		case MDR_F32:
-			if (mdr_unpack_num(m, MDR_F32, &nv, sizeof(float)) == MDR_FAIL)
-				return MDR_FAIL;
-			uvec[i].v.f32 = nv.f32;
+			r = mdr_unpack_num(m, MDR_F32, &nv, sizeof(float));
+			if (r != MDR_FAIL)
+				uvec[i].v.f32 = nv.f32;
 			break;
 		case MDR_F64:
-			if (mdr_unpack_num(m, MDR_F64, &nv, sizeof(double)) == MDR_FAIL)
-				return MDR_FAIL;
-			uvec[i].v.f64 = nv.f64;
+			r = mdr_unpack_num(m, MDR_F64, &nv, sizeof(double));
+			if (r != MDR_FAIL)
+				uvec[i].v.f64 = nv.f64;
 			break;
 		case MDR_B:
 			r = mdr_unpack_bytes(m, &uvec[i].v.b.bytes,

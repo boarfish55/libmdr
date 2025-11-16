@@ -344,6 +344,7 @@ int            umdr_print(FILE *, const struct umdr *);
 int                    mdr_register_builtin_specs();
 const struct mdr_spec *mdr_register_spec(struct mdr_def *);
 const struct mdr_spec *mdr_registry_get(uint64_t);
+void                   mdr_registry_clear();
 
 #define MDR_DCV(domain, code, variant) \
     ((uint64_t)domain << 32 | (uint64_t)code << 16 | (uint64_t)variant)

@@ -178,7 +178,6 @@ test_long_str()
 
 	if ((r = umdr_unpack(&um, msg_test_0, uv, 1)) == MDR_FAIL)
 		return ERR(errno, "mdr_unpack failed");
-	pmdr_free(&pm);
 
 	if (uv[0].type != MDR_S)
 		return ERR(0, "unexpected type returned instead of MDR_S");
@@ -186,6 +185,7 @@ test_long_str()
 	if (strcmp(str, uv[0].v.s.bytes) != 0)
 		return ERR(errno, "unpacked string is not what we expect");
 
+	pmdr_free(&pm);
 	return success();
 }
 
@@ -802,5 +802,7 @@ main(int argc, char **argv)
 			free(s->msg);
 		}
 	}
+	mdr_registry_clear();
+	freelocale(log_locale);
 	return status;
 }
