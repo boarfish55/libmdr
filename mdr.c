@@ -1775,7 +1775,7 @@ ptrdiff_t
 mdr_buf_from_fd(int fd, void *buf, size_t buf_sz)
 {
 	int       r;
-	size_t    sz;
+	uint64_t  sz;
 	ptrdiff_t count = 0;
 
 	if (fd < 0 || buf == NULL) {
@@ -1813,6 +1813,45 @@ mdr_buf_from_fd(int fd, void *buf, size_t buf_sz)
 		return MDR_FAIL;
 	}
 	count += r;
+
+	return count;
+}
+
+ptrdiff_t
+mdr_buf_from_BIO(BIO *bio, void *buf, size_t buf_sz)
+{
+	int       r;
+	uint64_t  sz;
+	ptrdiff_t count = 0;
+
+	if (bio == NULL || buf == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	if (buf_sz < mdr_hdr_size(0)) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	while (count < sizeof(uint64_t)) {
+		if ((r = BIO_read(bio, buf + count,
+		    sizeof(uint64_t) - count)) < 1)
+			return -1;
+		count += r;
+	}
+
+	sz = be64toh(*(uint64_t *)buf);
+	if (sz > buf_sz) {
+		errno = EAGAIN;
+		return MDR_FAIL;
+	}
+
+	while (count < sz) {
+		if ((r = BIO_read(bio, buf + count, sz - count)) < 1)
+			return -1;
+		count += r;
+	}
 
 	return count;
 }

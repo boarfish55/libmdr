@@ -2,6 +2,7 @@
 #define MDR_H
 
 #include <sys/tree.h>
+#include <openssl/bio.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -300,6 +301,7 @@ int32_t  umdr_vec_am(struct umdr_vec_ah *, struct mdr *, int32_t);
 size_t         mdr_hdr_size(uint32_t);
 uint64_t       mdr_mkdcv(uint32_t, uint16_t, uint16_t);
 ptrdiff_t      mdr_buf_from_fd(int, void *, size_t);
+ptrdiff_t      mdr_buf_from_BIO(BIO *, void *, size_t);
 
 ptrdiff_t      pmdr_init(struct pmdr *, void *, size_t, uint32_t);
 void           pmdr_free(struct pmdr *);
