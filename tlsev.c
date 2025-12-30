@@ -1141,10 +1141,24 @@ tlsev_poll(struct tlsev_listener *l)
 						 * wake up just for an accept()
 						 * we didn't handle.
 						 */
-						counters_incr(COUNTER_WAKE_FOR_ACCEPT);
+						counters_incr(
+						    COUNTER_WAKE_FOR_ACCEPT);
 					}
 					continue;
 				}
+				if (errno == EMFILE) {
+					l->max_clients = l->active_clients;
+					xlog_strerror(LOG_ERR, errno,
+					    "dropping max_clients to %d",
+					    l->max_clients);
+					continue;
+				}
+				if (errno == ENFILE) {
+					// TODO: Add a counter
+				}
+
+				// TODO: Add a counter, also some way to
+				// not log the same message too quick
 				xlog_strerror(LOG_ERR, errno, "accept");
 				continue;
 			}
