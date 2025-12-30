@@ -1,9 +1,10 @@
 uid = plalonde
 gid = plalonde
 enable_coredumps = true
-ca_file = "/home/plalonde/prog/mdr/ca/overnet.pem"
-crl_file = "/home/plalonde/prog/mdr/ca/overnet.crl"
-key_file = "/home/plalonde/prog/mdr/ca/private/overnet_key.pem"
+ca_file = "/home/plalonde/prog/mdr/ca/root.pem"
+cert_file = "/home/plalonde/prog/mdr/ca/root.pem"
+crl_file = "/home/plalonde/prog/mdr/ca/root.crl"
+key_file = "/home/plalonde/prog/mdr/ca/key.pem"
 port = 9790
 listen_backlog = 1024
 prefork = 4
@@ -50,8 +51,8 @@ allowed_mdr_domains = [ 0x00000000 ]
 
 backend_argv = [
 	"/home/plalonde/prog/mdr/mdrd_backend_echo"
-	"/home/plalonde/prog/mdr/ca/overnet.pem"
-	"/home/plalonde/prog/mdr/ca/overnet.crl"
+	"/home/plalonde/prog/mdr/ca/root.pem"
+	"/home/plalonde/prog/mdr/ca/root.crl"
 ]
 backend_uid = plalonde
 backend_gid = plalonde
@@ -60,6 +61,6 @@ backend_gid = plalonde
 backend_promises = "stdio rpath"
 backend_unveils = [
 	"x=/home/plalonde/prog/mdr/mdrd_backend_echo"
-	"r=/home/plalonde/prog/mdr/ca/overnet.pem"
-	"r=/home/plalonde/prog/mdr/ca/overnet.crl"
+	"r=/home/plalonde/prog/mdr/ca/root.pem"
+	"r=/home/plalonde/prog/mdr/ca/root.crl"
 ]

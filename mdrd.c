@@ -30,7 +30,7 @@
 const char *program = "mdrd";
 X509_STORE *store = NULL;
 EVP_PKEY   *priv_key = NULL;
-X509       *ca_crt = NULL;
+X509       *cert = NULL;
 
 struct spawnproc      sproc;
 struct tlsev_listener listener;
@@ -57,6 +57,7 @@ struct {
 	char  counters_sock[PATH_MAX];
 	char  pid_file[PATH_MAX];
 	char  ca_file[PATH_MAX];
+	char  cert_file[PATH_MAX];
 	char  crl_file[PATH_MAX];
 	char  key_file[PATH_MAX];
 
@@ -87,9 +88,10 @@ struct {
 	0,
 	"/var/run/mdrd_counters.sock",
 	"/var/run/mdrd.pid",
-	"ca/overnet.pem",
-	"ca/overnet.crl",
-	"ca/private/overnet_key.pem",
+	"",
+	"",
+	"",
+	"",
 	9790,
 	128,
 	4,
@@ -147,6 +149,12 @@ struct flatconf flatconf_vars[] = {
 		FLATCONF_STRING,
 		mdrd_conf.ca_file,
 		sizeof(mdrd_conf.ca_file)
+	},
+	{
+		"cert_file",
+		FLATCONF_STRING,
+		mdrd_conf.cert_file,
+		sizeof(mdrd_conf.cert_file)
 	},
 	{
 		"crl_file",
@@ -702,9 +710,9 @@ load_keys()
 	}
 	fclose(f);
 
-	if ((f = fopen(mdrd_conf.ca_file, "r")) == NULL)
-		err(1, "fopen: %s", mdrd_conf.ca_file);
-	if ((ca_crt = PEM_read_X509(f, NULL, NULL, NULL)) == NULL) {
+	if ((f = fopen(mdrd_conf.cert_file, "r")) == NULL)
+		err(1, "fopen: %s", mdrd_conf.cert_file);
+	if ((cert = PEM_read_X509(f, NULL, NULL, NULL)) == NULL) {
 		ERR_print_errors_fp(stderr);
 		exit(1);
 	}
@@ -742,9 +750,9 @@ cleanup()
 {
 	mdr_registry_clear();
 	flatconf_free(flatconf_vars);
-	if (ca_crt != NULL) {
-		X509_free(ca_crt);
-		ca_crt = NULL;
+	if (cert != NULL) {
+		X509_free(cert);
+		cert = NULL;
 	}
 	if (priv_key != NULL) {
 		EVP_PKEY_free(priv_key);
@@ -1148,9 +1156,9 @@ main(int argc, char **argv)
 		    "unveil: %s", mdrd_conf.backend_argv[0]);
 		exit(1);
 	}
-	if (unveil(mdrd_conf.ca_file, "r") == -1) {
+	if (unveil(mdrd_conf.cert_file, "r") == -1) {
 		xlog_strerror(LOG_ERR, errno,
-		    "unveil: %s", mdrd_conf.ca_file);
+		    "unveil: %s", mdrd_conf.cert_file);
 		exit(1);
 	}
 	if (unveil(mdrd_conf.crl_file, "r") == -1) {
@@ -1182,7 +1190,7 @@ main(int argc, char **argv)
 	 */
 	SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_OFF);
 
-	if (SSL_CTX_use_certificate(ctx, ca_crt) != 1) {
+	if (SSL_CTX_use_certificate(ctx, cert) != 1) {
 		xlog(LOG_ERR, NULL, "SSL_CTX_use_certificate: %s",
 		    ERR_error_string(ERR_get_error(), NULL));
 		exit(1);
