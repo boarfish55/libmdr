@@ -4,7 +4,6 @@
 #include <err.h>
 #include <errno.h>
 #include <limits.h>
-#include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,8 +11,7 @@
 #include "mdr.h"
 #include "util.h"
 
-extern locale_t log_locale;
-int             verbose = 0;
+int verbose = 0;
 
 #define MDR_DCV_MDR_TEST_1 MDR_DCV(0x00000000, 0x0004, 0x0001)
 #define MDR_DCV_MDR_TEST_2 MDR_DCV(0x00000000, 0x0004, 0x0002)
@@ -138,7 +136,7 @@ fail(int status, int e, const char *fn, int line, const char *msg, ...)
 
 	test_status.status = status;
 	if (asprintf(&test_status.msg, "%s %s (errno=%d; %s:%d)", s,
-	    (e) ? strerror_l(e, log_locale) : "", e, fn, line) == -1)
+	    (e) ? strerror(e) : "", e, fn, line) == -1)
 		err(1, "asprintf");
 	free(s);
 	return &test_status;
@@ -765,9 +763,6 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	if ((log_locale = newlocale(LC_CTYPE_MASK, "C", 0)) == 0)
-		err(1, "newlocale");
-
 	if (mdr_register_builtin_specs() == MDR_FAIL)
 		err(1, "mdr_register_builtin_specs");
 	if ((msg_test_0 = mdr_register_spec(&msgdef_test_0)) == NULL)
@@ -803,6 +798,5 @@ main(int argc, char **argv)
 		}
 	}
 	mdr_registry_clear();
-	freelocale(log_locale);
 	return status;
 }

@@ -588,12 +588,9 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 			case SSL_ERROR_ZERO_RETURN:
 				return 0;
 			case SSL_ERROR_SSL:
-				return XERRF(e, XLOG_SSL, r,
-				    "SSL_accept: SSL_ERROR_SSL: %s",
-				    ERR_error_string(r, NULL));
+				return XERRF(e, XLOG_SSL, r, "SSL_accept");
 			default:
-				return XERRF(e, XLOG_SSL, r, "SSL_accept: %s",
-				    ERR_error_string(r, NULL));
+				return XERRF(e, XLOG_SSL, r, "SSL_accept");
 			}
 		}
 		t->peer_cert = SSL_get_peer_certificate(t->ssl);
@@ -612,8 +609,7 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		case SSL_ERROR_ZERO_RETURN:
 			break;
 		default:
-			return XERRF(e, XLOG_SSL, r, "SSL_read: %s",
-			    ERR_error_string(r, NULL));
+			return XERRF(e, XLOG_SSL, r, "SSL_read");
 		}
 	} else if ((r = l->client_msg_in_cb(t, buf, r,
 	    &t->client_cb_data)) == -1) {
