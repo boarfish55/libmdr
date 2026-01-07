@@ -130,12 +130,9 @@ main(int argc, char **argv)
 
 		switch (umdr_dcv(&m_in)) {
 		case MDR_DCV_MDRD_BECLOSE:
-			// TODO: must init here, because we choose the buf
-			// and flags.
 			r = mdrd_unpack_beclose(&m_in, &id);
 			break;
 		case MDR_DCV_MDRD_BEREQ:
-			// TODO: must init0 for &msg.
 			umdr_init0(&msg, msg_buf, sizeof(msg_buf), MDR_FNONE);
 			r = mdrd_unpack_bereq(&m_in, &id, &fd,
 			    (struct sockaddr *)&peer, &slen, &msg, &peer_cert);
@@ -202,7 +199,7 @@ main(int argc, char **argv)
 				pv[1].type = MDR_I32;
 				pv[1].v.i32 = fd;
 				pv[2].type = MDR_U32;
-				pv[2].v.u32 = MDRD_ST_CERTFAIL;
+				pv[2].v.u32 = MDRD_BERESP_CERTFAIL;
 				pv[3].type = MDR_U32;
 				pv[3].v.u32 = MDRD_BERESP_FCLOSE;
 				if (pmdr_pack(&reply, mdr_msg_mdrd_beresp,
@@ -253,7 +250,7 @@ main(int argc, char **argv)
 		pv[1].type = MDR_I32;
 		pv[1].v.i32 = fd;
 		pv[2].type = MDR_U32;
-		pv[2].v.u32 = MDRD_ST_OK;
+		pv[2].v.u32 = MDRD_BERESP_OK;
 		pv[3].type = MDR_U32;
 		pv[3].v.u32 = MDRD_BERESP_FNONE;
 		pv[4].type = MDR_M;

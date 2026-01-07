@@ -15,6 +15,7 @@
 #include <grp.h>
 #include <limits.h>
 #include <netdb.h>
+#include <poll.h>
 #include <pwd.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -294,13 +295,12 @@ struct flatconf flatconf_vars[] = {
 };
 
 static int
-pack_bereq(struct pmdr *m, uint64_t id, int fd, struct umdr *msg, X509 *peer_cert)
+pack_bereq(struct pmdr *m, uint64_t id, int fd, struct sockaddr_in6 *peer,
+    struct umdr *msg, X509 *peer_cert)
 {
-	size_t               cert_len;
-	unsigned char       *cert_buf;
-	struct pmdr_vec      pv[6];
-	struct sockaddr_in6  peer;
-	socklen_t            slen = sizeof(peer);
+	size_t           cert_len;
+	unsigned char   *cert_buf;
+	struct pmdr_vec  pv[6];
 
 	cert_len = i2d_X509(peer_cert, NULL);
 	if (cert_len < 0) {
@@ -313,28 +313,19 @@ pack_bereq(struct pmdr *m, uint64_t id, int fd, struct umdr *msg, X509 *peer_cer
 		    "%lu > %lu", __func__, cert_len, mdrd_conf.max_cert_size);
 	}
 
-	if (getpeername(fd, (struct sockaddr *)&peer, &slen) == -1) {
-		xlog_strerror(LOG_ERR, errno, "%s: getpeername", __func__);
-		return -1;
-	}
-	if (slen > sizeof(peer)) {
-		xlog(LOG_ERR, NULL, "%s: sock name does not fit in sockaddr");
-		return -1;
-	}
-
 	pv[0].type = MDR_U64;
 	pv[0].v.u64 = id;
 	pv[1].type = MDR_I32;
 	pv[1].v.i32 = fd;
 	pv[2].type = MDR_B;
-	pv[2].v.b.bytes = (peer.sin6_family == AF_INET6)
-	    ? peer.sin6_addr.s6_addr
-	    : (uint8_t *)&(((struct sockaddr_in *)&peer)->sin_addr.s_addr);
-	pv[2].v.b.sz = (peer.sin6_family == AF_INET6) ? 16 : 4;
+	pv[2].v.b.bytes = (peer->sin6_family == AF_INET6)
+	    ? peer->sin6_addr.s6_addr
+	    : (uint8_t *)&(((struct sockaddr_in *)peer)->sin_addr.s_addr);
+	pv[2].v.b.sz = (peer->sin6_family == AF_INET6) ? 16 : 4;
 	pv[3].type = MDR_U16;
-	pv[3].v.u16 = (peer.sin6_family == AF_INET6)
-	    ? ntohs(peer.sin6_port)
-	    : ntohs(((struct sockaddr_in *)&peer)->sin_port);
+	pv[3].v.u16 = (peer->sin6_family == AF_INET6)
+	    ? ntohs(peer->sin6_port)
+	    : ntohs(((struct sockaddr_in *)peer)->sin_port);
 	pv[4].type = MDR_M;
 	pv[4].v.umdr = msg;
 	pv[5].type = MDR_RSVB;
@@ -479,7 +470,6 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		tmp = realloc(cb_data->buf, cb_data->len + n);
 		if (tmp == NULL) {
 			xlog_strerror(LOG_ERR, errno, "%s: realloc", __func__);
-			client_close_cb(t, *data);
 			return -1;
 		}
 		cb_data->buf = tmp;
@@ -527,7 +517,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 
 	pmdr_init(&bereq, bereq_buf, sizeof(bereq_buf), MDR_FNONE);
 	if ((status = pack_bereq(&bereq, tlsev_id(t), tlsev_fd(t),
-	    &cb_data->msg,
+	    tlsev_peer(t), &cb_data->msg,
 	    (cb_data->send_cert) ? tlsev_peer_cert(t) : NULL)) == 0) {
 		/*
 		 * We only sent the cert the first time; backend should
@@ -632,33 +622,37 @@ backend_msg_in_cb(int fd)
 	pmdr_init(&reply, reply_buf, sizeof(reply_buf), MDR_FNONE);
 
 	switch (resp_status) {
-	case MDRD_ST_OK:
+	case MDRD_BERESP_OK:
 		if (umdr_dcv(&beresp) != MDR_DCV_MDRD_BERESP_WMSG) {
 			xlog_strerror(LOG_ERR, errno,
 			    "%s: beresp from backend did not contain a "
 			    "message payload", __func__);
 			pv[0].type = MDR_U32;
-			pv[0].v.u32 = MDRD_ST_NOBEMSG;;
+			pv[0].v.u32 = MDR_ERR_BEFAIL;
 			pv[1].type = MDR_S;
-			pv[1].v.s = "beresp from backend did not contain a "
+			pv[1].v.s = "backend response did not contain a "
 			    "message payload";
-			if (pmdr_pack(&reply, mdr_msg_mdrd_error, pv,
+			if (pmdr_pack(&reply, mdr_msg_error, pv,
 			    PMDRVECLEN(pv)) == MDR_FAIL) {
 				xlog(LOG_ERR, NULL, "%s: failed to pack error "
 				    "for client after resp_status %u",
 				    __func__, resp_status);
 				goto fail;
 			}
-			goto fail;
+			if ((r = tlsev_reply(t, pmdr_buf(&reply),
+			    pmdr_size(&reply))) <= 0 ||
+			    resp_flags & MDRD_BERESP_FCLOSE)
+				tlsev_drain(t);
+		} else {
+			if ((r = tlsev_reply(t, umdr_buf(&uv[4].v.m),
+			    umdr_size(&uv[4].v.m))) <= 0 ||
+			    resp_flags & MDRD_BERESP_FCLOSE)
+				tlsev_drain(t);
 		}
-		if ((r = tlsev_reply(t, umdr_buf(&uv[4].v.m),
-		    umdr_size(&uv[4].v.m))) <= 0 ||
-		    resp_flags & MDRD_BERESP_FCLOSE)
-			tlsev_drain(t);
 		break;
-	case MDRD_ST_DENIED:
+	case MDRD_BERESP_DENIED:
 		pv[0].type = MDR_U32;
-		pv[0].v.u32 = resp_status;
+		pv[0].v.u32 = MDR_ERR_DENIED;
 		pv[1].type = MDR_S;
 		pv[1].v.s = "access denied";
 		if (pmdr_pack(&reply, mdr_msg_mdrd_error, pv,
@@ -668,14 +662,17 @@ backend_msg_in_cb(int fd)
 			    __func__, resp_status);
 			goto fail;
 		}
-		tlsev_reply(t, pmdr_buf(&reply), pmdr_size(&reply));
-		tlsev_drain(t);
+		if ((r = tlsev_reply(t, pmdr_buf(&reply),
+		    pmdr_size(&reply))) <= 0 ||
+		    resp_flags & MDRD_BERESP_FCLOSE)
+			tlsev_drain(t);
 		break;
-	case MDRD_ST_CERTFAIL:
+	case MDRD_BERESP_NOCERT:
+	case MDRD_BERESP_CERTFAIL:
 		pv[0].type = MDR_U32;
-		pv[0].v.u32 = resp_status;
+		pv[0].v.u32 = MDR_ERR_CERTFAIL;
 		pv[1].type = MDR_S;
-		pv[1].v.s = "certificate validation failed";
+		pv[1].v.s = "certificate missing or validation failed";
 		if (pmdr_pack(&reply, mdr_msg_mdrd_error, pv,
 		    PMDRVECLEN(pv)) == MDR_FAIL) {
 			xlog(LOG_ERR, NULL, "%s: failed to pack error for "
@@ -683,8 +680,27 @@ backend_msg_in_cb(int fd)
 			    __func__, resp_status);
 			goto fail;
 		}
-		tlsev_reply(t, pmdr_buf(&reply), pmdr_size(&reply));
-		tlsev_drain(t);
+		if ((r = tlsev_reply(t, pmdr_buf(&reply),
+		    pmdr_size(&reply))) <= 0 ||
+		    resp_flags & MDRD_BERESP_FCLOSE)
+			tlsev_drain(t);
+		break;
+	case MDRD_BERESP_BEFAIL:
+		pv[0].type = MDR_U32;
+		pv[0].v.u32 = MDR_ERR_BEFAIL;
+		pv[1].type = MDR_S;
+		pv[1].v.s = "error due to backend failure";
+		if (pmdr_pack(&reply, mdr_msg_mdrd_error, pv,
+		    PMDRVECLEN(pv)) == MDR_FAIL) {
+			xlog(LOG_ERR, NULL, "%s: failed to pack error for "
+			    "client after resp_status %u",
+			    __func__, resp_status);
+			goto fail;
+		}
+		if ((r = tlsev_reply(t, pmdr_buf(&reply),
+		    pmdr_size(&reply))) <= 0 ||
+		    resp_flags & MDRD_BERESP_FCLOSE)
+			tlsev_drain(t);
 		break;
 	default:
 		xlog(LOG_ERR, NULL, "%s: unknown mdr status from backend: %u",
@@ -968,13 +984,14 @@ counters_sig_handler(int sig)
 void
 counter_reader()
 {
-	int                lsock, sock, i, c;
+	int                lsock, sock, i, c, r;
 	ssize_t            w;
 	struct sockaddr_un saddr;
 	struct timeval     timeout = {1, 0};
 	pid_t              pid;
 	uint64_t           v[COUNTER_LAST];
 	struct sigaction   act;
+	struct pollfd      pfd;
 
 	setproctitle("counters");
 	xlog_init(program, NULL, NULL, 1);
@@ -986,6 +1003,10 @@ counter_reader()
 	unlink(mdrd_conf.counters_sock);
 
 	if (fcntl(lsock, F_SETFD, FD_CLOEXEC) == -1) {
+		xlog_strerror(LOG_ERR, errno, "fcntl");
+		exit(1);
+	}
+	if (fcntl(lsock, F_SETFD, O_NONBLOCK) == -1) {
 		xlog_strerror(LOG_ERR, errno, "fcntl");
 		exit(1);
 	}
@@ -1016,6 +1037,22 @@ counter_reader()
 	}
 
 	while (!shutdown_triggered) {
+		pfd.fd = lsock;
+		pfd.events = POLLIN;
+		r = poll(&pfd, 1, 1000);
+		if (r == -1) {
+			if (errno == EINTR)
+				continue;
+			xlog_strerror(LOG_ERR, errno, "poll");
+			exit(1);
+		}
+
+		if (r == 0) {
+			if (getppid() == 1)
+				shutdown_triggered = 1;
+			continue;
+		}
+
 		if ((sock = accept(lsock, NULL, 0)) == -1) {
 			if (errno == EINTR)
 				continue;
@@ -1307,6 +1344,7 @@ main(int argc, char **argv)
 			return -1;
 		} else if (pid == 0) {
 			SSL_CTX_free(ctx);
+			spawnproc_close(&sproc);
 			counter_reader();
 		}
 
