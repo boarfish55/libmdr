@@ -132,6 +132,9 @@ main(int argc, char **argv)
 		case MDR_DCV_MDRD_BECLOSE:
 			r = mdrd_unpack_beclose(&m_in, &id);
 			break;
+		case MDR_DCV_MDRD_BESESSERR:
+			r = mdrd_unpack_besesserr(&m_in, &id);
+			break;
 		case MDR_DCV_MDRD_BEREQ:
 			umdr_init0(&msg, msg_buf, sizeof(msg_buf), MDR_FNONE);
 			r = mdrd_unpack_bereq(&m_in, &id, &fd,
@@ -168,7 +171,8 @@ main(int argc, char **argv)
 			}
 		}
 
-		if (umdr_dcv(&m_in) == MDR_DCV_MDRD_BECLOSE) {
+		if (umdr_dcv(&m_in) == MDR_DCV_MDRD_BECLOSE ||
+		    umdr_dcv(&m_in) == MDR_DCV_MDRD_BESESSERR) {
 			/*
 			 * Session was not found but we're cleaning up, so
 			 * nothing to do.
@@ -194,18 +198,11 @@ main(int argc, char **argv)
 		if (session == NULL) {
 			xlog(LOG_NOTICE, NULL, "new session for id %lu", id);
 			if (peer_cert == NULL) {
-				pv[0].type = MDR_U64;
-				pv[0].v.u64 = id;
-				pv[1].type = MDR_I32;
-				pv[1].v.i32 = fd;
-				pv[2].type = MDR_U32;
-				pv[2].v.u32 = MDRD_BERESP_CERTFAIL;
-				pv[3].type = MDR_U32;
-				pv[3].v.u32 = MDRD_BERESP_FCLOSE;
-				if (pmdr_pack(&reply, mdr_msg_mdrd_beresp,
-				    pv, PMDRVECLEN(pv)) == MDR_FAIL) {
+				if (mdrd_pack_error(&reply, id, fd,
+				    MDRD_BERESP_FCLOSE, MDR_ERR_CERTFAIL,
+				    "no certificate") == MDR_FAIL) {
 					xlog(LOG_ERR, NULL,
-					    "mdr_pack/mdrd_beresp: %d", errno);
+					    "mdr_packerror: %d", errno);
 					exit(1);
 				}
 				if (write(1, pmdr_buf(&reply),
@@ -250,12 +247,10 @@ main(int argc, char **argv)
 		pv[1].type = MDR_I32;
 		pv[1].v.i32 = fd;
 		pv[2].type = MDR_U32;
-		pv[2].v.u32 = MDRD_BERESP_OK;
-		pv[3].type = MDR_U32;
-		pv[3].v.u32 = MDRD_BERESP_FNONE;
-		pv[4].type = MDR_M;
-		pv[4].v.umdr = &msg;
-		if (pmdr_pack(&reply, mdr_msg_mdrd_beresp_wmsg, pv,
+		pv[2].v.u32 = MDRD_BERESP_FNONE;
+		pv[3].type = MDR_M;
+		pv[3].v.umdr = &msg;
+		if (pmdr_pack(&reply, mdr_msg_mdrd_beresp, pv,
 		    PMDRVECLEN(pv)) == MDR_FAIL) {
 			xlog_strerror(LOG_ERR, errno,
 			    "mdr_pack/mdrd_beresp_wmsg");

@@ -550,9 +550,9 @@ backend_msg_in_cb(int fd)
 	struct tlsev    *t;
 	uint64_t         id;
 	int              tlsfd, r;
-	uint32_t         resp_status, resp_flags;
-	struct pmdr_vec  pv[2];
-	struct umdr_vec  uv[5];
+	uint32_t         resp_flags;
+	struct umdr_vec  uv[4];
+	struct pmdr_vec  pv[1];
 
 	if ((r = mdr_buf_from_fd(fd, beresp_buf,
 	    sizeof(beresp_buf))) == MDR_FAIL) {
@@ -573,42 +573,42 @@ backend_msg_in_cb(int fd)
 		goto fail;
 	}
 
-	switch (umdr_dcv(&beresp)) {
-	case MDR_DCV_MDRD_BERESP:
-		if (umdr_unpack(&beresp, mdr_msg_mdrd_beresp,
-		    uv, UMDRVECLEN(uv)) == MDR_FAIL) {
-			xlog_strerror(LOG_ERR, errno,
-			    "%s: umdr_unpack/mdr_msg_mdrd_beresp",
-			    __func__);
-			goto fail;
-		}
-		id = uv[0].v.u64;
-		tlsfd = uv[1].v.i32;
-		resp_status = uv[2].v.u32;
-		resp_flags = uv[3].v.u32;
-		break;
-	case MDR_DCV_MDRD_BERESP_WMSG:
-		if (umdr_unpack(&beresp, mdr_msg_mdrd_beresp_wmsg,
-		    uv, UMDRVECLEN(uv)) == MDR_FAIL) {
-			xlog_strerror(LOG_ERR, errno,
-			    "%s: mdr_unpack_payload/mdr_msg_mdrd_beresp_wmsg",
-			    __func__);
-			goto fail;
-		}
-		id = uv[0].v.u64;
-		tlsfd = uv[1].v.i32;
-		resp_status = uv[2].v.u32;
-		resp_flags = uv[3].v.u32;
-		break;
-	default:
+	if (umdr_dcv(&beresp) != MDR_DCV_MDRD_BERESP) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: unknown response from backend", __func__);
 		goto fail;
 	}
 
+	if (umdr_unpack(&beresp, mdr_msg_mdrd_beresp,
+	    uv, UMDRVECLEN(uv)) == MDR_FAIL) {
+		xlog_strerror(LOG_ERR, errno,
+		    "%s: mdr_unpack_payload/mdr_msg_mdrd_beresp",
+		    __func__);
+		goto fail;
+	}
+
+	id = uv[0].v.u64;
+	tlsfd = uv[1].v.i32;
+	resp_flags = uv[2].v.u32;
+
+	pmdr_init(&reply, reply_buf, sizeof(reply_buf), MDR_FNONE);
+
 	if ((t = tlsev_get(&listener, tlsfd)) == NULL) {
 		xlog(LOG_ERR, NULL,
 		    "%s: tlsev_get on fd %d not found", __func__, fd);
+		pv[0].type = MDR_U64;
+		pv[0].v.u64 = id;
+		if (pmdr_pack(&reply, mdr_msg_mdrd_besesserr,
+		    pv, PMDRVECLEN(pv)) == MDR_FAIL) {
+			xlog(LOG_ERR, NULL,
+			    "%s: pmdr_pack/mdr_msg_mdrd_besesserr", __func__);
+			return 1;
+		}
+		// TODO: possible deadlock with full buffer
+		if (writeall(backend_wfd, pmdr_buf(&reply),
+		    pmdr_size(&reply)) == -1) {
+			xlog_strerror(LOG_ERR, errno, "%s: writeall", __func__);
+		}
 		return 1;
 	}
 
@@ -616,97 +616,26 @@ backend_msg_in_cb(int fd)
 		xlog(LOG_ERR, NULL,
 		    "%s: received beresp from backend for a client that is "
 		    " gone on fd %d", __func__, tlsfd);
+		pv[0].type = MDR_U64;
+		pv[0].v.u64 = id;
+		if (pmdr_pack(&reply, mdr_msg_mdrd_besesserr,
+		    pv, PMDRVECLEN(pv)) == MDR_FAIL) {
+			xlog(LOG_ERR, NULL,
+			    "%s: pmdr_pack/mdr_msg_mdrd_besesserr", __func__);
+			return 1;
+		}
+		// TODO: possible deadlock with full buffer
+		if (writeall(backend_wfd, pmdr_buf(&reply),
+		    pmdr_size(&reply)) == -1) {
+			xlog_strerror(LOG_ERR, errno, "%s: writeall", __func__);
+		}
 		return 1;
 	}
 
-	pmdr_init(&reply, reply_buf, sizeof(reply_buf), MDR_FNONE);
-
-	switch (resp_status) {
-	case MDRD_BERESP_OK:
-		if (umdr_dcv(&beresp) != MDR_DCV_MDRD_BERESP_WMSG) {
-			xlog_strerror(LOG_ERR, errno,
-			    "%s: beresp from backend did not contain a "
-			    "message payload", __func__);
-			pv[0].type = MDR_U32;
-			pv[0].v.u32 = MDR_ERR_BEFAIL;
-			pv[1].type = MDR_S;
-			pv[1].v.s = "backend response did not contain a "
-			    "message payload";
-			if (pmdr_pack(&reply, mdr_msg_error, pv,
-			    PMDRVECLEN(pv)) == MDR_FAIL) {
-				xlog(LOG_ERR, NULL, "%s: failed to pack error "
-				    "for client after resp_status %u",
-				    __func__, resp_status);
-				goto fail;
-			}
-			if ((r = tlsev_reply(t, pmdr_buf(&reply),
-			    pmdr_size(&reply))) <= 0 ||
-			    resp_flags & MDRD_BERESP_FCLOSE)
-				tlsev_drain(t);
-		} else {
-			if ((r = tlsev_reply(t, umdr_buf(&uv[4].v.m),
-			    umdr_size(&uv[4].v.m))) <= 0 ||
-			    resp_flags & MDRD_BERESP_FCLOSE)
-				tlsev_drain(t);
-		}
-		break;
-	case MDRD_BERESP_DENIED:
-		pv[0].type = MDR_U32;
-		pv[0].v.u32 = MDR_ERR_DENIED;
-		pv[1].type = MDR_S;
-		pv[1].v.s = "access denied";
-		if (pmdr_pack(&reply, mdr_msg_mdrd_error, pv,
-		    PMDRVECLEN(pv)) == MDR_FAIL) {
-			xlog(LOG_ERR, NULL, "%s: failed to pack error for "
-			    "client after resp_status %u",
-			    __func__, resp_status);
-			goto fail;
-		}
-		if ((r = tlsev_reply(t, pmdr_buf(&reply),
-		    pmdr_size(&reply))) <= 0 ||
-		    resp_flags & MDRD_BERESP_FCLOSE)
-			tlsev_drain(t);
-		break;
-	case MDRD_BERESP_NOCERT:
-	case MDRD_BERESP_CERTFAIL:
-		pv[0].type = MDR_U32;
-		pv[0].v.u32 = MDR_ERR_CERTFAIL;
-		pv[1].type = MDR_S;
-		pv[1].v.s = "certificate missing or validation failed";
-		if (pmdr_pack(&reply, mdr_msg_mdrd_error, pv,
-		    PMDRVECLEN(pv)) == MDR_FAIL) {
-			xlog(LOG_ERR, NULL, "%s: failed to pack error for "
-			    "client after resp_status %u",
-			    __func__, resp_status);
-			goto fail;
-		}
-		if ((r = tlsev_reply(t, pmdr_buf(&reply),
-		    pmdr_size(&reply))) <= 0 ||
-		    resp_flags & MDRD_BERESP_FCLOSE)
-			tlsev_drain(t);
-		break;
-	case MDRD_BERESP_BEFAIL:
-		pv[0].type = MDR_U32;
-		pv[0].v.u32 = MDR_ERR_BEFAIL;
-		pv[1].type = MDR_S;
-		pv[1].v.s = "error due to backend failure";
-		if (pmdr_pack(&reply, mdr_msg_mdrd_error, pv,
-		    PMDRVECLEN(pv)) == MDR_FAIL) {
-			xlog(LOG_ERR, NULL, "%s: failed to pack error for "
-			    "client after resp_status %u",
-			    __func__, resp_status);
-			goto fail;
-		}
-		if ((r = tlsev_reply(t, pmdr_buf(&reply),
-		    pmdr_size(&reply))) <= 0 ||
-		    resp_flags & MDRD_BERESP_FCLOSE)
-			tlsev_drain(t);
-		break;
-	default:
-		xlog(LOG_ERR, NULL, "%s: unknown mdr status from backend: %u",
-		    __func__, resp_status);
-		goto fail;
-	}
+	if ((r = tlsev_reply(t, umdr_buf(&uv[4].v.m),
+	    umdr_size(&uv[4].v.m))) <= 0 ||
+	    resp_flags & MDRD_BERESP_FCLOSE)
+		tlsev_drain(t);
 
 	counters_incr(COUNTER_MESSAGES_OUT);
 

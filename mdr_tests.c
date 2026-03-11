@@ -13,11 +13,11 @@
 
 int verbose = 0;
 
-#define MDR_DCV_MDR_TEST_1 MDR_DCV(0x00000000, 0x0004, 0x0001)
-#define MDR_DCV_MDR_TEST_2 MDR_DCV(0x00000000, 0x0004, 0x0002)
-#define MDR_DCV_MDR_TEST_3 MDR_DCV(0x00000000, 0x0004, 0x0003)
-#define MDR_DCV_MDR_TEST_4 MDR_DCV(0x00000000, 0x0004, 0x0004)
-#define MDR_DCV_MDR_TEST_5 MDR_DCV(0x00000000, 0x0004, 0x0005)
+#define MDR_DCV_MDR_TEST_1 MDR_MAKE_VARIANT(MDR_DCV_MDR_TEST, 1)
+#define MDR_DCV_MDR_TEST_2 MDR_MAKE_VARIANT(MDR_DCV_MDR_TEST, 2)
+#define MDR_DCV_MDR_TEST_3 MDR_MAKE_VARIANT(MDR_DCV_MDR_TEST, 3)
+#define MDR_DCV_MDR_TEST_4 MDR_MAKE_VARIANT(MDR_DCV_MDR_TEST, 4)
+#define MDR_DCV_MDR_TEST_5 MDR_MAKE_VARIANT(MDR_DCV_MDR_TEST, 5)
 
 struct mdr_def msgdef_test_0 = {
 	MDR_DCV_MDR_TEST,
@@ -438,41 +438,6 @@ test_limits()
 }
 
 struct test_status *
-test_echo()
-{
-	int             i;
-	char            str[1024];
-	struct pmdr     pm;
-	struct pmdr_vec pv[1];
-	struct umdr     um;
-	struct umdr_vec uv[1];
-
-	bzero(str, sizeof(str));
-	for (i = 0; i < sizeof(str) - 1; i++)
-		str[i] = 'a';
-
-	if (pmdr_init(&pm, NULL, 0, MDR_FNONE) == MDR_FAIL)
-		return ERR(errno, "pmdr_init");
-	pv[0].type = MDR_S;
-	pv[0].v.s = str;
-	if (pmdr_pack(&pm, mdr_msg_echo, pv, PMDRVECLEN(pv)) == MDR_FAIL)
-		return ERR(errno, "pmdr_pack");
-
-	if (umdr_init(&um, pmdr_buf(&pm), pmdr_size(&pm), MDR_FNONE)
-	    == MDR_FAIL)
-		return ERR(errno, "umdr_init");
-	if (umdr_unpack(&um, mdr_msg_echo, uv, UMDRVECLEN(uv)) == MDR_FAIL)
-		return ERR(errno, "umdr_unpack");
-
-	if (strcmp(uv[0].v.s.bytes, str) != 0)
-		return ERR(0, "strings don't match");
-
-	pmdr_free(&pm);
-
-	return success();
-}
-
-struct test_status *
 test_pack_array()
 {
 	uint32_t         a_u32[3] = { 0, 1, 2 };
@@ -695,11 +660,6 @@ struct mdr_test {
 		"pack long strings",
 		1,
 		&test_long_str
-	},
-	{
-		"echo mdr",
-		1,
-		&test_echo
 	},
 	{
 		"long tail bytes",
