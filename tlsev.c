@@ -1229,11 +1229,13 @@ tlsev_poll(struct tlsev_listener *l)
 }
 
 int
-tlsev_run(struct tlsev_listener *l)
+tlsev_run(struct tlsev_listener *l, int(*tasks)(void *), void *task_args)
 {
 	clock_gettime(CLOCK_MONOTONIC, &l->last_purge);
 	while (!l->shutdown_triggered || l->active_clients > 0) {
 		if (tlsev_poll(l) == -1)
+			return -1;
+		if (tasks != NULL && !tasks(task_args))
 			return -1;
 	}
 	return 0;

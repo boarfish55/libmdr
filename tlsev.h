@@ -110,7 +110,7 @@ int                  tlsev_init(struct tlsev_listener *, SSL_CTX *, int *,
 int                  tlsev_add_fd_cb(struct tlsev_listener *,
                          struct tlsev_fd_cb *);
 void                 tlsev_destroy(struct tlsev_listener *);
-int                  tlsev_run(struct tlsev_listener *);
+int                  tlsev_run(struct tlsev_listener *, int(*)(void *), void *);
 void                 tlsev_shutdown(struct tlsev_listener *);
 X509                *tlsev_peer_cert(struct tlsev *);
 struct sockaddr_in6 *tlsev_peer(struct tlsev *);

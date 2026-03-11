@@ -1,3 +1,4 @@
+#include <sys/file.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -38,6 +39,8 @@ struct tlsev_listener listener;
 struct tlsev_fd_cb    backend_reader;
 int                   backend_wfd;
 volatile sig_atomic_t shutdown_triggered = 0;
+volatile sig_atomic_t reload_cert = 0;
+struct timespec       last_cert_mtime;
 
 int  foreground = 0;
 int  debug = 0;
@@ -62,6 +65,8 @@ struct {
 	char  crl_file[PATH_MAX];
 	char  crl_path[PATH_MAX];
 	char  key_file[PATH_MAX];
+	int   require_client_cert;
+	int   monitor_cert;
 
 	uint64_t port;
 	uint64_t listen_backlog;
@@ -95,6 +100,8 @@ struct {
 	"",
 	"",
 	"",
+	0,
+	1,
 	9790,
 	128,
 	4,
@@ -176,6 +183,18 @@ struct flatconf flatconf_vars[] = {
 		FLATCONF_STRING,
 		mdrd_conf.key_file,
 		sizeof(mdrd_conf.key_file)
+	},
+	{
+		"require_client_cert",
+		FLATCONF_BOOLINT,
+		&mdrd_conf.require_client_cert,
+		sizeof(mdrd_conf.require_client_cert)
+	},
+	{
+		"monitor_cert",
+		FLATCONF_BOOLINT,
+		&mdrd_conf.monitor_cert,
+		sizeof(mdrd_conf.monitor_cert)
 	},
 	{
 		"port",
@@ -399,8 +418,16 @@ void
 handle_signals(int sig)
 {
 	xlog(LOG_NOTICE, NULL, "signal received: %d", sig);
-	shutdown_triggered = 1;
-	tlsev_shutdown(&listener);
+	switch (sig) {
+	case SIGHUP:
+		reload_cert = 1;
+		break;
+	case SIGTERM:
+	case SIGINT:
+	default:
+		shutdown_triggered = 1;
+		tlsev_shutdown(&listener);
+	}
 }
 
 struct client_cb_data {
@@ -778,6 +805,52 @@ cleanup()
 }
 
 int
+reload_cert_cb(void *args)
+{
+	int          fd;
+	struct stat  st;
+	SSL_CTX     *ctx = (SSL_CTX *)args;
+
+	if (ctx == NULL)
+		return 0;
+
+	if (!reload_cert && !mdrd_conf.monitor_cert)
+		return 1;
+
+	if (stat(mdrd_conf.cert_file, &st) == -1) {
+		xlog_strerror(LOG_ERR, errno,
+		    "%s: stat: %s", __func__, mdrd_conf.cert_file);
+		return 0;
+	}
+
+	if (timespeccmp(&st.st_mtim, &last_cert_mtime, ==) == 0)
+		return 1;
+
+	if ((fd = open(mdrd_conf.cert_file, O_RDONLY)) == -1) {
+		xlog_strerror(LOG_ERR, errno,
+		    "%s: open: %s", __func__, mdrd_conf.cert_file);
+		return 0;
+	}
+	if (flock(fd, LOCK_SH) == -1) {
+		xlog_strerror(LOG_ERR, errno,
+		    "%s: flock: %s", __func__, mdrd_conf.cert_file);
+		close(fd);
+		return 0;
+	}
+	if (SSL_CTX_use_certificate_chain_file(ctx, mdrd_conf.cert_file) != 1) {
+		xlog(LOG_ERR, NULL, "SSL_CTX_use_certificate: %s",
+		    ERR_error_string(ERR_get_error(), NULL));
+		close(fd);
+		return 0;
+	}
+	close(fd);
+
+	memcpy(&last_cert_mtime, &st.st_mtim, sizeof(last_cert_mtime));
+	reload_cert = 0;
+	return 1;
+}
+
+int
 run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
 {
 	int status;
@@ -796,7 +869,7 @@ run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
 		xlog_strerror(LOG_ERR, errno, "tlsev_add_fd_cb");
 		return 1;
 	}
-	status = tlsev_run(&listener);
+	status = tlsev_run(&listener, &reload_cert_cb, ctx);
 	SSL_CTX_free(ctx);
 	tlsev_destroy(&listener);
 	cleanup();
@@ -1096,6 +1169,10 @@ main(int argc, char **argv)
 		}
 	}
 
+	/*
+	 * Most settings cannot be reloaded without restarting the daemon
+	 * so we don't reload the config on SIGHUP.
+	 */
 	switch (flatconf_read(config_file_path, flatconf_vars, NULL)) {
 	case 0:
 		/* Success */
@@ -1154,6 +1231,7 @@ main(int argc, char **argv)
 	act.sa_flags = 0;
 	act.sa_handler = handle_signals;
 	if (sigaction(SIGINT, &act, NULL) == -1 ||
+	    sigaction(SIGHUP, &act, NULL) == -1 ||
 	    sigaction(SIGTERM, &act, NULL) == -1) {
 		err(1, "sigaction");
 	}
@@ -1221,7 +1299,13 @@ main(int argc, char **argv)
 	SSL_CTX_set_security_level(ctx, 3);
 	SSL_CTX_set_cert_store(ctx, store);
 	SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
-	SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, verify_callback_daemon);
+	if (mdrd_conf.require_client_cert)
+		SSL_CTX_set_verify(ctx,
+		    SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
+		    verify_callback_daemon);
+	else
+		SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER,
+		    verify_callback_daemon);
 
 	/*
 	 * Disable internal session caching since we prefork multiple processes
