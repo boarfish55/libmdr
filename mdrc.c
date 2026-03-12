@@ -30,6 +30,119 @@ usage()
 }
 
 void
+make_spec(uint32_t domain, uint16_t code, uint16_t variant,
+    const char *spec, int count)
+{
+	char            spbuf[22];
+	const char     *p, *prev;
+	int             finish = 0, i;
+	struct mdr_def *def;
+	uint64_t        bits;
+	char           *end;
+
+	def = malloc(sizeof(struct mdr_def) + count + 1);
+	if (def == NULL)
+		err(1, "malloc");
+
+	def->dcv = MDR_DCV(domain, code, variant);
+	def->label = "mdrc.custom";
+	bzero(def->types, count);
+	def->types[count] = MDR_LAST;
+
+	/*
+	 * Possible types in spec:
+	 *   u8, u16, u32, u64
+	 *   i8, i16, i32, i64
+	 *   bN, sN
+	 */
+	for (p = spec, prev = spec, i = 0; !finish && i < count; p++) {
+		if (*p == '\0')
+			finish = 1;
+
+		if (*p != ':' && *p != '\0')
+			continue;
+
+		if (strlcpy(spbuf, prev,
+		    (((p - prev) + 1) < sizeof(spbuf))
+		    ? ((p - prev) + 1)
+		    : sizeof(spbuf)) >= sizeof(spbuf))
+			errx(1, "invalid format spec");
+
+		if (strcmp(spbuf, "m") == 0) {
+			def->types[i] = MDR_M;
+		} else if (strcmp(spbuf, "b") == 0) {
+			def->types[i] = MDR_B;
+		} else if (strcmp(spbuf, "s") == 0) {
+			def->types[i] = MDR_S;
+		} else if (spbuf[0] == 'u' || spbuf[0] == 'i') {
+			if (strlen(spbuf) < 2)
+				errx(1, "invalid format spec");
+
+			errno = 0;
+			bits = strtoull(spbuf + 1, &end, 10);
+			if (errno || *end != '\0')
+				errx(1, "invalid format spec");
+
+			switch (bits) {
+			case 8:
+				if (spbuf[0] == 'i')
+					def->types[i] = MDR_I8;
+				else
+					def->types[i] = MDR_U8;
+				break;
+			case 16:
+				if (spbuf[0] == 'i')
+					def->types[i] = MDR_I16;
+				else
+					def->types[i] = MDR_U16;
+				break;
+			case 32:
+				if (spbuf[0] == 'i')
+					def->types[i] = MDR_I32;
+				else
+					def->types[i] = MDR_U32;
+				break;
+			case 64:
+				if (spbuf[0] == 'i')
+					def->types[i] = MDR_I64;
+				else
+					def->types[i] = MDR_U64;
+				break;
+			default:
+				errx(1, "invalid format spec");
+			}
+		} else if (spbuf[0] == 'f') {
+			if (strlen(spbuf) < 3)
+				errx(1, "invalid format spec");
+
+			errno = 0;
+			bits = strtoull(spbuf + 1, &end, 10);
+			if (errno || *end != '\0')
+				errx(1, "invalid format spec");
+
+			switch (bits) {
+			case 32:
+				def->types[i] = MDR_F32;
+				break;
+			case 64:
+				def->types[i] = MDR_F64;
+				break;
+			default:
+				errx(1, "invalid format spec");
+			}
+		} else {
+			/* Unknown type specifier */
+			errx(1, "invalid format spec");
+		}
+		prev = p + 1;
+		i++;
+	}
+
+	if ((m_spec = mdr_register_spec(def)) == NULL)
+		err(1, "mdr_register_spec");
+}
+
+void
 pack(struct pmdr *m, const char *spec, const char **args, int count)
 {
 	int               finish = 0;
@@ -585,6 +698,11 @@ main(int argc, char **argv)
 	if (mdr_register_builtin_specs() == MDR_FAIL)
 		err(1, "mdr_register_builtin_specs");
 	m_spec = mdr_registry_get(mdr_mkdcv(domain, code, variant));
+	if (m_spec == NULL) {
+		warnx("message (%u:%u:%u) not found; creating it",
+		    domain, code, variant);
+		make_spec(domain, code, variant, format, argc - optind);
+	}
 
 	r = pmdr_init(&m, NULL, 0, MDR_FNONE);
 	if (r == MDR_FAIL)

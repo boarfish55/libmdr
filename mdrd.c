@@ -537,7 +537,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 	}
 	if (mdrd_conf.allowed_mdr_domains[i] == NULL) {
 		counters_incr(COUNTER_MESSAGES_IN_DENIED);
-		xlog_strerror(LOG_ERR, errno,
+		xlog(LOG_ERR, NULL,
 		    "%s: domain not allowed", __func__);
 		return -1;
 	}
@@ -659,8 +659,8 @@ backend_msg_in_cb(int fd)
 		return 1;
 	}
 
-	if ((r = tlsev_reply(t, umdr_buf(&uv[4].v.m),
-	    umdr_size(&uv[4].v.m))) <= 0 ||
+	if ((r = tlsev_reply(t, umdr_buf(&uv[3].v.m),
+	    umdr_size(&uv[3].v.m))) <= 0 ||
 	    resp_flags & MDRD_BERESP_FCLOSE)
 		tlsev_drain(t);
 
