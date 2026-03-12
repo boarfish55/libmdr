@@ -7,9 +7,6 @@
 #include <stdint.h>
 #include "mdr.h"
 
-/* Backend errors with no session information */
-#define MDRD_ERROR_OS        1
-
 /* Backend response flags */
 #define MDRD_BERESP_FNONE  0x00000000
 #define MDRD_BERESP_FCLOSE 0x00000001  /* Client connection should be closed */
