@@ -398,10 +398,13 @@ verify_callback_daemon(int ok, X509_STORE_CTX *ctx)
 		X509_NAME_oneline(X509_get_subject_name(err_cert),
 		    name, sizeof(name));
 		e = X509_STORE_CTX_get_error(ctx);
-		xlog(LOG_NOTICE, NULL, "verify error for %s (%s:%s): %s\n",
-		    name, hbuf, sbuf, X509_verify_cert_error_string(e));
+		xlog(LOG_NOTICE, NULL, "verify error for %s (%s:%s): %s%s\n",
+		    name, hbuf, sbuf, X509_verify_cert_error_string(e),
+		    (mdrd_conf.require_client_cert)
+		    ? ""
+		    : "; valid cert not required so allowing anyway");
 	}
-	return ok;
+	return ok || !mdrd_conf.require_client_cert;
 }
 
 void
@@ -788,7 +791,7 @@ load_keys(struct xerr *e)
 	if (!X509_STORE_set_flags(store, X509_V_FLAG_X509_STRICT|
 	    X509_V_FLAG_CRL_CHECK|X509_V_FLAG_CRL_CHECK_ALL))
 		return XERRF(e, XLOG_SSL, ERR_get_error(),
-		    "X509_STORE_add_cert");
+		    "X509_STORE_set_flags");
 
 	return 0;
 }
