@@ -14,6 +14,11 @@
 #include "util.h"
 #include "xlog.h"
 
+struct spawnmsg {
+	int   status;
+	pid_t child;
+};
+
 int
 daemonize(const char *program, const char *pid_path, int nochdir, int noclose, struct xerr *e)
 {
@@ -174,12 +179,12 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 	char              *buf, *a, *start, *user, *group;
 	char             **argv, **tmp;
 	int                argvlen, argvi;
-	int                status;
 	size_t             sz;
 	struct sigaction   act;
 	long               max = (sysconf(_SC_ARG_MAX) * 2) + (32 * 2);
 	struct xerr        e;
 	int                fds[2];
+	struct spawnmsg    smsg;
 	struct iovec       iov[1];
 	struct msghdr      msg;
 	struct cmsghdr    *cmsg;
@@ -300,16 +305,18 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 		 */
 		argv[argvi - 2] = NULL;
 
-		status = spawn(argv, &fds[0], &fds[1], user, group, xerrz(&e));
-		if (status == -1) {
+		smsg.status = spawn(argv, &smsg.child, &fds[0], &fds[1],
+		    user, group, xerrz(&e));
+		if (smsg.status == -1) {
 			xlog(LOG_ERR, &e, "%s: spawn", __func__);
 			if (e.sp == XLOG_ERRNO)
-				status = e.code;
+				smsg.status = e.code;
 			fds[0] = -1;
 			fds[1] = -1;
+			smsg.child = 0;
 		}
-		iov[0].iov_base = &status;
-		iov[0].iov_len = sizeof(int);
+		iov[0].iov_base = &smsg;
+		iov[0].iov_len = sizeof(smsg);
 		bzero(&msg, sizeof(msg));
 		bzero(&cmsgbuf, sizeof(cmsgbuf));
 		msg.msg_iov = iov;
@@ -349,21 +356,22 @@ spawnproc_close(struct spawnproc *sp)
 }
 
 int
-spawnproc_exec(struct spawnproc *sp, char *const argv[], int *in, int *out,
-    const char *user, const char *group, struct xerr *e)
+spawnproc_exec(struct spawnproc *sp, char *const argv[], pid_t *cpid,
+    int *in, int *out, const char *user, const char *group, struct xerr *e)
 {
-	char           *buf, *p;
-	size_t          len = 0;
-	int             status, r, received, i;
+	char            *buf, *p;
+	size_t           len = 0;
+	int              r, received, i;
 	/*
 	 * Give enough room for ARG_MAX and a uid/gid, each with accompaying
 	 * \0 character.
 	 */
-	long            max = (sysconf(_SC_ARG_MAX) * 2) + (32 * 2);
-	int             fds[2];
-	struct msghdr   msg;
-	struct cmsghdr *cmsg;
-	struct iovec    iov[1];
+	long             max = (sysconf(_SC_ARG_MAX) * 2) + (32 * 2);
+	int              fds[2];
+	struct spawnmsg  smsg;
+	struct msghdr    msg;
+	struct cmsghdr  *cmsg;
+	struct iovec     iov[1];
 	union {
 		struct cmsghdr hdr;
 		unsigned char  buf[CMSG_SPACE(sizeof(int) * 2)];
@@ -415,8 +423,8 @@ spawnproc_exec(struct spawnproc *sp, char *const argv[], int *in, int *out,
 	}
 	free(buf);
 
-	iov[0].iov_base = &status;
-	iov[0].iov_len = sizeof(int);
+	iov[0].iov_base = &smsg;
+	iov[0].iov_len = sizeof(smsg);
 
 	bzero(&msg, sizeof(msg));
 	bzero(&cmsgbuf, sizeof(cmsgbuf));
@@ -438,11 +446,13 @@ spawnproc_exec(struct spawnproc *sp, char *const argv[], int *in, int *out,
 			return XERRF(e, XLOG_APP, XLOG_EOF, "recvmsg");
 
 		received += r;
-		if (received < sizeof(int)) {
-			iov[0].iov_base = ((char *)&status) + received;
-			iov[0].iov_len = sizeof(int) - received;
+		if (received < sizeof(smsg)) {
+			iov[0].iov_base = ((char *)&smsg) + received;
+			iov[0].iov_len = sizeof(smsg) - received;
 		}
 	}
+	if (cpid != NULL)
+		*cpid = smsg.child;
 	if ((msg.msg_flags & MSG_TRUNC) || (msg.msg_flags & MSG_CTRUNC))
 		return XERRF(e, XLOG_APP, XLOG_IO,
 		    "recvmsg: control message truncated");
@@ -459,14 +469,13 @@ spawnproc_exec(struct spawnproc *sp, char *const argv[], int *in, int *out,
 		break;
 	}
 
-	return status;
+	return smsg.status;
 }
 
 int
-spawn(char *const argv[], int *in, int *out, const char *user,
+spawn(char *const argv[], pid_t *pid, int *in, int *out, const char *user,
     const char *group, struct xerr *e)
 {
-	pid_t pid;
 	int   p_in[2];
 	int   p_out[2];
 	int   null_fd;
@@ -483,14 +492,14 @@ spawn(char *const argv[], int *in, int *out, const char *user,
 	}
 	*out = p_out[0];
 
-	if ((pid = fork()) == -1) {
+	if ((*pid = fork()) == -1) {
 		XERRF(e, XLOG_ERRNO, errno, "fork");
 		CLOSE_X(p_in[0]);
 		CLOSE_X(p_in[1]);
 		CLOSE_X(p_out[0]);
 		CLOSE_X(p_out[1]);
 		return -1;
-	} else if (pid == 0) {
+	} else if (*pid == 0) {
 		CLOSE_X(p_in[1]);
 		CLOSE_X(p_out[0]);
 		if (p_in[0] != STDIN_FILENO) {

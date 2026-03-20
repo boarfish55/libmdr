@@ -38,6 +38,7 @@ struct spawnproc      sproc;
 struct tlsev_listener listener;
 struct tlsev_fd_cb    backend_reader;
 int                   backend_wfd;
+pid_t                 backend_pid = 0;
 volatile sig_atomic_t shutdown_triggered = 0;
 volatile sig_atomic_t reload_cert = 0;
 struct timespec       last_cert_mtime;
@@ -83,6 +84,7 @@ struct {
 	uint64_t sndbuf;
 
 	uint64_t **allowed_mdr_domains;
+	uint64_t   dbg_delay_to_backend_seconds;
 
 	char **backend_argv;
 	char  *backend_uid;
@@ -116,6 +118,7 @@ struct {
 	0,
 	0,
 	NULL,
+	0,
 	NULL,
 	"_mdrd",
 	"_mdrd",
@@ -279,6 +282,12 @@ struct flatconf flatconf_vars[] = {
 		FLATCONF_ALLOCULONGLIST,
 		&mdrd_conf.allowed_mdr_domains,
 		0
+	},
+	{
+		"dbg_delay_to_backend_seconds",
+		FLATCONF_ULONG,
+		&mdrd_conf.dbg_delay_to_backend_seconds,
+		sizeof(mdrd_conf.dbg_delay_to_backend_seconds)
 	},
 	{
 		"backend_argv",
@@ -478,6 +487,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 	struct pmdr            bereq;
 	char                   bereq_buf[mdrd_conf.max_payload_size + 4096];
 	int                    status, i;
+	struct timespec        ts;
 
 	if (cb_data == NULL) {
 		*data = malloc(sizeof(struct client_cb_data));
@@ -554,6 +564,18 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		 * remember it.
 		 */
 		cb_data->send_cert = 0;
+
+		/*
+		 * Useful for debugging backends, to give time to attach
+		 * with a debugger.
+		 */
+		if (mdrd_conf.dbg_delay_to_backend_seconds > 0) {
+			xlog(LOG_NOTICE, NULL, "holding before passing "
+			    "message to our child (pid %u)", backend_pid);
+			ts.tv_sec = mdrd_conf.dbg_delay_to_backend_seconds;
+			ts.tv_nsec = 0;
+			nanosleep(&ts, NULL);
+		}
 
 		if ((status = writeall(backend_wfd, pmdr_buf(&bereq),
 		    pmdr_size(&bereq))) == -1) {
@@ -1365,8 +1387,9 @@ main(int argc, char **argv)
 		}
 
 		if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
-		    &backend_wfd, &backend_reader.fd, mdrd_conf.backend_uid,
-		    mdrd_conf.backend_gid, xerrz(&e)) == -1) {
+		    &backend_pid, &backend_wfd, &backend_reader.fd,
+		    mdrd_conf.backend_uid, mdrd_conf.backend_gid,
+		    xerrz(&e)) == -1) {
 			xlog(LOG_ERR, &e, __func__);
 			exit(1);
 		}
@@ -1388,8 +1411,9 @@ main(int argc, char **argv)
 
 	for (n_children = 0; n_children < mdrd_conf.prefork; n_children++) {
 		if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
-		    &backend_wfd, &backend_reader.fd, mdrd_conf.backend_uid,
-		    mdrd_conf.backend_gid, xerrz(&e)) == -1) {
+		    &backend_pid, &backend_wfd, &backend_reader.fd,
+		    mdrd_conf.backend_uid, mdrd_conf.backend_gid,
+		    xerrz(&e)) == -1) {
 			xlog(LOG_ERR, &e, __func__);
 			exit(1);
 		}
@@ -1432,7 +1456,7 @@ main(int argc, char **argv)
 				    pid, WTERMSIG(wstatus));
 
 			if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
-			    &backend_wfd, &backend_reader.fd,
+			    &backend_pid, &backend_wfd, &backend_reader.fd,
 			    mdrd_conf.backend_uid, mdrd_conf.backend_gid,
 			    xerrz(&e)) == -1) {
 				xlog(LOG_ERR, &e, __func__);
