@@ -44,7 +44,6 @@ main(int argc, char **argv)
 	int                  r;
 	struct umdr          m_in, msg;
 	struct pmdr          reply;
-	struct pmdr_vec      pv[5];
 	char                 m_in_buf[4096], reply_buf[4096], msg_buf[4096];
 	uint64_t             id;
 	int                  fd;
@@ -110,7 +109,7 @@ main(int argc, char **argv)
 
 	pmdr_init(&reply, reply_buf, sizeof(reply_buf), MDR_FNONE);
 
-	while ((r = mdr_buf_from_fd(0, m_in_buf, sizeof(m_in_buf))) > 0) {
+	while ((r = mdrd_recv(m_in_buf, sizeof(m_in_buf))) > 0) {
 		if (r == MDR_FAIL) {
 			xlog_strerror(LOG_ERR, errno, "mdr_buf_from_fd");
 			continue;
@@ -198,16 +197,11 @@ main(int argc, char **argv)
 		if (session == NULL) {
 			xlog(LOG_NOTICE, NULL, "new session for id %lu", id);
 			if (peer_cert == NULL) {
-				if (mdrd_pack_error(&reply, id, fd,
+				if (mdrd_error(id, fd,
 				    MDRD_BERESP_FCLOSE, MDR_ERR_CERTFAIL,
 				    "no certificate") == MDR_FAIL) {
-					xlog(LOG_ERR, NULL,
-					    "mdr_packerror: %d", errno);
-					exit(1);
-				}
-				if (write(1, pmdr_buf(&reply),
-				    pmdr_size(&reply)) < pmdr_size(&reply)) {
-					xlog_strerror(LOG_ERR, errno, "malloc");
+					xlog(LOG_ERR, NULL, "mdr_error: %d",
+					    errno);
 					exit(1);
 				}
 				continue;
@@ -222,6 +216,13 @@ main(int argc, char **argv)
 			if ((r = X509_verify_cert(ctx)) <= 0) {
 				xlog(LOG_ERR, NULL, "X509_verify_cert: %s",
 				    ERR_error_string(ERR_get_error(), NULL));
+				if (mdrd_error(id, fd,
+				    MDRD_BERESP_FCLOSE, MDR_ERR_CERTFAIL,
+				    "verify failed") == MDR_FAIL) {
+					xlog(LOG_ERR, NULL, "mdr_error: %d",
+					    errno);
+					exit(1);
+				}
 				exit(1);
 			}
 			X509_STORE_CTX_cleanup(ctx);
@@ -242,24 +243,9 @@ main(int argc, char **argv)
 			sessions = session;
 		}
 
-		pv[0].type = MDR_U64;
-		pv[0].v.u64 = id;
-		pv[1].type = MDR_I32;
-		pv[1].v.i32 = fd;
-		pv[2].type = MDR_U32;
-		pv[2].v.u32 = MDRD_BERESP_FNONE;
-		pv[3].type = MDR_M;
-		pv[3].v.umdr = &msg;
-		if (pmdr_pack(&reply, mdr_msg_mdrd_beresp, pv,
-		    PMDRVECLEN(pv)) == MDR_FAIL) {
-			xlog_strerror(LOG_ERR, errno,
-			    "mdr_pack/mdrd_beresp_wmsg");
-			exit(1);
-		}
-
-		if (write(1, pmdr_buf(&reply), pmdr_size(&reply))
-		    < pmdr_size(&reply)) {
-			xlog_strerror(LOG_ERR, errno, "writeall");
+		if (mdrd_beresp(id, fd, MDRD_BERESP_FNONE,
+		    (const struct pmdr *)&msg) == MDR_FAIL) {
+			xlog_strerror(LOG_ERR, errno, "mdr_pack/mdrd_beresp");
 			exit(1);
 		}
 	}
