@@ -106,7 +106,7 @@ mdrd_unpack_besesserr(struct umdr *m, uint64_t *id)
 }
 
 int
-mdrd_error(uint64_t id, int fd, uint32_t beresp_flags, uint32_t errcode,
+mdrd_beresp_error(uint64_t id, int fd, uint32_t beresp_flags, uint32_t errcode,
     const char *errdesc)
 {
 	struct pmdr     pm;

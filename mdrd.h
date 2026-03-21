@@ -19,8 +19,8 @@ int mdrd_unpack_beclose(struct umdr *, uint64_t *);
 int mdrd_unpack_bereq(struct umdr *, uint64_t *, int *, struct sockaddr *,
         socklen_t *, struct umdr *, X509 **);
 int mdrd_unpack_besesserr(struct umdr *, uint64_t *);
-int mdrd_error(uint64_t, int, uint32_t, uint32_t, const char *);
-int mdrd_ok(uint64_t, int, uint32_t);
+int mdrd_beresp_error(uint64_t, int, uint32_t, uint32_t, const char *);
+int mdrd_beresp_ok(uint64_t, int, uint32_t);
 int mdrd_beresp(uint64_t, int, uint32_t, const struct pmdr *);
 
 __END_DECLS

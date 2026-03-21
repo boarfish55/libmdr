@@ -197,7 +197,7 @@ main(int argc, char **argv)
 		if (session == NULL) {
 			xlog(LOG_NOTICE, NULL, "new session for id %lu", id);
 			if (peer_cert == NULL) {
-				if (mdrd_error(id, fd,
+				if (mdrd_beresp_error(id, fd,
 				    MDRD_BERESP_FCLOSE, MDR_ERR_CERTFAIL,
 				    "no certificate") == MDR_FAIL) {
 					xlog(LOG_ERR, NULL, "mdr_error: %d",
@@ -216,7 +216,7 @@ main(int argc, char **argv)
 			if ((r = X509_verify_cert(ctx)) <= 0) {
 				xlog(LOG_ERR, NULL, "X509_verify_cert: %s",
 				    ERR_error_string(ERR_get_error(), NULL));
-				if (mdrd_error(id, fd,
+				if (mdrd_beresp_error(id, fd,
 				    MDRD_BERESP_FCLOSE, MDR_ERR_CERTFAIL,
 				    "verify failed") == MDR_FAIL) {
 					xlog(LOG_ERR, NULL, "mdr_error: %d",
