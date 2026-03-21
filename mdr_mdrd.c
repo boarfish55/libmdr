@@ -106,54 +106,26 @@ mdrd_unpack_besesserr(struct umdr *m, uint64_t *id)
 }
 
 int
-mdrd_pack_error(struct pmdr *m, uint64_t id, int fd, uint32_t flags,
-    uint32_t errcode, const char *errdesc)
+mdrd_error(uint64_t id, int fd, uint32_t beresp_flags, uint32_t errcode,
+    const char *errdesc)
 {
-	struct pmdr_vec pv[4];
-	struct pmdr     msg;
-	char            buf[64];
+	struct pmdr     pm;
+	char            pbuf[mdr_hdr_size(MDR_FNONE) + 4 + 8 + strlen(errdesc)];
+	struct pmdr_vec pv[2];
 
-	pmdr_init(&msg, buf, sizeof(buf), MDR_FNONE);
+	pmdr_init(&pm, pbuf, sizeof(pbuf), MDR_FNONE);
 	pv[0].type = MDR_U32;
 	pv[0].v.u32 = errcode;
 	pv[1].type = MDR_S;
 	pv[1].v.s = errdesc;
-	if (pmdr_pack(&msg, mdr_msg_error, pv, 2) == MDR_FAIL)
+	if (pmdr_pack(&pm, mdr_msg_error, pv, 2) == MDR_FAIL)
 		return -1;
 
-	pv[0].type = MDR_U64;
-	pv[0].v.u64 = id;
-	pv[1].type = MDR_I32;
-	pv[1].v.i32 = fd;
-	pv[2].type = MDR_U32;
-	pv[2].v.u32 = flags;
-	pv[3].type = MDR_M;
-	pv[3].v.pmdr = &msg;
-	if (pmdr_pack(m, mdr_msg_mdrd_beresp, pv, PMDRVECLEN(pv)) == MDR_FAIL)
-		return -1;
-
-	return 0;
+	return mdrd_beresp(id, fd, beresp_flags, &pm);
 }
 
 int
-mdrd_error(uint64_t id, int fd, uint32_t flags, uint32_t errcode,
-    const char *errdesc)
-{
-	struct pmdr pm;
-	char        pbuf[+strlen(errdesc)];
-
-	pmdr_init(&pm, pbuf, sizeof(pbuf), MDR_FNONE);
-	if (mdrd_pack_error(&pm, id, fd, flags, errcode, errdesc) == MDR_FAIL)
-		return -1;
-
-	if (write(1, pmdr_buf(&pm), pmdr_size(&pm)) < pmdr_size(&pm))
-		return -1;
-
-	return 0;
-}
-
-int
-mdrd_beresp_ok(uint64_t id, int fd, uint32_t flags)
+mdrd_beresp_ok(uint64_t id, int fd, uint32_t beresp_flags)
 {
 	struct pmdr pm;
 	char        pbuf[mdr_hdr_size(MDR_FNONE)];
@@ -161,11 +133,11 @@ mdrd_beresp_ok(uint64_t id, int fd, uint32_t flags)
 	pmdr_init(&pm, pbuf, sizeof(pbuf), MDR_FNONE);
 	if (pmdr_pack(&pm, mdr_msg_ok, NULL, 0) == MDR_FAIL)
 		return -1;
-	return mdrd_beresp(id, fd, flags, &pm);
+	return mdrd_beresp(id, fd, beresp_flags, &pm);
 }
 
 int
-mdrd_beresp(uint64_t id, int fd, uint32_t flags, const struct pmdr *msg)
+mdrd_beresp(uint64_t id, int fd, uint32_t beresp_flags, const struct pmdr *msg)
 {
 	struct pmdr     pm;
 	struct pmdr_vec pv[4];
@@ -177,7 +149,7 @@ mdrd_beresp(uint64_t id, int fd, uint32_t flags, const struct pmdr *msg)
 	pv[1].type = MDR_I32;
 	pv[1].v.i32 = fd;
 	pv[2].type = MDR_U32;
-	pv[2].v.u32 = MDRD_BERESP_FNONE;
+	pv[2].v.u32 = beresp_flags;
 	pv[3].type = MDR_M;
 	pv[3].v.pmdr = msg;
 	if (pmdr_pack(&pm, mdr_msg_mdrd_beresp, pv, PMDRVECLEN(pv)) == MDR_FAIL)
@@ -190,5 +162,5 @@ mdrd_beresp(uint64_t id, int fd, uint32_t flags, const struct pmdr *msg)
 ptrdiff_t
 mdrd_recv(void *buf, size_t sz)
 {
-	return mdr_buf_from_fd(0, buf, sizeof(buf));
+	return mdr_buf_from_fd(0, buf, sz);
 }
