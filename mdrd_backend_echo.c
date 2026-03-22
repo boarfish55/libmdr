@@ -21,9 +21,6 @@
  * If the client did not have a cert, it will return a CERTFAIL error.
  */
 
-X509_STORE     *store;
-X509_STORE_CTX *ctx;
-
 void
 usage()
 {
@@ -42,6 +39,7 @@ main(int argc, char **argv)
 	X509_LOOKUP            *lookup;
 	struct mdrd_besession  *sess;
 	char                    hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+	X509_STORE             *store;
 
 	if (argc < 3)
 		usage();
@@ -95,8 +93,27 @@ main(int argc, char **argv)
 	}
 
 	/*
-	 * Since we just echo, we accept any domain, which is why we pass
-	 * a value of zero.
+	 * mdrd_recv will populate a message in &msg, using the underlying
+	 * buf. The maximum certificate size to receive is 4096. This is used
+	 * to initialize another buffer on the stack inside mdrd_recv (it
+	 * avoid using the heap). Since we just echo, we accept any domain (hence
+	 * the value of zero). Finally, we don't allow any extra features,
+	 * and we want &sess to be populated with client session data.
+	 *
+	 * mdrd_recv will block, reading from STDIN and will return 0 on EOF
+	 * or MDR_FAIL (-1) on error.
+	 *
+	 * sess contains a few useful fields, such as:
+	 *   - id: the unique ID (unique per mdrd instance) of the client
+	 *         session; In theory, it could wrap around as this is a
+	 *         uint64_t.
+	 *   - is_new: will be set to 1 when this is the first message we've
+	 *             received from this client. Useful if we wish to do things
+	 *             like certificate validation only once instead of every
+	 *             message.
+	 *   - cert: an X509 pointer for the client session's cert
+	 *   - peer: a sockaddr_in6 (or sockaddr_in) with the client's address
+	 *   - peer_len: the length of the peer structure
 	 */
 	while (mdrd_recv(&msg, buf, sizeof(buf), 4096,
 	    0, MDR_FNONE, &sess) > 0) {
