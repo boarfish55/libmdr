@@ -15,7 +15,7 @@ SPLAY_HEAD(session_tree, mdrd_besession) sessions = SPLAY_INITIALIZER(&sessions)
 SPLAY_PROTOTYPE(session_tree, mdrd_besession, entries, session_cmp);
 SPLAY_GENERATE(session_tree, mdrd_besession, entries, session_cmp);
 
-void
+static void
 session_free(struct mdrd_besession *s)
 {
 	if (s == NULL)
@@ -180,12 +180,14 @@ mdrd_beresp(struct mdrd_besession *sess, uint32_t beresp_flags,
 		return -1;
 	if (write(1, pmdr_buf(&pm), pmdr_size(&pm)) < pmdr_size(&pm))
 		return -1;
+	if (beresp_flags & MDRD_BERESP_FCLOSE)
+		session_free(sess);
 	return 0;
 }
 
 ptrdiff_t
-mdrd_recv(struct umdr *msg, void *buf, size_t sz, size_t cert_sz, uint32_t domain,
-    uint32_t features, struct mdrd_besession **session)
+mdrd_recv(struct umdr *msg, void *buf, size_t sz, size_t cert_sz,
+    uint64_t domain, uint32_t features, struct mdrd_besession **session)
 {
 	int                    r;
 	ptrdiff_t              c;

@@ -24,7 +24,7 @@ struct mdrd_besession
 	SPLAY_ENTRY(mdrd_besession)  entries;
 };
 
-ptrdiff_t mdrd_recv(struct umdr *, void *, size_t, size_t, uint32_t,
+ptrdiff_t mdrd_recv(struct umdr *, void *, size_t, size_t, uint64_t,
               uint32_t, struct mdrd_besession **);
 
 int mdrd_unpack_beclose(struct umdr *, uint64_t *);
