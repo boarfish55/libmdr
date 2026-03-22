@@ -163,7 +163,7 @@ main(int argc, char **argv)
 
 		if (mdrd_beresp(sess, MDRD_BERESP_FNONE,
 		    (const struct pmdr *)&msg) == MDR_FAIL) {
-			xlog_strerror(LOG_ERR, errno, "mdr_pack/mdrd_beresp");
+			xlog_strerror(LOG_ERR, errno, "mdrd_beresp");
 			exit(1);
 		}
 	}
