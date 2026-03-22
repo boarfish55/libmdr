@@ -625,17 +625,30 @@ backend_msg_in_cb(int fd)
 		goto fail;
 	}
 
-	if (umdr_dcv(&beresp) != MDR_DCV_MDRD_BERESP) {
-		xlog_strerror(LOG_ERR, errno,
-		    "%s: unknown response from backend", __func__);
+	switch (umdr_dcv(&beresp)) {
+	case MDR_DCV_MDR_ERROR:
+		if (umdr_unpack(&beresp, mdr_msg_error,
+		    uv, UMDRVECLEN(uv)) == MDR_FAIL) {
+			xlog_strerror(LOG_ERR, errno,
+			    "%s: umdr_unpack/mdr_msg_error", __func__);
+			goto fail;
+		}
+		xlog(LOG_ERR, NULL,
+		    "%s: error from backend: code=%u, msg=%s",
+		    __func__, uv[0].v.u32, uv[1].v.s.bytes);
 		goto fail;
+	case MDR_DCV_MDRD_BERESP:
+		break;
+	default:
+		xlog(LOG_ERR, NULL,
+		    "%s: unknown message from backend: %x",
+		    __func__, umdr_dcv(&beresp));
 	}
 
 	if (umdr_unpack(&beresp, mdr_msg_mdrd_beresp,
 	    uv, UMDRVECLEN(uv)) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
-		    "%s: mdr_unpack_payload/mdr_msg_mdrd_beresp",
-		    __func__);
+		    "%s: umdr_unpack/mdr_msg_mdrd_beresp", __func__);
 		goto fail;
 	}
 
