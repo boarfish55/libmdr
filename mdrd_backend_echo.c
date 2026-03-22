@@ -132,8 +132,8 @@ main(int argc, char **argv)
 				if (mdrd_beresp_error(sess,
 				    MDRD_BERESP_FCLOSE, MDR_ERR_CERTFAIL,
 				    "no certificate") == MDR_FAIL) {
-					xlog(LOG_ERR, NULL, "mdr_error: %d",
-					    errno);
+					xlog_strerror(LOG_ERR, errno,
+					    "mdr_beresp_error");
 					exit(1);
 				}
 				continue;
@@ -146,14 +146,15 @@ main(int argc, char **argv)
 				    ERR_error_string(ERR_get_error(), NULL));
 				exit(1);
 			}
+
 			if ((r = X509_verify_cert(ctx)) <= 0) {
 				xlog(LOG_ERR, NULL, "X509_verify_cert: %s",
 				    ERR_error_string(ERR_get_error(), NULL));
 				if (mdrd_beresp_error(sess, MDRD_BERESP_FCLOSE,
 				    MDR_ERR_CERTFAIL, "verify failed")
 				    == MDR_FAIL) {
-					xlog(LOG_ERR, NULL, "mdr_error: %d",
-					    errno);
+					xlog_strerror(LOG_ERR, errno,
+					    "mdr_beresp_error");
 					exit(1);
 				}
 				exit(1);
