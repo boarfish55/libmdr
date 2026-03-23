@@ -176,10 +176,19 @@ mdrd_beout(struct mdrd_besession *sess, uint32_t beout_flags,
 	pv[1].v.i32 = sess->fd;
 	pv[2].type = MDR_U32;
 	pv[2].v.u32 = beout_flags;
-	pv[3].type = MDR_M;
-	pv[3].v.pmdr = msg;
-	if (pmdr_pack(&pm, mdr_msg_mdrd_beout, pv, PMDRVECLEN(pv)) == MDR_FAIL)
-		return -1;
+
+	if (msg != NULL) {
+		pv[3].type = MDR_M;
+		pv[3].v.pmdr = msg;
+		if (pmdr_pack(&pm, mdr_msg_mdrd_beout, pv,
+		    PMDRVECLEN(pv)) == MDR_FAIL)
+			return -1;
+	} else {
+		if (pmdr_pack(&pm, mdr_msg_mdrd_beout_empty, pv,
+		    PMDRVECLEN(pv) - 1) == MDR_FAIL)
+			return -1;
+	}
+
 	if (write(1, pmdr_buf(&pm), pmdr_size(&pm)) < pmdr_size(&pm))
 		return -1;
 	if (beout_flags & MDRD_BEOUT_FCLOSE)
