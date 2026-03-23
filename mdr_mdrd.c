@@ -24,6 +24,8 @@ session_free(struct mdrd_besession *s)
 	SPLAY_REMOVE(session_tree, &sessions, s);
 	if (s->cert != NULL)
 		X509_free(s->cert);
+	if (s->data != NULL && s->free_data != NULL)
+		s->free_data(s->data);
 	free(s);
 }
 
@@ -307,6 +309,8 @@ again:
 		memcpy(&sess->peer, &peer, sizeof(sess->peer));
 		sess->peer_len = slen;
 		sess->cert = peer_cert;
+		sess->data = NULL;
+		sess->free_data = NULL;
 		SPLAY_INSERT(session_tree, &sessions, sess);
 	} else {
 		sess->is_new = 0;
@@ -321,4 +325,12 @@ again:
 	if (session != NULL)
 		*session = sess;
 	return c;
+}
+
+void
+mdrd_besession_set_data(struct mdrd_besession *s, void *data,
+    void(*free_data)(void *))
+{
+	s->data = data;
+	s->free_data = free_data;
 }

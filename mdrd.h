@@ -21,11 +21,15 @@ struct mdrd_besession
 	X509                        *cert;
 	struct sockaddr_in6          peer;
 	socklen_t                    peer_len;
+	void                        *data;
+	void                         (*free_data)(void *);
 	SPLAY_ENTRY(mdrd_besession)  entries;
 };
 
 ptrdiff_t mdrd_recv(struct umdr *, void *, size_t, size_t, uint64_t,
               uint32_t, struct mdrd_besession **);
+void      mdrd_besession_set_data(struct mdrd_besession *, void *,
+              void(*)(void *));
 
 int mdrd_unpack_beclose(struct umdr *, uint64_t *);
 int mdrd_unpack_bereq(struct umdr *, uint64_t *, int *, struct sockaddr *,
