@@ -16,7 +16,7 @@
 
 /*
  * A simple mdrd echo backend; it echoes back the nested mdr that's
- * contained inside the bereq (backend request).
+ * contained inside the backend incoming message.
  *
  * If the client did not have a cert, it will return a CERTFAIL error.
  */
@@ -129,11 +129,11 @@ main(int argc, char **argv)
 			xlog(LOG_NOTICE, NULL, "new session for id %lu",
 			    sess->id);
 			if (sess->cert == NULL) {
-				if (mdrd_beresp_error(sess,
-				    MDRD_BERESP_FCLOSE, MDR_ERR_CERTFAIL,
+				if (mdrd_beout_error(sess,
+				    MDRD_BEOUT_FCLOSE, MDR_ERR_CERTFAIL,
 				    "no certificate") == MDR_FAIL) {
 					xlog_strerror(LOG_ERR, errno,
-					    "mdr_beresp_error");
+					    "mdr_beout_error");
 					exit(1);
 				}
 				continue;
@@ -150,11 +150,11 @@ main(int argc, char **argv)
 			if ((r = X509_verify_cert(ctx)) <= 0) {
 				xlog(LOG_ERR, NULL, "X509_verify_cert: %s",
 				    ERR_error_string(ERR_get_error(), NULL));
-				if (mdrd_beresp_error(sess, MDRD_BERESP_FCLOSE,
+				if (mdrd_beout_error(sess, MDRD_BEOUT_FCLOSE,
 				    MDR_ERR_CERTFAIL, "verify failed")
 				    == MDR_FAIL) {
 					xlog_strerror(LOG_ERR, errno,
-					    "mdr_beresp_error");
+					    "mdr_beout_error");
 					exit(1);
 				}
 				exit(1);
@@ -162,9 +162,9 @@ main(int argc, char **argv)
 			X509_STORE_CTX_cleanup(ctx);
 		}
 
-		if (mdrd_beresp(sess, MDRD_BERESP_FNONE,
+		if (mdrd_beout(sess, MDRD_BEOUT_FNONE,
 		    (const struct pmdr *)&msg) == MDR_FAIL) {
-			xlog_strerror(LOG_ERR, errno, "mdrd_beresp");
+			xlog_strerror(LOG_ERR, errno, "mdrd_beout");
 			exit(1);
 		}
 	}

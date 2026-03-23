@@ -359,7 +359,7 @@ pack_bereq(struct pmdr *m, uint64_t id, int fd, struct sockaddr_in6 *peer,
 	pv[5].type = MDR_RSVB;
 	pv[5].v.rsvb.dst = (void **)&cert_buf;
 	pv[5].v.rsvb.sz = cert_len;
-	if (pmdr_pack(m, mdr_msg_mdrd_bereq, pv, PMDRVECLEN(pv)) == MDR_FAIL) {
+	if (pmdr_pack(m, mdr_msg_mdrd_bein, pv, PMDRVECLEN(pv)) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack", __func__);
 		return -1;
 	}
@@ -595,19 +595,19 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 int
 backend_msg_in_cb(int fd)
 {
-	struct umdr      beresp;
+	struct umdr      beout;
 	struct pmdr      reply;
-	char             beresp_buf[mdrd_conf.max_payload_size + 4096];
-	char             reply_buf[mdrd_conf.max_payload_size];
+	char             beout_buf[mdrd_conf.max_payload_size + 64];
+	char             reply_buf[32];
 	struct tlsev    *t;
 	uint64_t         id;
 	int              tlsfd, r;
-	uint32_t         resp_flags;
+	uint32_t         beout_flags;
 	struct umdr_vec  uv[4];
 	struct pmdr_vec  pv[1];
 
-	if ((r = mdr_buf_from_fd(fd, beresp_buf,
-	    sizeof(beresp_buf))) == MDR_FAIL) {
+	if ((r = mdr_buf_from_fd(fd, beout_buf,
+	    sizeof(beout_buf))) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: mdr_buf_from_fd", __func__);
 		goto fail;
@@ -619,15 +619,15 @@ backend_msg_in_cb(int fd)
 		goto fail;
 	}
 
-	if (umdr_init(&beresp, beresp_buf, r, MDR_FNONE) == MDR_FAIL) {
+	if (umdr_init(&beout, beout_buf, r, MDR_FNONE) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
-		    "%s: umdr_init/beresp", __func__);
+		    "%s: umdr_init/beout", __func__);
 		goto fail;
 	}
 
-	switch (umdr_dcv(&beresp)) {
+	switch (umdr_dcv(&beout)) {
 	case MDR_DCV_MDR_ERROR:
-		if (umdr_unpack(&beresp, mdr_msg_error,
+		if (umdr_unpack(&beout, mdr_msg_error,
 		    uv, UMDRVECLEN(uv)) == MDR_FAIL) {
 			xlog_strerror(LOG_ERR, errno,
 			    "%s: umdr_unpack/mdr_msg_error", __func__);
@@ -637,24 +637,32 @@ backend_msg_in_cb(int fd)
 		    "%s: error from backend: code=%u, msg=%s",
 		    __func__, uv[0].v.u32, uv[1].v.s.bytes);
 		goto fail;
-	case MDR_DCV_MDRD_BERESP:
+	case MDR_DCV_MDRD_BEOUT:
+		if (umdr_unpack(&beout, mdr_msg_mdrd_beout,
+		    uv, UMDRVECLEN(uv)) == MDR_FAIL) {
+			xlog_strerror(LOG_ERR, errno,
+			    "%s: umdr_unpack/mdr_msg_mdrd_beout", __func__);
+			goto fail;
+		}
+		break;
+	case MDR_DCV_MDRD_BEOUT_EMPTY:
+		if (umdr_unpack(&beout, mdr_msg_mdrd_beout_empty,
+		    uv, UMDRVECLEN(uv)) == MDR_FAIL) {
+			xlog_strerror(LOG_ERR, errno,
+			    "%s: umdr_unpack/mdr_msg_mdrd_beout_empty",
+			    __func__);
+			goto fail;
+		}
 		break;
 	default:
 		xlog(LOG_ERR, NULL,
 		    "%s: unknown message from backend: %x",
-		    __func__, umdr_dcv(&beresp));
-	}
-
-	if (umdr_unpack(&beresp, mdr_msg_mdrd_beresp,
-	    uv, UMDRVECLEN(uv)) == MDR_FAIL) {
-		xlog_strerror(LOG_ERR, errno,
-		    "%s: umdr_unpack/mdr_msg_mdrd_beresp", __func__);
-		goto fail;
+		    __func__, umdr_dcv(&beout));
 	}
 
 	id = uv[0].v.u64;
 	tlsfd = uv[1].v.i32;
-	resp_flags = uv[2].v.u32;
+	beout_flags = uv[2].v.u32;
 
 	pmdr_init(&reply, reply_buf, sizeof(reply_buf), MDR_FNONE);
 
@@ -679,7 +687,7 @@ backend_msg_in_cb(int fd)
 
 	if (tlsev_id(t) != id) {
 		xlog(LOG_ERR, NULL,
-		    "%s: received beresp from backend for a client that is "
+		    "%s: received beout from backend for a client that is "
 		    " gone on fd %d", __func__, tlsfd);
 		pv[0].type = MDR_U64;
 		pv[0].v.u64 = id;
@@ -697,9 +705,15 @@ backend_msg_in_cb(int fd)
 		return 1;
 	}
 
+	if (umdr_dcv(&beout) == MDR_DCV_MDRD_BEOUT_EMPTY) {
+		if (beout_flags & MDRD_BEOUT_FCLOSE)
+			tlsev_drain(t);
+		return 1;
+	}
+
 	if ((r = tlsev_reply(t, umdr_buf(&uv[3].v.m),
 	    umdr_size(&uv[3].v.m))) <= 0 ||
-	    resp_flags & MDRD_BERESP_FCLOSE)
+	    beout_flags & MDRD_BEOUT_FCLOSE)
 		tlsev_drain(t);
 
 	counters_incr(COUNTER_MESSAGES_OUT);
@@ -711,7 +725,7 @@ backend_msg_in_cb(int fd)
 	 * This only matters in a "streaming" situation where we don't
 	 * have 1:1 requests/replies. We'll need a message serial number
 	 * to properly inform the backend where to resme.
-	 * The code above assumes we get a "beresp" from the backend,
+	 * The code above assumes we get a "beout" from the backend,
 	 * always, so it's not yet able to support this kind of streaming.
 	 */
 

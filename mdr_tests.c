@@ -343,8 +343,9 @@ test_long_tail_bytes()
 	if (r != MDR_FAIL || errno != ENOTSUP)
 		return ERR(0, "mdr_unpack_hdr should have failed with ENOTSUP");
 
-	if (umdr_init(&um, pmdr_buf(&pm), pmdr_size(&pm), MDR_FTAILBYTES) == MDR_FAIL)
-		return ERR(0, "umdr_init");
+	if (umdr_init(&um, pmdr_buf(&pm), pmdr_size(&pm), MDR_FTAILBYTES)
+	    == MDR_FAIL)
+		return ERR(errno, "umdr_init");
 	if (umdr_unpack(&um, mdr_msg_ping, uv, 0) == MDR_FAIL)
 		return ERR(errno, "umdr_unpack");
 
@@ -356,6 +357,66 @@ test_long_tail_bytes()
 	/* Then compare */
 	if (memcmp(strab, strab_expected, tbsz) != 0)
 		return ERR(0, "bytes don't match");
+
+	return success();
+}
+
+struct test_status *
+test_null_bytes()
+{
+	struct pmdr     pm;
+	struct pmdr_vec pv[1];
+	struct umdr     um;
+	struct umdr_vec uv[1];
+
+	if (pmdr_init(&pm, NULL, 0, MDR_FNONE) == MDR_FAIL)
+		return ERR(errno, "pmdr_init");
+	pv[0].type = MDR_B;
+	pv[0].v.b.bytes = NULL;
+	pv[0].v.b.sz = 0;
+	if (pmdr_pack(&pm, msg_test_5, pv, PMDRVECLEN(pv)) == MDR_FAIL)
+		return ERR(errno, "pmdr_pack");
+
+	if (pmdr_size(&pm) != 21)
+		return ERR(0, "mdr with a 0-length bytes field should "
+		    "be sized at 21 bytes");
+
+	if (umdr_init(&um, pmdr_buf(&pm), pmdr_size(&pm), MDR_FNONE)
+	    == MDR_FAIL)
+		return ERR(errno, "umdr_init");
+	if (umdr_unpack(&um, msg_test_5, uv, UMDRVECLEN(uv)) == MDR_FAIL)
+		return ERR(errno, "umdr_unpack");
+	if (uv[0].v.b.sz != 0)
+		return ERR(0, "mdr with a 0-length bytes field should "
+		    "have zero length on unpack");
+	if (uv[0].v.b.bytes != NULL)
+		return ERR(0, "mdr with a 0-length bytes field should "
+		    "have NULL value on unpack");
+	pmdr_free(&pm);
+
+	if (pmdr_init(&pm, NULL, 0, MDR_FNONE) == MDR_FAIL)
+		return ERR(errno, "pmdr_init");
+	pv[0].type = MDR_S;
+	pv[0].v.s = "";
+	if (pmdr_pack(&pm, msg_test_0, pv, PMDRVECLEN(pv)) == MDR_FAIL)
+		return ERR(errno, "pmdr_pack");
+
+	if (pmdr_size(&pm) != 22)
+		return ERR(0, "mdr with a 0-length string field should "
+		    "be sized at 22 bytes (length, and \\0)");
+
+	if (umdr_init(&um, pmdr_buf(&pm), pmdr_size(&pm), MDR_FNONE)
+	    == MDR_FAIL)
+		return ERR(errno, "umdr_init");
+	if (umdr_unpack(&um, msg_test_0, uv, UMDRVECLEN(uv)) == MDR_FAIL)
+		return ERR(errno, "umdr_unpack");
+	if (uv[0].v.s.sz != 0)
+		return ERR(0, "mdr with a 0-length string field should "
+		    "have a length of 0 on unpack, for the nul byte");
+	if (uv[0].v.s.bytes == NULL || *uv[0].v.s.bytes != '\0')
+		return ERR(0, "mdr with a 0-length string field should "
+		    "have an empty string on unpack");
+	pmdr_free(&pm);
 
 	return success();
 }
@@ -670,6 +731,11 @@ struct mdr_test {
 		"limit",
 		1,
 		&test_limits
+	},
+	{
+		"null bytes",
+		1,
+		&test_null_bytes
 	},
 	{
 		"pack nested messages",
