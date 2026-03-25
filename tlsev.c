@@ -805,7 +805,8 @@ tlsev_new_client(struct tlsev_listener *l, int fd,
 
 	if (getnameinfo(peer, peerlen, hbuf, sizeof(hbuf),
 	    sbuf, sizeof(sbuf), NI_NUMERICHOST | NI_NUMERICSERV) == 0)
-		xlog(LOG_INFO, NULL, "new connection from %s:%s", hbuf, sbuf);
+		xlog(LOG_INFO, NULL, "new connection from %s:%s (fd %d)",
+		    hbuf, sbuf, fd);
 
 	if (tlsev_create(l, fd, l->ctx, peer, peerlen, xerrz(&e)) == -1) {
 		xlog(LOG_ERR, &e, "tlsev_create");
@@ -1033,6 +1034,9 @@ tlsev_poll(struct tlsev_listener *l)
 	time_t               time_diff_ns;
 #ifndef __linux__
 	struct timespec      kev_timeout = {1, 0};
+#else
+	int                  epollerr;
+	socklen_t            errlen;
 #endif
 	int                  fd, evfd;
 	int                  n, timeout;
@@ -1195,9 +1199,18 @@ tlsev_poll(struct tlsev_listener *l)
 
 		evtype = TLSEV_NONE;
 #ifdef __linux__
-		if (l->events[n].events & EPOLLERR)
+		if (l->events[n].events & EPOLLERR) {
 			/* Not sure when this happens */
-			xlog(LOG_WARNING, NULL, "EPOLLERR: fd=%d", t->fd);
+			epollerr = 0;
+			errlen = sizeof(epollerr);
+			if (getsockopt(t->fd, SOL_SOCKET, SO_ERROR,
+			    &epollerr, &errlen) == -1)
+				xlog(LOG_WARNING, NULL,
+				    "EPOLLERR: fd=%d", t->fd);
+			else
+				xlog(LOG_WARNING, NULL, "EPOLLERR: fd=%d: %s",
+				    t->fd, strerror(epollerr));
+		}
 		if (l->events[n].events & EPOLLIN)
 			evtype |= TLSEV_READ;
 		if (l->events[n].events & EPOLLOUT)

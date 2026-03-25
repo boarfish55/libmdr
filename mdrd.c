@@ -41,7 +41,7 @@ int                   backend_wfd;
 pid_t                 backend_pid = 0;
 volatile sig_atomic_t shutdown_triggered = 0;
 volatile sig_atomic_t reload_cert = 0;
-struct timespec       last_cert_mtime;
+struct timespec       last_cert_mtime = { 0, 0 };
 
 int  foreground = 0;
 int  debug = 0;
@@ -688,7 +688,7 @@ backend_msg_in_cb(int fd)
 	if (tlsev_id(t) != id) {
 		xlog(LOG_ERR, NULL,
 		    "%s: received beout from backend for a client that is "
-		    " gone on fd %d", __func__, tlsfd);
+		    "gone on fd %d", __func__, tlsfd);
 		pv[0].type = MDR_U64;
 		pv[0].v.u64 = id;
 		if (pmdr_pack(&reply, mdr_msg_mdrd_besesserr,
@@ -874,7 +874,7 @@ reload_cert_cb(void *args)
 		return 1;
 	}
 
-	if (timespeccmp(&st.st_mtim, &last_cert_mtime, ==) == 0)
+	if (timespeccmp(&st.st_mtim, &last_cert_mtime, >) == 0)
 		return 1;
 
 	if (ctx == NULL) {
@@ -901,6 +901,8 @@ reload_cert_cb(void *args)
 		return 0;
 	}
 	close(fd);
+	xlog(LOG_NOTICE, NULL,
+	    "%s: reloaded certificate chain (NOT CHAIN?!)", __func__);
 
 	memcpy(&last_cert_mtime, &st.st_mtim, sizeof(last_cert_mtime));
 	return 1;
@@ -909,7 +911,8 @@ reload_cert_cb(void *args)
 int
 run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
 {
-	int status;
+	int         status;
+	struct stat st;
 
 	if (tlsev_init(&listener, ctx, lsock, lsock_len,
 	    mdrd_conf.socket_timeout_min,
@@ -925,6 +928,14 @@ run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
 		xlog_strerror(LOG_ERR, errno, "tlsev_add_fd_cb");
 		return 1;
 	}
+
+	if (stat(mdrd_conf.cert_file, &st) == -1) {
+		xlog_strerror(LOG_ERR, errno,
+		    "%s: stat: %s", __func__, mdrd_conf.cert_file);
+		return 1;
+	}
+	memcpy(&last_cert_mtime, &st.st_mtim, sizeof(last_cert_mtime));
+
 	status = tlsev_run(&listener, &reload_cert_cb, ctx);
 	SSL_CTX_free(ctx);
 	tlsev_destroy(&listener);
