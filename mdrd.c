@@ -859,7 +859,6 @@ cleanup()
 int
 reload_cert_cb(void *args)
 {
-	int          fd;
 	struct stat  st;
 	SSL_CTX     *ctx = (SSL_CTX *)args;
 
@@ -883,24 +882,11 @@ reload_cert_cb(void *args)
 		return 1;
 	}
 
-	if ((fd = open(mdrd_conf.cert_file, O_RDONLY)) == -1) {
-		xlog_strerror(LOG_ERR, errno,
-		    "%s: open: %s", __func__, mdrd_conf.cert_file);
-		return 0;
-	}
-	if (flock(fd, LOCK_SH) == -1) {
-		xlog_strerror(LOG_ERR, errno,
-		    "%s: flock: %s", __func__, mdrd_conf.cert_file);
-		close(fd);
-		return 0;
-	}
 	if (SSL_CTX_use_certificate_chain_file(ctx, mdrd_conf.cert_file) != 1) {
 		xlog(LOG_ERR, NULL, "SSL_CTX_use_certificate: %s",
 		    ERR_error_string(ERR_get_error(), NULL));
-		close(fd);
 		return 0;
 	}
-	close(fd);
 
 	xlog(LOG_NOTICE, NULL, "%s: reloaded certificate chain", __func__);
 
