@@ -863,20 +863,25 @@ reload_cert_cb(void *args)
 	struct stat  st;
 	SSL_CTX     *ctx = (SSL_CTX *)args;
 
-	if (ctx == NULL)
-		return 0;
-
 	if (!reload_cert && !mdrd_conf.monitor_cert)
 		return 1;
+
+	reload_cert = 0;
 
 	if (stat(mdrd_conf.cert_file, &st) == -1) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: stat: %s", __func__, mdrd_conf.cert_file);
-		return 0;
+		return 1;
 	}
 
 	if (timespeccmp(&st.st_mtim, &last_cert_mtime, ==) == 0)
 		return 1;
+
+	if (ctx == NULL) {
+		xlog(LOG_ERR, NULL,
+		    "%s: no SSL_CTX, cannot reload cert", __func__);
+		return 1;
+	}
 
 	if ((fd = open(mdrd_conf.cert_file, O_RDONLY)) == -1) {
 		xlog_strerror(LOG_ERR, errno,
@@ -898,7 +903,6 @@ reload_cert_cb(void *args)
 	close(fd);
 
 	memcpy(&last_cert_mtime, &st.st_mtim, sizeof(last_cert_mtime));
-	reload_cert = 0;
 	return 1;
 }
 
@@ -1420,6 +1424,8 @@ main(int argc, char **argv)
 			xlog(LOG_ERR, &e, __func__);
 			exit(1);
 		}
+		xlog(LOG_NOTICE, NULL, "spawned backend with pid %d",
+		    backend_pid);
 		exit(run(ctx, lsock, lsock_len));
 	}
 
@@ -1444,6 +1450,8 @@ main(int argc, char **argv)
 			xlog(LOG_ERR, &e, __func__);
 			exit(1);
 		}
+		xlog(LOG_NOTICE, NULL, "spawned backend with pid %d",
+		    backend_pid);
 
 		counters_set_arena(n_children);
 		if ((pid = fork()) == -1) {
@@ -1489,6 +1497,8 @@ main(int argc, char **argv)
 				xlog(LOG_ERR, &e, __func__);
 				exit(1);
 			}
+			xlog(LOG_NOTICE, NULL, "spawned backend with pid %d",
+			    backend_pid);
 
 			counters_incr(COUNTER_RESTARTS);
 			if ((pid = fork()) == -1) {
