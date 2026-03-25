@@ -901,8 +901,8 @@ reload_cert_cb(void *args)
 		return 0;
 	}
 	close(fd);
-	xlog(LOG_NOTICE, NULL,
-	    "%s: reloaded certificate chain (NOT CHAIN?!)", __func__);
+
+	xlog(LOG_NOTICE, NULL, "%s: reloaded certificate chain", __func__);
 
 	memcpy(&last_cert_mtime, &st.st_mtim, sizeof(last_cert_mtime));
 	return 1;
