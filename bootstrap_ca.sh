@@ -11,7 +11,8 @@ echo "01" > ca/serial
 touch ca/index.txt
 
 # Create self-signed root certificate
-openssl req -x509 -nodes -config mdrd_ssl.cnf -newkey ed25519 \
+openssl req -x509 -nodes -config mdrd_ssl.cnf -newkey ec \
+	-pkeyopt ec_paramgen_curve:prime256v1 \
 	-keyout ca/key.pem \
 	-out ca/root.pem -outform PEM -days 3650 \
 	-extensions root_ext \
@@ -20,7 +21,8 @@ openssl req -x509 -nodes -config mdrd_ssl.cnf -newkey ed25519 \
 # Create a "client1" cert request
 rm -f client1/*
 mkdir -p client1
-openssl req -nodes -config mdrd_ssl.cnf -newkey ed25519 \
+openssl req -nodes -config mdrd_ssl.cnf -newkey ec \
+	-pkeyopt ec_paramgen_curve:prime256v1 \
 	-keyout client1/key.pem -keyform PEM \
 	-out client1/req.pem -outform PEM \
 	-subj "/O=$ORG/CN=client1.$DOMAIN" \
@@ -33,7 +35,8 @@ openssl verify -CAfile ca/root.pem client1/cert.pem
 # Create a "client2" cert request
 rm -f client2/*
 mkdir -p client2
-openssl req -nodes -config mdrd_ssl.cnf -newkey ed25519 \
+openssl req -nodes -config mdrd_ssl.cnf -newkey ec \
+	-pkeyopt ec_paramgen_curve:prime256v1 \
 	-keyout client2/key.pem -keyform PEM \
 	-out client2/req.pem -outform PEM \
 	-subj "/O=$ORG/CN=client2.$DOMAIN" \
