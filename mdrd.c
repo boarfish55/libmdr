@@ -485,6 +485,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 	struct client_cb_data *cb_data = (struct client_cb_data *)(*data);
 	void                  *tmp;
 	struct pmdr            bereq;
+	// TODO: why 4096 ?
 	char                   bereq_buf[mdrd_conf.max_payload_size + 4096];
 	int                    status, i;
 	struct timespec        ts;
@@ -529,6 +530,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 	}
 
 	if (umdr_size(&cb_data->msg) > mdrd_conf.max_payload_size) {
+		// TODO: send an error to the client about size exceeded
 		xlog_strerror(LOG_ERR, errno, "%s: mdr size is above our "
 		    "configured maximum size of %lu", __func__,
 		    mdrd_conf.max_payload_size);
@@ -549,6 +551,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 			break;
 	}
 	if (mdrd_conf.allowed_mdr_domains[i] == NULL) {
+		// TODO: send an error to the client about domain not supported
 		counters_incr(COUNTER_MESSAGES_IN_DENIED);
 		xlog(LOG_ERR, NULL,
 		    "%s: domain not allowed", __func__);
@@ -577,6 +580,14 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 			nanosleep(&ts, NULL);
 		}
 
+		// TODO: we'll need to implement a queue of messages
+		// to the backend so we can do non-blocking.
+		// It has to be one queue per client, so that if the
+		// client goes away we just cancel all requests, and also
+		// such that we have fair queueing with a limit per client.
+		// When a client has something in its queue, we add it to
+		// a heap of clients where priority is given to clients with
+		// fewer messages.
 		if ((status = writeall(backend_wfd, pmdr_buf(&bereq),
 		    pmdr_size(&bereq))) == -1) {
 			xlog_strerror(LOG_ERR, errno, "%s: writeall", __func__);
@@ -677,7 +688,9 @@ backend_msg_in_cb(int fd)
 			    "%s: pmdr_pack/mdr_msg_mdrd_besesserr", __func__);
 			return 1;
 		}
-		// TODO: possible deadlock with full buffer
+		// TODO: possible deadlock with full buffer, we should
+		// somehow queue this, same place as when we get stuff
+		// from clients.
 		if (writeall(backend_wfd, pmdr_buf(&reply),
 		    pmdr_size(&reply)) == -1) {
 			xlog_strerror(LOG_ERR, errno, "%s: writeall", __func__);
@@ -697,7 +710,9 @@ backend_msg_in_cb(int fd)
 			    "%s: pmdr_pack/mdr_msg_mdrd_besesserr", __func__);
 			return 1;
 		}
-		// TODO: possible deadlock with full buffer
+		// TODO: possible deadlock with full buffer, we should
+		// somehow queue this, same place as when we get stuff
+		// from clients.
 		if (writeall(backend_wfd, pmdr_buf(&reply),
 		    pmdr_size(&reply)) == -1) {
 			xlog_strerror(LOG_ERR, errno, "%s: writeall", __func__);
