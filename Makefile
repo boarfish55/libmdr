@@ -27,7 +27,7 @@ flatconf.c: flatconf.y flatconf.h
 mdr_tests: mdr_tests.c mdr.o util.o xlog.o
 	${CC} ${CFLAGS} mdr_tests.c $(LIBS) mdr.o util.o xlog.o -o mdr_tests
 
-mdrc: mdrc.c mdr.o
+mdrc: mdrc.c mdr.o mdr_mdrd.o
 	${CC} ${CFLAGS} mdrc.c $(LIBS) mdr.o -o mdrc
 
 mdrd: mdrd.c $(MDRD_OBJS)
