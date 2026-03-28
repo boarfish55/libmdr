@@ -322,7 +322,7 @@ struct flatconf flatconf_vars[] = {
 };
 
 static int
-pack_bereq(struct pmdr *m, uint64_t id, int fd, struct sockaddr_in6 *peer,
+pack_bein(struct pmdr *m, uint64_t id, int fd, struct sockaddr_in6 *peer,
     struct umdr *msg, X509 *peer_cert)
 {
 	size_t           cert_len;
@@ -480,11 +480,11 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 {
 	struct client_cb_data *cb_data = (struct client_cb_data *)(*data);
 	void                  *tmp;
-	struct pmdr            bereq;
-	// TODO: why 4096 ?
-	char                   bereq_buf[mdrd_conf.max_payload_size + 4096];
+	struct pmdr            bein;
 	int                    status, i;
 	struct timespec        ts;
+	char                   bein_buf[mdrd_conf.max_payload_size +
+	    mdrd_conf.max_cert_size + 128]; /* 128 bytes for bein itself */
 
 	if (cb_data == NULL) {
 		*data = malloc(sizeof(struct client_cb_data));
@@ -554,8 +554,8 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		return -1;
 	}
 
-	pmdr_init(&bereq, bereq_buf, sizeof(bereq_buf), MDR_FNONE);
-	if ((status = pack_bereq(&bereq, tlsev_id(t), tlsev_fd(t),
+	pmdr_init(&bein, bein_buf, sizeof(bein_buf), MDR_FNONE);
+	if ((status = pack_bein(&bein, tlsev_id(t), tlsev_fd(t),
 	    tlsev_peer(t), &cb_data->msg,
 	    (cb_data->send_cert) ? tlsev_peer_cert(t) : NULL)) == 0) {
 		/*
@@ -584,8 +584,8 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		// When a client has something in its queue, we add it to
 		// a heap of clients where priority is given to clients with
 		// fewer messages.
-		if ((status = writeall(backend_wfd, pmdr_buf(&bereq),
-		    pmdr_size(&bereq))) == -1) {
+		if ((status = writeall(backend_wfd, pmdr_buf(&bein),
+		    pmdr_size(&bein))) == -1) {
 			xlog_strerror(LOG_ERR, errno, "%s: writeall", __func__);
 		}
 	}

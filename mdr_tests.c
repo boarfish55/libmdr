@@ -558,6 +558,25 @@ test_pack_array()
 }
 
 struct test_status *
+test_mdr_spec_base_sz()
+{
+	size_t sz = mdr_spec_base_sz(msg_test_4);
+
+	if (sz != 55)
+		return ERR(0, "sz should be 55 but was %lu", sz);
+
+	sz = mdr_spec_base_sz(mdr_msg_mdrd_bein);
+	if (sz != 90)
+		return ERR(0, "sz should be 90 but was %lu", sz);
+
+	sz = mdr_hdr_size(MDR_FALL);
+	if (sz != 60)
+		return ERR(0, "sz should be 60 but was %lu", sz);
+
+	return success();
+}
+
+struct test_status *
 test_encoding()
 {
 	struct pmdr      pm;
@@ -716,6 +735,11 @@ struct mdr_test {
 		"encoding",
 		1,
 		&test_encoding
+	},
+	{
+		"spec_base_sz",
+		1,
+		&test_mdr_spec_base_sz
 	},
 	{
 		"pack long strings",
