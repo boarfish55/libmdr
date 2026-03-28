@@ -1,5 +1,5 @@
 CC = cc
-CFLAGS = -Wall -Wno-format -g
+CFLAGS = -Wall -g
 
 # pthread for semaphores
 LIBS = -lcrypto -lssl -pthread
