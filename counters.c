@@ -79,7 +79,7 @@ counters_read(const char *path)
 	close(fd);
 
 	for (c = 0; c < COUNTER_LAST; c++)
-		printf("%-20s: %lu\n", counter_names[c], v_all[c]);
+		printf("%-20s: %llu\n", counter_names[c], v_all[c]);
 }
 
 int
