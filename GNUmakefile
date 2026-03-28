@@ -1,6 +1,6 @@
 CC := cc
 DEPDIR := .deps
-CFLAGS := -Wall -g -fstack-protector-strong -DYY_NO_LEAKS=1 \
+CFLAGS := -Wall -g -fstack-protector-strong -DYY_NO_LEAKS=1 -Wformat=0 \
 	$(shell pkg-config --cflags libbsd-overlay libbsd-ctor \
 	libssl libcrypto)
 LDFLAGS := $(shell pkg-config --libs libbsd-overlay libbsd-ctor \
