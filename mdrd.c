@@ -45,7 +45,6 @@ struct timespec       last_cert_mtime = { 0, 0 };
 
 int  foreground = 0;
 int  debug = 0;
-int  ssl_data_idx;
 char config_file_path[PATH_MAX] = "/etc/mdrd.conf";
 
 uint32_t *allowed_mdr_domains = NULL;
@@ -383,16 +382,13 @@ int
 verify_callback_daemon(int ok, X509_STORE_CTX *ctx)
 {
 	int           e;
-	SSL          *ssl;
 	X509         *err_cert;
 	struct tlsev *t;
 	char          name[256];
 	char          hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
 
-	ssl = X509_STORE_CTX_get_ex_data(ctx,
-	    SSL_get_ex_data_X509_STORE_CTX_idx());
 	err_cert = X509_STORE_CTX_get_current_cert(ctx);
-	t = SSL_get_ex_data(ssl, ssl_data_idx);
+	t = tlsev_get_by_ctx(ctx);
 
 	if (getnameinfo((struct sockaddr *)&t->peer_addr,
 	    sizeof(struct sockaddr_in6), hbuf, sizeof(hbuf), sbuf,
@@ -915,16 +911,23 @@ run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
 	int         status;
 	struct stat st;
 
-	if (tlsev_init(&listener, ctx, lsock, lsock_len,
-	    mdrd_conf.socket_timeout_min,
-	    mdrd_conf.socket_timeout_max,
-	    mdrd_conf.max_clients,
-	    mdrd_conf.max_conn_per_ip,
-	    mdrd_conf.use_rcv_lowat,
-	    ssl_data_idx, &client_msg_in_cb, &client_close_cb) == -1) {
+	if (tlsev_init(&listener, lsock, lsock_len, mdrd_conf.max_clients,
+	    ctx, &client_msg_in_cb, &client_close_cb) == -1) {
 		xlog_strerror(LOG_ERR, errno, "tlsev_init");
 		return 1;
 	}
+	if (tlsev_set_socket_timeouts(&listener,
+	    mdrd_conf.socket_timeout_min, mdrd_conf.socket_timeout_max) == -1) {
+		xlog_strerror(LOG_ERR, errno, "tlsev_set_socket_timeouts");
+		return 1;
+	}
+	if (tlsev_set_max_conns_per_ip(&listener,
+	    mdrd_conf.max_conn_per_ip) == -1) {
+		xlog_strerror(LOG_ERR, errno, "tlsev_set_max_conns_per_ip");
+		return 1;
+	}
+	tlsev_auto_rcv_lowat(&listener, mdrd_conf.use_rcv_lowat);
+
 	if (tlsev_add_fd_cb(&listener, &backend_reader)) {
 		xlog_strerror(LOG_ERR, errno, "tlsev_add_fd_cb");
 		return 1;
@@ -1412,8 +1415,6 @@ main(int argc, char **argv)
 		exit(1);
 	lsock_len++;
 #endif
-	ssl_data_idx = SSL_get_ex_new_index(0, "tlsev_idx", NULL, NULL, NULL);
-
 	backend_reader.cb = &backend_msg_in_cb;
 	if (mdrd_conf.prefork <= 0 || foreground) {
 		if ((counters_init(1)) == -1) {

@@ -17,6 +17,8 @@
 #include "tlsev.h"
 #include "idxheap.h"
 
+static int tlsev_data_idx = -1;
+
 static int
 tlsev_peer_tree_cmp(struct tlsev_peer *p1, struct tlsev_peer *p2)
 {
@@ -128,10 +130,8 @@ kq_ev_set(struct tlsev_listener *l, int fd, short filter, u_short flags)
 #endif
 
 int
-tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
-    size_t lsock_len, int socket_timeout_min, int socket_timeout_max,
-    uint32_t max_clients, uint16_t max_conn_per_ip, int use_rcv_lowat,
-    int ssl_data_idx,
+tlsev_init(struct tlsev_listener *l, int *lsock, size_t lsock_len,
+    uint32_t max_clients, SSL_CTX *ctx,
     int (*client_msg_in_cb)(struct tlsev *, const char *, size_t, void **),
     void (*client_cb_data_free)(struct tlsev *, void *))
 {
@@ -145,33 +145,31 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 		errno = EINVAL;
 		return -1;
 	}
-	if (socket_timeout_min < 0)
-		socket_timeout_min = 0;
-	if (socket_timeout_max < 0)
-		socket_timeout_max = 0;
-	if (socket_timeout_max < socket_timeout_min)
-		socket_timeout_max = socket_timeout_min;
-	if (max_clients < 1)
-		max_clients = 1000;
-	else if (max_clients > TLSEV_MAX_CLIENTS)
-		max_clients = TLSEV_MAX_CLIENTS;
-
-	if (max_conn_per_ip < 1)
-		max_conn_per_ip = 10;
+	if (tlsev_data_idx == -1) {
+		errno = 0;
+		tlsev_data_idx = SSL_get_ex_new_index(0, "tlsev_idx",
+		    NULL, NULL, NULL);
+		if (tlsev_data_idx == -1) {
+			return -1;
+		}
+	}
 
 	bzero(l, sizeof(struct tlsev_listener));
 	l->ctx = ctx;
 	l->lsock_len = lsock_len;
-	l->socket_timeout_min = socket_timeout_min;
-	l->socket_timeout_max = socket_timeout_max;
-	l->tlsev_data_idx = ssl_data_idx;
+	l->socket_timeout_min = 0;
+	l->socket_timeout_max = 0;
 	l->next_id = 1;
 	l->client_msg_in_cb = client_msg_in_cb;
 	l->client_cb_data_free = client_cb_data_free;
 
+	if (max_clients < 1)
+		max_clients = 1;
+	if (max_clients > TLSEV_MAX_CLIENTS)
+		max_clients = TLSEV_MAX_CLIENTS;
 	l->max_clients = max_clients;
-	l->max_conn_per_ip = max_conn_per_ip;
-	l->use_rcv_lowat = use_rcv_lowat;
+	l->max_conn_per_ip = UINT16_MAX;
+	l->use_rcv_lowat = 1;
 	l->accepting = 1;
 
 	for (n = 0; n < lsock_len; n++)
@@ -179,7 +177,7 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 			return -1;
 
 	if (idxheap_init(&l->tlsev_store,
-	    (max_clients / 2 < 1) ? 2 : max_clients / 2,
+	    (l->max_clients / 2 < 1) ? 2 : l->max_clients / 2,
 	    &tlsev_timeout_cmp, &tlsev_match,
 	    (void(*)(void *))&tlsev_free, &tlsev_hash))
 		return -1;
@@ -253,6 +251,55 @@ tlsev_init(struct tlsev_listener *l, SSL_CTX *ctx, int *lsock,
 		}
 	}
 #endif
+	return 0;
+}
+
+int
+tlsev_set_socket_timeouts(struct tlsev_listener *l, int min, int max)
+{
+	if (l == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (min < 0 || max < 0 || max < min) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	l->socket_timeout_min = min;
+	l->socket_timeout_max = max;
+
+	return 0;
+}
+
+int
+tlsev_set_max_conns_per_ip(struct tlsev_listener *l, uint16_t n)
+{
+	if (l == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (n < 1) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	l->max_conn_per_ip = n;
+
+	return 0;
+}
+
+int
+tlsev_auto_rcv_lowat(struct tlsev_listener *l, int on)
+{
+	if (l == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	l->use_rcv_lowat = on;
 	return 0;
 }
 
@@ -450,8 +497,7 @@ tlsev_create(struct tlsev_listener *l, int fd, SSL_CTX *ctx,
 		XERRF(e, XLOG_SSL, ERR_get_error(), "SSL_new");
 		goto fail;
 	}
-	if (l->tlsev_data_idx >= 0)
-		SSL_set_ex_data(t->ssl, l->tlsev_data_idx, t);
+	SSL_set_ex_data(t->ssl, tlsev_data_idx, t);
 	SSL_set_bio(t->ssl, t->r, t->w);
 	SSL_set_accept_state(t->ssl);
 
@@ -543,6 +589,16 @@ tlsev_get(struct tlsev_listener *l, int fd)
 	struct tlsev key;
 	key.fd = fd;
 	return idxheap_lookup(&l->tlsev_store, &key);
+}
+
+struct tlsev *
+tlsev_get_by_ctx(X509_STORE_CTX *ctx)
+{
+	SSL *ssl;
+
+	ssl = X509_STORE_CTX_get_ex_data(ctx,
+	    SSL_get_ex_data_X509_STORE_CTX_idx());
+	return (struct tlsev *)SSL_get_ex_data(ssl, tlsev_data_idx);
 }
 
 static int
@@ -1144,7 +1200,11 @@ tlsev_poll(struct tlsev_listener *l)
 					continue;
 				}
 				if (errno == EMFILE) {
-					l->max_clients = l->active_clients;
+					if (l->active_clients < 1)
+						l->max_clients = 1;
+					else
+						l->max_clients =
+						    l->active_clients;
 					xlog_strerror(LOG_ERR, errno,
 					    "dropping max_clients to %d",
 					    l->max_clients);

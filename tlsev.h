@@ -102,11 +102,15 @@ struct tlsev {
 	void                  *client_cb_data;
 };
 
-int                  tlsev_init(struct tlsev_listener *, SSL_CTX *, int *,
-                         size_t, int, int, uint32_t, uint16_t, int, int,
-                         int (*in_cb)(struct tlsev *, const char *,
-                         size_t, void **),
+int                  tlsev_init(struct tlsev_listener *, int *, size_t,
+                         uint32_t, SSL_CTX *, int (*in_cb)(struct tlsev *,
+			 const char *, size_t, void **),
                          void (*in_cb_data_free)(struct tlsev *, void *));
+int                  tlsev_set_socket_timeouts(struct tlsev_listener *,
+                         int, int);
+int                  tlsev_set_max_conns_per_ip(struct tlsev_listener *,
+                         uint16_t);
+int                  tlsev_auto_rcv_lowat(struct tlsev_listener *, int);
 int                  tlsev_add_fd_cb(struct tlsev_listener *,
                          struct tlsev_fd_cb *);
 void                 tlsev_destroy(struct tlsev_listener *);
@@ -119,6 +123,7 @@ void                 tlsev_drain(struct tlsev *);
 uint64_t             tlsev_id(struct tlsev *);
 int                  tlsev_fd(struct tlsev *);
 struct tlsev *       tlsev_get(struct tlsev_listener *, int);
+struct tlsev *       tlsev_get_by_ctx(X509_STORE_CTX *);
 
 __END_DECLS
 
