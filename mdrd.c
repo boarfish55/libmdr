@@ -922,6 +922,7 @@ run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
 	}
 	memcpy(&last_cert_mtime, &st.st_mtim, sizeof(last_cert_mtime));
 
+	xlog(LOG_NOTICE, NULL, "running listener");
 	status = tlsev_run(&listener, &reload_cert_cb, ctx);
 	SSL_CTX_free(ctx);
 	tlsev_destroy(&listener);
