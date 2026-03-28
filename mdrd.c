@@ -771,6 +771,7 @@ load_crl(const char *crl_path, struct xerr *e)
 	if (!X509_STORE_add_crl(store, crl))
 		return XERRF(e, XLOG_SSL, ERR_get_error(),
 		    "X509_STORE_add_crl");
+	X509_CRL_free(crl);
 	return 0;
 }
 
@@ -811,6 +812,7 @@ load_keys(struct xerr *e)
 		X509_free(crt);
 		return -1;
 	}
+	X509_free(crt);
 
 	if (*mdrd_conf.crl_path != '\0') {
 		if ((d = opendir(mdrd_conf.crl_path)) == NULL)
