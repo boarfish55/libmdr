@@ -1578,8 +1578,7 @@ main(int argc, char **argv)
 	}
 
 	if (!foreground) {
-		if (daemonize(program, mdrd_conf.pid_file,
-		    0, 0, &e) == -1) {
+		if (daemonize(program, mdrd_conf.pid_file, 0, 0, &e) == -1) {
 			xerr_print(&e);
 			exit(1);
 		}
@@ -1726,6 +1725,8 @@ main(int argc, char **argv)
 		/* Nothing else */;
 
 	xlog(LOG_NOTICE, NULL, "all children exited");
+	if (!foreground)
+		unlink(mdrd_conf.pid_file);
 	cleanup();
 	return 0;
 }
