@@ -9,7 +9,7 @@ require_client_cert = false
 monitor_cert = true
 port = 9790
 listen_backlog = 1024
-prefork = 4
+prefork = 2
 pid_file = "/tmp/mdrd.pid"
 counters_sock = "/tmp/mdrd_counters.sock"
 

@@ -68,7 +68,7 @@ struct listener_counters {
 	 * the pipes (see counter_pipes below).
 	 */
 	uint64_t              messages_in;
-	uint64_t              messages_in_denied;
+	uint64_t              messages_in_rejected;
 	uint64_t              messages_out;
 	struct tlsev_counters tlsev;
 } listener_counters;
@@ -519,6 +519,25 @@ client_close_cb(struct tlsev *t, void *data)
 	free(cb_data);
 }
 
+static int
+error_reply(struct tlsev *t, enum mdr_err_code errcode, const char *errdesc)
+{
+	struct pmdr     pm;
+	char            pbuf[mdr_spec_base_sz(mdr_msg_error, strlen(errdesc))];
+	struct pmdr_vec pv[2];
+
+	pmdr_init(&pm, pbuf, sizeof(pbuf), MDR_FNONE);
+	pv[0].type = MDR_U32;
+	pv[0].v.u32 = errcode;
+	pv[1].type = MDR_S;
+	pv[1].v.s = errdesc;
+	if (pmdr_pack(&pm, mdr_msg_error, pv, PMDRVECLEN(pv)) == MDR_FAIL)
+		return -1;
+	if (tlsev_reply(t, pmdr_buf(&pm), pmdr_size(&pm)) <= 0)
+		return -1;
+	return 0;
+}
+
 /*
  * Message is coming from remote client, we're passing it to the
  * backend.
@@ -531,6 +550,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 	struct pmdr            bein;
 	int                    status, i;
 	struct timespec        ts;
+	char                   errmsg[128];
 	char                   bein_buf[mdrd_conf.max_payload_size +
 	    mdrd_conf.max_cert_size + 128]; /* 128 bytes for bein itself */
 
@@ -566,19 +586,39 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 
 	if (umdr_init(&cb_data->msg, cb_data->buf, cb_data->len,
 	    MDR_FNONE) == MDR_FAIL) {
-		// TODO: send an error to the client, possibly
-		// that we couldn't support the extensions, or that
-		// the payload was too large.
-		xlog_strerror(LOG_ERR, errno, "%s: umdr_init", __func__);
-		return -1;
+		switch (errno) {
+		case EAGAIN:
+			return 0;
+		case ENOTSUP:
+			if (error_reply(t, MDR_ERR_NOTSUPP,
+			    "mdr extension not supported") == -1)
+				return -1;
+			return 0;
+		case EOVERFLOW:
+			if (error_reply(t, MDR_ERR_BADMSG,
+			    "invalid payload size") == -1)
+				return -1;
+			return 0;
+		default:
+			xlog_strerror(LOG_ERR, errno,
+			    "%s: umdr_init", __func__);
+			if (error_reply(t, MDR_ERR_BEFAIL,
+			    "backend failure") == -1)
+				return -1;
+			return 0;
+		}
 	}
 
 	if (umdr_size(&cb_data->msg) > mdrd_conf.max_payload_size) {
-		// TODO: send an error to the client about size exceeded
-		xlog_strerror(LOG_ERR, errno, "%s: mdr size is above our "
-		    "configured maximum size of %lu", __func__,
+		snprintf(errmsg, sizeof(errmsg),
+		    "payload size in excess of configured limit (%llu bytes)",
 		    mdrd_conf.max_payload_size);
-		return -1;
+		if (error_reply(t, MDR_ERR_SZEX, errmsg) == -1)
+			return -1;
+		xlog_strerror(LOG_ERR, errno, "%s: mdr size is above our "
+		    "configured maximum size of %lu bytes", __func__,
+		    mdrd_conf.max_payload_size);
+		return 0;
 	}
 
 	if (umdr_pending(&cb_data->msg) > 0) {
@@ -595,11 +635,12 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 			break;
 	}
 	if (mdrd_conf.allowed_mdr_domains[i] == NULL) {
-		// TODO: send an error to the client about domain not supported
-		listener_counters.messages_in_denied++;
+		if (error_reply(t, MDR_ERR_NOTSUPP, "unsupported domain") == -1)
+			return -1;
+		listener_counters.messages_in_rejected++;
 		xlog(LOG_ERR, NULL,
 		    "%s: domain not allowed", __func__);
-		return -1;
+		return 0;
 	}
 
 	pmdr_init(&bein, bein_buf, sizeof(bein_buf), MDR_FNONE);
@@ -976,7 +1017,7 @@ listener_tasks(struct tlsev_listener *l, void *args)
 			xlog_strerror(LOG_ERR, errno, "write failed, "
 			    "counters may be corrupted");
 		listener_counters.messages_in = 0;
-		listener_counters.messages_in_denied = 0;
+		listener_counters.messages_in_rejected = 0;
 		listener_counters.messages_out = 0;
 
 		now.tv_sec += 1;
@@ -1180,7 +1221,7 @@ read_counters()
 	int                      fd, i;
 	struct sockaddr_un       addr;
 	ssize_t                  r;
-	struct listener_counters c;
+	struct listener_counters c, global;
 
 	if ((fd = socket(AF_LOCAL, SOCK_STREAM, 0)) == -1)
 		err(1, "socket");
@@ -1198,10 +1239,7 @@ read_counters()
 	if (r == 0)
 		return;
 
-	printf("global:\n");
-	printf("  restarts: %llu\n", restarts);
-
-	bzero(&c, sizeof(c));
+	bzero(&global, sizeof(global));
 	for (i = 0;; i++) {
 		r = readall(fd, &c, sizeof(c));
 		if (r == -1)
@@ -1209,8 +1247,11 @@ read_counters()
 		if (r == 0)
 			break;
 
-		// TODO: sum up counters, print per-pid counters
 		printf("backend %d:\n", i);
+		printf("  messages_in: %llu\n", c.messages_in);
+		printf("  messages_in_rejected: %llu\n",
+		    c.messages_in_rejected);
+		printf("  messages_out: %llu\n", c.messages_out);
 		printf("  raw_bytes_in: %llu\n", c.tlsev.raw_bytes_in);
 		printf("  raw_bytes_out: %llu\n", c.tlsev.raw_bytes_out);
 		printf("  ssl_bytes_in: %llu\n", c.tlsev.ssl_bytes_in);
@@ -1221,12 +1262,38 @@ read_counters()
 		printf("  file_ulimit_hits: %llu\n", c.tlsev.file_ulimit_hits);
 		printf("  sys_ulimit_hits: %llu\n", c.tlsev.sys_ulimit_hits);
 		printf("  active_clients: %llu\n", c.tlsev.active_clients);
-		printf("  messages_in: %llu\n", c.messages_in);
-		printf("  messages_in_denied: %llu\n", c.messages_in_denied);
-		printf("  messages_out: %llu\n", c.messages_out);
+
+		global.tlsev.raw_bytes_in += c.tlsev.raw_bytes_in;
+		global.tlsev.raw_bytes_out += c.tlsev.raw_bytes_out;
+		global.tlsev.ssl_bytes_in += c.tlsev.ssl_bytes_in;
+		global.tlsev.ssl_bytes_out += c.tlsev.ssl_bytes_out;
+		global.tlsev.client_accepts += c.tlsev.client_accepts;
+		global.tlsev.read_pauses += c.tlsev.read_pauses;
+		global.tlsev.wasted_accepts += c.tlsev.wasted_accepts;
+		global.tlsev.file_ulimit_hits += c.tlsev.file_ulimit_hits;
+		global.tlsev.sys_ulimit_hits += c.tlsev.sys_ulimit_hits;
+		global.tlsev.active_clients += c.tlsev.active_clients;
+		global.messages_in += c.messages_in;
+		global.messages_in_rejected += c.messages_in_rejected;
+		global.messages_out += c.messages_out;
 	}
 	close(fd);
-	// TODO: print global counters
+
+	printf("global:\n");
+	printf("  restarts: %llu\n", restarts);
+	printf("  messages_in: %llu\n", global.messages_in);
+	printf("  messages_in_rejected: %llu\n", global.messages_in_rejected);
+	printf("  messages_out: %llu\n", global.messages_out);
+	printf("  raw_bytes_in: %llu\n", global.tlsev.raw_bytes_in);
+	printf("  raw_bytes_out: %llu\n", global.tlsev.raw_bytes_out);
+	printf("  ssl_bytes_in: %llu\n", global.tlsev.ssl_bytes_in);
+	printf("  ssl_bytes_out: %llu\n", global.tlsev.ssl_bytes_out);
+	printf("  client_accepts: %llu\n", global.tlsev.client_accepts);
+	printf("  read_pauses: %llu\n", global.tlsev.read_pauses);
+	printf("  wasted_accepts: %llu\n", global.tlsev.wasted_accepts);
+	printf("  file_ulimit_hits: %llu\n", global.tlsev.file_ulimit_hits);
+	printf("  sys_ulimit_hits: %llu\n", global.tlsev.sys_ulimit_hits);
+	printf("  active_clients: %llu\n", global.tlsev.active_clients);
 }
 
 int
@@ -1472,8 +1539,8 @@ parent_loop()
 
 		counter_pipes[pidx].counters.messages_in +=
 		    chld_counters.messages_in;
-		counter_pipes[pidx].counters.messages_in_denied +=
-		    chld_counters.messages_in_denied;
+		counter_pipes[pidx].counters.messages_in_rejected +=
+		    chld_counters.messages_in_rejected;
 		counter_pipes[pidx].counters.messages_out +=
 		    chld_counters.messages_out;
 	}
