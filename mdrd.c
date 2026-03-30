@@ -23,7 +23,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "counters.h"
 #include "flatconf.h"
 #include "mdr.h"
 #include "mdrd.h"
@@ -34,6 +33,11 @@
 const char *program = "mdrd";
 X509_STORE *store = NULL;
 EVP_PKEY   *priv_key = NULL;
+SSL_CTX    *ssl_ctx = NULL;
+int         accept_socks[2];
+int         accept_socks_count = 0;
+int         control_sock = 0;
+int         n_children = 0;
 
 struct spawnproc      sproc;
 struct tlsev_listener listener;
@@ -43,6 +47,9 @@ pid_t                 backend_pid = 0;
 volatile sig_atomic_t shutdown_triggered = 0;
 volatile sig_atomic_t reload_cert = 0;
 struct timespec       last_cert_mtime = { 0, 0 };
+struct timespec       next_counter_update = { 0, 0 };
+uint64_t              restarts;
+int                   counters_out;
 
 int  foreground = 0;
 int  debug = 0;
@@ -50,6 +57,30 @@ char config_file_path[PATH_MAX] = "/etc/mdrd.conf";
 
 uint32_t *allowed_mdr_domains = NULL;
 int       allowed_mdr_domains_count = 0;
+
+/*
+ * This structure is used by listeners to to pack all counters prior
+ * to writing them to the parent's pipe.
+ */
+struct listener_counters {
+	/*
+	 * The remaining counters are aggregated as we get updates from
+	 * the pipes (see counter_pipes below).
+	 */
+	uint64_t              messages_in;
+	uint64_t              messages_in_denied;
+	uint64_t              messages_out;
+	struct tlsev_counters tlsev;
+} listener_counters;
+
+/*
+ * The parent keeps all its backend stats here.
+ */
+struct counter_pipes {
+	int                      fd;
+	pid_t                    pid;
+	struct listener_counters counters;
+} *counter_pipes = NULL;
 
 extern char *optarg;
 extern int   optind, opterr, optopt;
@@ -416,17 +447,33 @@ verify_callback_daemon(int ok, X509_STORE_CTX *ctx)
 void
 usage()
 {
-	printf("Usage: %s [options] <command>\n", program);
+	printf("Usage: %s [options] <subcommand>\n", program);
 	printf("\t-h            Prints this help\n");
 	printf("\t-d            Do not fork and print errors to STDERR\n");
 	printf("\t-f            Do not fork\n");
 	printf("\t-c <conf>     Specify alternate configuration path\n");
+	printf("\n");
+	printf("  Subcommands:\n");
+	printf("\tstat          Show monitoring data\n");
+	printf("\tshutdown      Terminate the service and its backends\n");
 }
 
 void
 handle_signals(int sig)
 {
-	xlog(LOG_NOTICE, NULL, "signal received: %d", sig);
+	switch (sig) {
+	case SIGHUP:
+		break;
+	case SIGTERM:
+	case SIGINT:
+	default:
+		shutdown_triggered = 1;
+	}
+}
+
+void
+listener_handle_signals(int sig)
+{
 	switch (sig) {
 	case SIGHUP:
 		reload_cert = 1;
@@ -539,7 +586,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		return 0;
 	}
 
-	counters_incr(COUNTER_MESSAGES_IN);
+	listener_counters.messages_in++;
 
 	for (i = 0; mdrd_conf.allowed_mdr_domains &&
 	    mdrd_conf.allowed_mdr_domains[i] != NULL; i++) {
@@ -549,7 +596,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 	}
 	if (mdrd_conf.allowed_mdr_domains[i] == NULL) {
 		// TODO: send an error to the client about domain not supported
-		counters_incr(COUNTER_MESSAGES_IN_DENIED);
+		listener_counters.messages_in_denied++;
 		xlog(LOG_ERR, NULL,
 		    "%s: domain not allowed", __func__);
 		return -1;
@@ -728,7 +775,7 @@ backend_msg_in_cb(int fd)
 	    beout_flags & MDRD_BEOUT_FCLOSE)
 		tlsev_drain(t);
 
-	counters_incr(COUNTER_MESSAGES_OUT);
+	listener_counters.messages_out++;
 
 	/*
 	 * TODO: backend could overflow us here. We should cap how many
@@ -862,19 +909,20 @@ load_keys(struct xerr *e)
 void
 cleanup()
 {
+	SSL_CTX_free(ssl_ctx);
+	tlsev_destroy(&listener);
 	mdr_registry_clear();
 	flatconf_free(flatconf_vars);
-	if (priv_key != NULL) {
+	if (counter_pipes != NULL)
+		free(counter_pipes);
+	if (priv_key != NULL)
 		EVP_PKEY_free(priv_key);
-		priv_key = NULL;
-	}
 }
 
 int
-reload_cert_cb(void *args)
+reload_cert_cb(SSL_CTX *ctx)
 {
-	struct stat  st;
-	SSL_CTX     *ctx = (SSL_CTX *)args;
+	struct stat st;
 
 	if (!reload_cert && !mdrd_conf.monitor_cert)
 		return 1;
@@ -897,7 +945,7 @@ reload_cert_cb(void *args)
 	}
 
 	if (SSL_CTX_use_certificate_chain_file(ctx, mdrd_conf.cert_file) != 1) {
-		xlog(LOG_ERR, NULL, "SSL_CTX_use_certificate: %s",
+		xlog(LOG_ERR, NULL, "SSL_CTX_use_certificate_chain_file: %s",
 		    ERR_error_string(ERR_get_error(), NULL));
 		return 0;
 	}
@@ -909,13 +957,54 @@ reload_cert_cb(void *args)
 }
 
 int
-run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
+listener_tasks(struct tlsev_listener *l, void *args)
 {
-	int         status;
-	struct stat st;
+	SSL_CTX         *ctx = (SSL_CTX *)args;
+	struct timespec  now;
+	int              r;
 
-	if (tlsev_init(&listener, lsock, lsock_len, mdrd_conf.max_clients,
-	    ctx, &client_msg_in_cb, &client_close_cb) == -1) {
+	if (!reload_cert_cb(ctx))
+		return 0;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	if (timespeccmp(&now, &next_counter_update, >=)) {
+		tlsev_dump_counters(l, &listener_counters.tlsev);
+
+		if ((r = writeall(counters_out, &listener_counters,
+		    sizeof(listener_counters))) == -1)
+			xlog_strerror(LOG_ERR, errno, "write failed, "
+			    "counters may be corrupted");
+		listener_counters.messages_in = 0;
+		listener_counters.messages_in_denied = 0;
+		listener_counters.messages_out = 0;
+
+		now.tv_sec += 1;
+		memcpy(&next_counter_update, &now, sizeof(now));
+	}
+
+	return 1;
+}
+
+int
+run()
+{
+	int              status;
+	struct stat      st;
+	struct sigaction act;
+
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = 0;
+	act.sa_handler = listener_handle_signals;
+	if (sigaction(SIGINT, &act, NULL) == -1 ||
+	    sigaction(SIGHUP, &act, NULL) == -1 ||
+	    sigaction(SIGTERM, &act, NULL) == -1) {
+		err(1, "sigaction");
+	}
+
+	if (tlsev_init(&listener, accept_socks, accept_socks_count,
+	    mdrd_conf.max_clients, ssl_ctx, &client_msg_in_cb,
+	    &client_close_cb) == -1) {
 		xlog_strerror(LOG_ERR, errno, "tlsev_init");
 		return 1;
 	}
@@ -944,36 +1033,41 @@ run(SSL_CTX *ctx, int *lsock, size_t lsock_len)
 	memcpy(&last_cert_mtime, &st.st_mtim, sizeof(last_cert_mtime));
 
 	xlog(LOG_NOTICE, NULL, "running listener");
-	status = tlsev_run(&listener, &reload_cert_cb, ctx);
-	SSL_CTX_free(ctx);
-	tlsev_destroy(&listener);
+	status = tlsev_run(&listener, &listener_tasks, ssl_ctx);
 	cleanup();
 	return status;
 }
 
 int
-get_listen_socket(int domain, int type, unsigned short port)
+get_listen_socket(int domain, int backlog, unsigned short port,
+    const char *path, int flags)
 {
 	int                 fd;
 	struct sockaddr_in6 sa6;
 	struct sockaddr_in  sa;
+	struct sockaddr_un  sun;
 	int                 one = 1;
 	int                 bufsz;
 #ifdef __linux__
 	int                 defer_accept_seconds = 5;
 #endif
-
-	if ((fd = socket(domain, type, 0)) == -1) {
+	if ((fd = socket(domain, SOCK_STREAM, 0)) == -1) {
 		xlog_strerror(LOG_ERR, errno, "socket");
 		return -1;
 	}
-	if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)) == -1) {
+	if (flags & O_NONBLOCK &&
+	    fcntl(fd, F_SETFD, O_NONBLOCK) == -1) {
+		xlog_strerror(LOG_ERR, errno, "fcntl");
+		return -1;
+	}
+	if (domain != AF_LOCAL &&
+	    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)) == -1) {
 		xlog_strerror(LOG_ERR, errno, "setsockopt");
 		return -1;
 	}
-
 #ifdef __linux__
-	if (setsockopt(fd, IPPROTO_TCP, TCP_DEFER_ACCEPT,
+	if (domain != AF_LOCAL &&
+	    setsockopt(fd, IPPROTO_TCP, TCP_DEFER_ACCEPT,
 	    &defer_accept_seconds, sizeof(defer_accept_seconds)) == -1) {
 		xlog_strerror(LOG_ERR, errno, "setsockopt");
 		return -1;
@@ -981,14 +1075,13 @@ get_listen_socket(int domain, int type, unsigned short port)
 #endif
 
 #ifdef __OpenBSD__
-	if (mdrd_conf.so_debug &&
+	if (domain != AF_LOCAL && mdrd_conf.so_debug &&
 	    setsockopt(fd, SOL_SOCKET, SO_DEBUG, &one, sizeof(one)) == -1) {
 		xlog_strerror(LOG_ERR, errno, "setsockopt");
 		return -1;
 	}
 #endif
-
-	if (mdrd_conf.rcvbuf > 0) {
+	if (domain != AF_LOCAL && mdrd_conf.rcvbuf > 0) {
 		bufsz = (mdrd_conf.rcvbuf >= INT_MAX) ? 0 : mdrd_conf.rcvbuf;
 #ifdef __OpenBSD__
 		if (bufsz > 0 &&
@@ -1012,7 +1105,7 @@ get_listen_socket(int domain, int type, unsigned short port)
 			return -1;
 		}
 	}
-	if (mdrd_conf.sndbuf > 0) {
+	if (domain != AF_LOCAL && mdrd_conf.sndbuf > 0) {
 		bufsz = (mdrd_conf.sndbuf >= INT_MAX) ? 0 : mdrd_conf.sndbuf;
 		if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF,
 		    &bufsz, sizeof(bufsz)) == -1) {
@@ -1030,7 +1123,7 @@ get_listen_socket(int domain, int type, unsigned short port)
 			xlog_strerror(LOG_ERR, errno, "bind");
 			return -1;
 		}
-	} else {
+	} else if (domain == AF_INET) {
 		bzero(&sa, sizeof(sa));
 		sa.sin_family = domain;
 		sa.sin_port = htons(port);
@@ -1038,153 +1131,23 @@ get_listen_socket(int domain, int type, unsigned short port)
 			xlog_strerror(LOG_ERR, errno, "bind");
 			return -1;
 		}
+	} else {
+		unlink(path);
+		bzero(&sun, sizeof(sun));
+		sun.sun_family = domain;
+		strlcpy(sun.sun_path, path, sizeof(sun.sun_path));
+		if (bind(fd, (struct sockaddr *)&sun, SUN_LEN(&sun)) == -1) {
+			xlog_strerror(LOG_ERR, errno, "bind: %s", path);
+			return -1;
+		}
 	}
 
-	if (listen(fd, mdrd_conf.listen_backlog) == -1) {
+	if (listen(fd, backlog) == -1) {
 		xlog_strerror(LOG_ERR, errno, "listen");
 		return -1;
 	}
 
 	return fd;
-}
-
-void
-counters_sig_handler(int sig)
-{
-	if (sig == SIGCHLD) {
-		while (waitpid(-1, NULL, WNOHANG) > 0);
-		return;
-	}
-	shutdown_triggered = 1;
-}
-
-void
-counter_reader()
-{
-	int                lsock, sock, i, c, r;
-	ssize_t            w;
-	struct sockaddr_un saddr;
-	struct timeval     timeout = {1, 0};
-	pid_t              pid;
-	uint64_t           v[COUNTER_LAST];
-	struct sigaction   act;
-	struct pollfd      pfd;
-
-	setproctitle("counters");
-	xlog_init(program, NULL, NULL, 1);
-
-	if ((lsock = socket(AF_LOCAL, SOCK_STREAM, 0)) == -1) {
-		xlog_strerror(LOG_ERR, errno, "socket");
-		exit(1);
-	}
-	unlink(mdrd_conf.counters_sock);
-
-	if (fcntl(lsock, F_SETFD, FD_CLOEXEC) == -1) {
-		xlog_strerror(LOG_ERR, errno, "fcntl");
-		exit(1);
-	}
-	if (fcntl(lsock, F_SETFD, O_NONBLOCK) == -1) {
-		xlog_strerror(LOG_ERR, errno, "fcntl");
-		exit(1);
-	}
-
-	bzero(&saddr, sizeof(saddr));
-	saddr.sun_family = AF_LOCAL;
-	strlcpy(saddr.sun_path, mdrd_conf.counters_sock,
-	    sizeof(saddr.sun_path));
-
-	if (bind(lsock, (struct sockaddr *)&saddr, SUN_LEN(&saddr)) == -1) {
-		xlog_strerror(LOG_ERR, errno, "bind");
-		exit(1);
-	}
-
-	if (listen(lsock, 64) == -1) {
-		xlog_strerror(LOG_ERR, errno, "listen");
-		exit(1);
-	}
-
-	sigemptyset(&act.sa_mask);
-	act.sa_flags = 0;
-	act.sa_handler = &counters_sig_handler;
-	if (sigaction(SIGINT, &act, NULL) == -1 ||
-	    sigaction(SIGTERM, &act, NULL) == -1 ||
-	    sigaction(SIGCHLD, &act, NULL) == -1) {
-		xlog_strerror(LOG_ERR, errno, "sigaction");
-		exit(1);
-	}
-
-	while (!shutdown_triggered) {
-		pfd.fd = lsock;
-		pfd.events = POLLIN;
-		r = poll(&pfd, 1, 1000);
-		if (r == -1) {
-			if (errno == EINTR)
-				continue;
-			xlog_strerror(LOG_ERR, errno, "poll");
-			exit(1);
-		}
-
-		if (r == 0) {
-			if (getppid() == 1)
-				shutdown_triggered = 1;
-			continue;
-		}
-
-		if ((sock = accept(lsock, NULL, 0)) == -1) {
-			if (errno == EINTR)
-				continue;
-			xlog_strerror(LOG_ERR, errno, "accept");
-			exit(1);
-		}
-
-		if (fcntl(sock, F_SETFD, FD_CLOEXEC) == -1) {
-			xlog_strerror(LOG_ERR, errno, "fcntl");
-			close(sock);
-			continue;
-		}
-
-		if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout,
-		    sizeof(timeout)) == -1) {
-			xlog_strerror(LOG_ERR, errno, "setsockopt");
-			close(sock);
-			continue;
-		}
-
-		if ((pid = fork()) == -1) {
-			xlog_strerror(LOG_ERR, errno, "fork");
-			continue;
-		}
-
-		if (pid > 0) {
-			close(sock);
-			continue;
-		}
-
-		close(lsock);
-		for (i = 0; i < counters_arena_count(); i++) {
-			counters_set_arena(i);
-			for (c = 0; c < COUNTER_LAST; c++)
-				v[c] = counters_get(c);
-again:
-			w = write(sock, v, sizeof(v));
-			if (w == -1) {
-				if (errno == EINTR)
-					goto again;
-				xlog_strerror(LOG_ERR, errno, "write");
-				goto end;
-			}
-
-			if (w < sizeof(v)) {
-				xlog(LOG_ERR, NULL, "short write");
-				goto end;
-			}
-		}
-end:
-		cleanup();
-		exit(0);
-	}
-	cleanup();
-	exit(0);
 }
 
 void
@@ -1211,20 +1174,320 @@ send_shutdown()
 		err(1, "kill");
 }
 
+void
+read_counters()
+{
+	int                      fd, i;
+	struct sockaddr_un       addr;
+	ssize_t                  r;
+	struct listener_counters c;
+
+	if ((fd = socket(AF_LOCAL, SOCK_STREAM, 0)) == -1)
+		err(1, "socket");
+
+	bzero(&addr, sizeof(addr));
+	addr.sun_family = AF_LOCAL;
+	strlcpy(addr.sun_path, mdrd_conf.counters_sock, sizeof(addr.sun_path));
+
+	if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) == -1)
+		err(1, "connect");
+
+	r = readall(fd, &restarts, sizeof(restarts));
+	if (r == -1)
+		err(1, "readall");
+	if (r == 0)
+		return;
+
+	printf("global:\n");
+	printf("  restarts: %llu\n", restarts);
+
+	bzero(&c, sizeof(c));
+	for (i = 0;; i++) {
+		r = readall(fd, &c, sizeof(c));
+		if (r == -1)
+			err(1, "readall");
+		if (r == 0)
+			break;
+
+		// TODO: sum up counters, print per-pid counters
+		printf("backend %d:\n", i);
+		printf("  raw_bytes_in: %llu\n", c.tlsev.raw_bytes_in);
+		printf("  raw_bytes_out: %llu\n", c.tlsev.raw_bytes_out);
+		printf("  ssl_bytes_in: %llu\n", c.tlsev.ssl_bytes_in);
+		printf("  ssl_bytes_out: %llu\n", c.tlsev.ssl_bytes_out);
+		printf("  client_accepts: %llu\n", c.tlsev.client_accepts);
+		printf("  read_pauses: %llu\n", c.tlsev.read_pauses);
+		printf("  wasted_accepts: %llu\n", c.tlsev.wasted_accepts);
+		printf("  file_ulimit_hits: %llu\n", c.tlsev.file_ulimit_hits);
+		printf("  sys_ulimit_hits: %llu\n", c.tlsev.sys_ulimit_hits);
+		printf("  active_clients: %llu\n", c.tlsev.active_clients);
+		printf("  messages_in: %llu\n", c.messages_in);
+		printf("  messages_in_denied: %llu\n", c.messages_in_denied);
+		printf("  messages_out: %llu\n", c.messages_out);
+	}
+	close(fd);
+	// TODO: print global counters
+}
+
+int
+send_counters()
+{
+	int            sock, i;
+	struct timeval timeout = {5, 0};
+	pid_t          pid;
+	ssize_t        w;
+
+	if ((sock = accept(control_sock, NULL, 0)) == -1) {
+		if (errno != EINTR)
+			xlog_strerror(LOG_ERR, errno, "accept");
+		return -1;
+	}
+
+	if (fcntl(sock, F_SETFD, FD_CLOEXEC) == -1) {
+		xlog_strerror(LOG_ERR, errno, "fcntl");
+		close(sock);
+		return -1;
+	}
+
+	if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+	    sizeof(timeout)) == -1) {
+		xlog_strerror(LOG_ERR, errno, "setsockopt");
+		close(sock);
+		return -1;
+	}
+
+	if ((pid = fork()) == -1) {
+		xlog_strerror(LOG_ERR, errno, "fork");
+		return -1;
+	} else if (pid > 0) {
+		close(sock);
+		return 0;
+	}
+
+	/* Don't bother freeing everything, but to free up the SSL stuff */
+	SSL_CTX_free(ssl_ctx);
+	if (priv_key != NULL)
+		EVP_PKEY_free(priv_key);
+
+	close(control_sock);
+
+	w = writeall(sock, &restarts, sizeof(restarts));
+	if (w == -1) {
+		xlog_strerror(LOG_ERR, errno, "write");
+		exit((errno == EPIPE) ? 0 : 1);
+	}
+
+	for (i = 0; i < mdrd_conf.prefork; i++) {
+		w = writeall(sock, &counter_pipes[i].counters,
+		    sizeof(listener_counters));
+		if (w == -1) {
+			xlog_strerror(LOG_ERR, errno, "write");
+			exit((errno == EPIPE) ? 0 : 1);
+		}
+	}
+	exit(0);
+
+	/* Never reached */
+	return 0;
+}
+
+int
+spawn_backend(int idx)
+{
+	struct xerr e;
+	int         fds[2];
+
+	if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
+	    &backend_pid, &backend_wfd, &backend_reader.fd,
+	    mdrd_conf.backend_uid, mdrd_conf.backend_gid,
+	    xerrz(&e)) == -1) {
+		xlog(LOG_ERR, &e, __func__);
+		return -1;
+	}
+	xlog(LOG_NOTICE, NULL, "spawned backend with pid %d",
+	    backend_pid);
+	if (pipe(fds) == -1) {
+		xlog_strerror(LOG_ERR, errno, "pipe");
+		return -1;
+	}
+	if ((counter_pipes[idx].pid = fork()) == -1) {
+		xlog_strerror(LOG_ERR, errno, "fork");
+		close(backend_reader.fd);
+		close(backend_wfd);
+		close(fds[0]);
+		close(fds[1]);
+		return -1;
+	} else if (counter_pipes[idx].pid == 0) {
+		/*
+		 * Listener, parent of tlsev. Will
+		 * periodically send its counters
+		 * over counters_out (write end of pipe).
+		 */
+		bzero(&listener_counters, sizeof(listener_counters));
+		counters_out = fds[1];
+		close(fds[0]);
+		free(counter_pipes);
+		counter_pipes = NULL;
+		setproctitle("listener");
+		exit(run());
+	}
+	counter_pipes[idx].fd = fds[0];
+	close(fds[1]);
+	close(backend_reader.fd);
+	close(backend_wfd);
+	return 0;
+}
+
+int
+parent_loop()
+{
+	int                      i, r, pidx;
+	int                      wstatus;
+	pid_t                    dead_pid;
+	struct pollfd            pfd[mdrd_conf.prefork + 1];
+	int                      pfd_sz;
+	struct listener_counters chld_counters;
+
+	/*
+	 * If a shutdown is triggered, close our listen sockets
+	 * so we can gracefully stop our backends.
+	 */
+	if (shutdown_triggered && accept_socks_count > 0) {
+		for (i = 0; i < accept_socks_count; i++)
+			close(accept_socks[i]);
+		accept_socks_count = 0;
+
+		for (i = 0; i < mdrd_conf.prefork; i++)
+			if (counter_pipes[i].pid != -1)
+				kill(counter_pipes[i].pid, 15);
+	}
+
+	pfd_sz = 0;
+	if (!shutdown_triggered) {
+		pfd[pfd_sz].fd = control_sock;
+		pfd[pfd_sz].events = POLLIN;
+		pfd_sz++;
+	}
+	for (i = 0; i < mdrd_conf.prefork; i++) {
+		if (counter_pipes[i].pid != -1) {
+			pfd[pfd_sz].fd = counter_pipes[i].fd;
+			pfd[pfd_sz].events = POLLIN;
+			pfd_sz++;
+		}
+	}
+
+	r = poll(pfd, pfd_sz, 1000);
+	if (r == -1) {
+		if (errno == EINTR)
+			return 1;
+		xlog_strerror(LOG_ERR, errno, "poll");
+		return 0;
+	}
+
+	if (r == 0) {
+		/*
+		 * Timeout is mostly here so we catch when a
+		 * shutdown is triggered.
+		 */
+		return 1;
+	}
+
+	while ((dead_pid = waitpid(-1, &wstatus, WNOHANG)) > 0) {
+		if (WIFEXITED(wstatus))
+			xlog(LOG_WARNING, NULL,
+			    "child %d exited with status %d",
+			    dead_pid, WEXITSTATUS(wstatus));
+		else
+			xlog(LOG_WARNING, NULL,
+			    "child %d killed by signal %d",
+			    dead_pid, WTERMSIG(wstatus));
+	}
+
+	for (i = 0; i < pfd_sz; i++) {
+		if (pfd[i].revents == 0)
+			continue;
+
+		if (pfd[i].fd == control_sock) {
+			/* 
+			 * Will fork a child to send counters over control
+			 * socket.
+			 */
+			send_counters();
+			continue;
+		}
+
+		/* Get which pipe index the fd corresponds to. */
+		for (pidx = 0; pidx < mdrd_conf.prefork; pidx++)
+			if (pfd[i].fd == counter_pipes[pidx].fd)
+				break;
+
+		if (pidx >= mdrd_conf.prefork) {
+			xlog(LOG_ERR, NULL, "message from unknown pipe?!");
+			continue;
+		}
+
+		/*
+		 * Otherwise we just read the counters sent from the child
+		 * and tally them up. We sum them to track the total across
+		 * restarts of each child.
+		 */
+		r = readall(pfd[i].fd, &chld_counters, sizeof(chld_counters));
+		if (r == -1) {
+			xlog_strerror(LOG_ERR, errno, "read");
+			continue;
+		} else if (r == 0) {
+			n_children--;
+			close(counter_pipes[pidx].fd);
+			counter_pipes[pidx].pid = -1;
+			counter_pipes[pidx].fd = -1;
+			if (!shutdown_triggered) {
+				if (spawn_backend(pidx) != -1) {
+					restarts++;
+					n_children++;
+				}
+			}
+			continue;
+		}
+
+		counter_pipes[pidx].counters.tlsev.raw_bytes_in +=
+		    chld_counters.tlsev.raw_bytes_in;
+		counter_pipes[pidx].counters.tlsev.raw_bytes_out +=
+		    chld_counters.tlsev.raw_bytes_out;
+		counter_pipes[pidx].counters.tlsev.ssl_bytes_in +=
+		    chld_counters.tlsev.ssl_bytes_in;
+		counter_pipes[pidx].counters.tlsev.ssl_bytes_out +=
+		    chld_counters.tlsev.ssl_bytes_out;
+		counter_pipes[pidx].counters.tlsev.client_accepts +=
+		    chld_counters.tlsev.client_accepts;
+		counter_pipes[pidx].counters.tlsev.read_pauses +=
+		    chld_counters.tlsev.read_pauses;
+		counter_pipes[pidx].counters.tlsev.wasted_accepts +=
+		    chld_counters.tlsev.wasted_accepts;
+		counter_pipes[pidx].counters.tlsev.file_ulimit_hits +=
+		    chld_counters.tlsev.file_ulimit_hits;
+		counter_pipes[pidx].counters.tlsev.sys_ulimit_hits +=
+		    chld_counters.tlsev.sys_ulimit_hits;
+		counter_pipes[pidx].counters.tlsev.active_clients =
+		    chld_counters.tlsev.active_clients;
+
+		counter_pipes[pidx].counters.messages_in +=
+		    chld_counters.messages_in;
+		counter_pipes[pidx].counters.messages_in_denied +=
+		    chld_counters.messages_in_denied;
+		counter_pipes[pidx].counters.messages_out +=
+		    chld_counters.messages_out;
+	}
+
+	return 1;
+}
+
 int
 main(int argc, char **argv)
 {
-	int                opt;
-	SSL_CTX           *ctx;
-	struct xerr        e;
-	int                lsock[2];
-	size_t             lsock_len = 0;
-	int                n_children, i;
-	int                cntra_idx;
-	int                wstatus;
-	pid_t              pid;
-	struct sigaction   act;
-	struct rlimit      zero_core = {0, 0};
+	int              opt, i;
+	struct xerr      e;
+	struct sigaction act;
+	struct rlimit    zero_core = {0, 0};
 
 	while ((opt = getopt(argc, argv, "c:hfd")) != -1) {
 		switch (opt) {
@@ -1275,7 +1538,7 @@ main(int argc, char **argv)
 			    sigaction(SIGTERM, &act, NULL) == -1) {
 				err(1, "sigaction");
 			}
-			counters_read(mdrd_conf.counters_sock);
+			read_counters();
 			exit(0);
 		}
 		usage();
@@ -1290,6 +1553,9 @@ main(int argc, char **argv)
 
 	if (mdrd_conf.port < 1 || mdrd_conf.port > 65535)
 		errx(1, "invalid listen port specified");
+
+	if (mdrd_conf.prefork < 1)
+		errx(1, "prefork must be at least 1");
 
 	if (mdrd_conf.listen_backlog < 1)
 		errx(1, "invalid listen backlog size specified");
@@ -1360,26 +1626,37 @@ main(int argc, char **argv)
 		    "unveil: %s", mdrd_conf.crl_file);
 		exit(1);
 	}
-	if (pledge("stdio rpath cpath recvfd inet dns proc", "") == -1) {
+	if (*mdrd_conf.crl_path != '\0' &&
+	    unveil(mdrd_conf.crl_path, "r") == -1) {
+		xlog_strerror(LOG_ERR, errno,
+		    "unveil: %s", mdrd_conf.crl_path);
+		exit(1);
+	}
+	if (unveil(mdrd_conf.counters_sock, "rwc") == -1) {
+		xlog_strerror(LOG_ERR, errno,
+		    "unveil: %s", mdrd_conf.crl_file);
+		exit(1);
+	}
+	if (pledge("stdio rpath cpath recvfd inet dns proc unix", "") == -1) {
 		xlog_strerror(LOG_ERR, errno, "pledge");
 		exit(1);
 	}
 #endif
-	if ((ctx = SSL_CTX_new(TLS_method())) == NULL) {
+	if ((ssl_ctx = SSL_CTX_new(TLS_method())) == NULL) {
 		xlog(LOG_ERR, NULL, "SSL_CTX_new: %s",
 		    ERR_error_string(ERR_get_error(), NULL));
 		exit(1);
 	}
 
-	SSL_CTX_set_security_level(ctx, 3);
-	SSL_CTX_set_cert_store(ctx, store);
-	SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
+	SSL_CTX_set_security_level(ssl_ctx, 3);
+	SSL_CTX_set_cert_store(ssl_ctx, store);
+	SSL_CTX_set_options(ssl_ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
 	if (mdrd_conf.require_client_cert)
-		SSL_CTX_set_verify(ctx,
+		SSL_CTX_set_verify(ssl_ctx,
 		    SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
 		    verify_callback_daemon);
 	else
-		SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER,
+		SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER,
 		    verify_callback_daemon);
 
 	/*
@@ -1388,187 +1665,67 @@ main(int argc, char **argv)
 	 * we want resumption we'll use session tickets. See:
 	 *   SSL_CTX_set_tlsext_ticket_key_evp_cb(3SSL)
 	 */
-	SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_OFF);
+	SSL_CTX_set_session_cache_mode(ssl_ctx, SSL_SESS_CACHE_OFF);
 
-	if (SSL_CTX_use_certificate_chain_file(ctx, mdrd_conf.cert_file) != 1) {
-		xlog(LOG_ERR, NULL, "SSL_CTX_use_certificate: %s",
+	if (SSL_CTX_use_certificate_chain_file(ssl_ctx,
+	    mdrd_conf.cert_file) != 1) {
+		xlog(LOG_ERR, NULL, "SSL_CTX_use_certificate_chain_file: %s",
 		    ERR_error_string(ERR_get_error(), NULL));
 		exit(1);
 	}
-	if (SSL_CTX_use_PrivateKey(ctx, priv_key) != 1) {
+	if (SSL_CTX_use_PrivateKey(ssl_ctx, priv_key) != 1) {
 		xlog(LOG_ERR, NULL, "SSL_CTX_use_PrivateKey: %s",
 		    ERR_error_string(ERR_get_error(), NULL));
 		exit(1);
 	}
 
-	lsock[lsock_len] = get_listen_socket(AF_INET6, SOCK_STREAM,
-	    mdrd_conf.port);
-	if (lsock[lsock_len] == -1)
+	accept_socks[accept_socks_count] = get_listen_socket(AF_INET6,
+	    mdrd_conf.listen_backlog, mdrd_conf.port, NULL, 0);
+	if (accept_socks[accept_socks_count] == -1)
 		exit(1);
-	lsock_len++;
+	accept_socks_count++;
 #ifndef __linux__
 	/*
 	 * On OpenBSD (and other BSDs??), we don't get v4 compatibility when
-	 * creating a v6 listening socket. This function lets us create
-	 * listening sockets by family.
+	 * creating a v6 listening socket.
 	 */
-	lsock[lsock_len] = get_listen_socket(AF_INET, SOCK_STREAM,
-	    mdrd_conf.port);
-	if (lsock[lsock_len] == -1)
+	accept_socks[accept_socks_count] = get_listen_socket(AF_INET,
+	    mdrd_conf.listen_backlog, mdrd_conf.port, NULL, 0);
+	if (accept_socks[accept_socks_count] == -1)
 		exit(1);
-	lsock_len++;
+	accept_socks_count++;
 #endif
-	backend_reader.cb = &backend_msg_in_cb;
-	if (mdrd_conf.prefork <= 0 || foreground) {
-		if ((counters_init(1)) == -1) {
-			xlog_strerror(LOG_ERR, errno, "counters_init");
-			exit(1);
-		}
-
-		if ((pid = fork()) == -1) {
-			xlog_strerror(LOG_ERR, errno, "fork");
-			return -1;
-		} else if (pid == 0) {
-			SSL_CTX_free(ctx);
-			spawnproc_close(&sproc);
-			counter_reader();
-		}
-
-		if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
-		    &backend_pid, &backend_wfd, &backend_reader.fd,
-		    mdrd_conf.backend_uid, mdrd_conf.backend_gid,
-		    xerrz(&e)) == -1) {
-			xlog(LOG_ERR, &e, __func__);
-			exit(1);
-		}
-		xlog(LOG_NOTICE, NULL, "spawned backend with pid %d",
-		    backend_pid);
-		exit(run(ctx, lsock, lsock_len));
-	}
-
-	if ((counters_init(mdrd_conf.prefork)) == -1) {
-		xlog_strerror(LOG_ERR, errno, "counters_init");
+	bzero(&listener_counters, sizeof(listener_counters));
+	counter_pipes = calloc(mdrd_conf.prefork,
+	    sizeof(struct counter_pipes));
+	if (counter_pipes == NULL) {
+		xlog_strerror(LOG_ERR, errno, "malloc");
 		exit(1);
 	}
 
-	if ((pid = fork()) == -1) {
-		xlog_strerror(LOG_ERR, errno, "fork");
-		return -1;
-	} else if (pid == 0) {
-		SSL_CTX_free(ctx);
-		counter_reader();
-	}
+	backend_reader.cb = &backend_msg_in_cb;
 
-	for (n_children = 0; n_children < mdrd_conf.prefork; n_children++) {
-		if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
-		    &backend_pid, &backend_wfd, &backend_reader.fd,
-		    mdrd_conf.backend_uid, mdrd_conf.backend_gid,
-		    xerrz(&e)) == -1) {
-			xlog(LOG_ERR, &e, __func__);
+	for (i = 0; i < mdrd_conf.prefork; i++) {
+		if (spawn_backend(i) == -1)
 			exit(1);
-		}
-		xlog(LOG_NOTICE, NULL, "spawned backend with pid %d",
-		    backend_pid);
-
-		counters_set_arena(n_children);
-		if ((pid = fork()) == -1) {
-			xlog_strerror(LOG_ERR, errno, "fork");
-			exit(1);
-		} else if (pid == 0) {
-			setproctitle("listener");
-			exit(run(ctx, lsock, lsock_len));
-		}
-		counters_set_pid(pid);
-
-		close(backend_reader.fd);
-		close(backend_wfd);
+		n_children++;
 	}
 
 	setproctitle("parent");
 
-	for (;;) {
-		pid = waitpid(-1, &wstatus, 0);
-		if (pid != -1 && !shutdown_triggered) {
-			if ((cntra_idx = counters_find_arena(pid)) == -1) {
-				xlog(LOG_DEBUG, NULL, "%s: failed to find "
-				    "counter arena for pid %d; possibly a "
-				    "non-listener child", __func__, pid);
-				continue;
-			}
-			counters_set_arena(cntra_idx);
-			counters_set_pid(-1);
-			n_children--;
-			if (WIFEXITED(wstatus))
-				xlog(LOG_WARNING, NULL,
-				    "child %d exited with status %d",
-				    pid, WEXITSTATUS(wstatus));
-			else
-				xlog(LOG_WARNING, NULL,
-				    "child %d killed by signal %d",
-				    pid, WTERMSIG(wstatus));
-
-			if (spawnproc_exec(&sproc, mdrd_conf.backend_argv,
-			    &backend_pid, &backend_wfd, &backend_reader.fd,
-			    mdrd_conf.backend_uid, mdrd_conf.backend_gid,
-			    xerrz(&e)) == -1) {
-				xlog(LOG_ERR, &e, __func__);
-				exit(1);
-			}
-			xlog(LOG_NOTICE, NULL, "spawned backend with pid %d",
-			    backend_pid);
-
-			counters_incr(COUNTER_RESTARTS);
-			if ((pid = fork()) == -1) {
-				xlog_strerror(LOG_ERR, errno, "fork");
-			} else if (pid == 0) {
-				setproctitle("listener");
-				exit(run(ctx, lsock, lsock_len));
-			} else {
-				counters_set_pid(pid);
-				n_children++;
-			}
-
-			close(backend_reader.fd);
-			close(backend_wfd);
-			continue;
-		}
-
-		if (!shutdown_triggered) {
-			xlog(LOG_WARNING, NULL, "signal received but "
-			    "shutdown not yet triggered");
-			continue;
-		}
-
-		if (lsock_len > 0) {
-			for (i = 0; i < lsock_len; i++)
-			    close(lsock[i]);
-			lsock_len = 0;
-
-			sigemptyset(&act.sa_mask);
-			act.sa_flags = 0;
-			act.sa_handler = SIG_IGN;
-			sigaction(SIGINT, &act, NULL);
-			sigaction(SIGTERM, &act, NULL);
-
-			kill(0, 15);
-		}
-
-		if (pid != -1) {
-			if (WIFEXITED(wstatus))
-				xlog(LOG_NOTICE, NULL,
-				    "child %d exited with status %d",
-				    pid, WEXITSTATUS(wstatus));
-			else
-				xlog(LOG_NOTICE, NULL,
-				    "child %d killed by signal %d",
-				    pid, WTERMSIG(wstatus));
-			n_children--;
-			if (n_children == 0)
-				break;
-		}
+	control_sock = get_listen_socket(AF_LOCAL, 64, 0,
+	    mdrd_conf.counters_sock, O_NONBLOCK);
+	if (control_sock == -1)
+		exit(1);
+	if (fcntl(control_sock, F_SETFD, FD_CLOEXEC) == -1) {
+		xlog_strerror(LOG_ERR, errno, "fcntl");
+		exit(1);
 	}
-	SSL_CTX_free(ctx);
-	tlsev_destroy(&listener);
+
+	while (n_children > 0 && parent_loop())
+		/* Nothing else */;
+
 	xlog(LOG_NOTICE, NULL, "all children exited");
+	cleanup();
 	return 0;
 }

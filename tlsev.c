@@ -13,7 +13,6 @@
 #include <strings.h>
 #include <stdio.h>
 #include <unistd.h>
-#include "counters.h"
 #include "tlsev.h"
 #include "idxheap.h"
 
@@ -579,7 +578,6 @@ tlsev_close(struct tlsev_listener *l, struct tlsev *t)
 		X509_free(t->peer_cert);
 	tlsev_free(t);
 	l->active_clients--;
-	counters_decr(COUNTER_ACTIVE_CLIENTS);
 	return r;
 }
 
@@ -625,7 +623,7 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 	else if (n == 0)
 		return XERRF(e, XLOG_APP, XLOG_EOF, "read EOF");
 
-	counters_add(COUNTER_RAW_BYTES_IN, n);
+	l->counters.raw_bytes_in += n;
 	xlog(LOG_DEBUG, NULL, "%s: %d bytes read on fd %d", __func__, n, t->fd);
 
 	if ((r = BIO_write(t->r, buf, n)) <= 0)
@@ -663,13 +661,15 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		case SSL_ERROR_WANT_READ:
 		case SSL_ERROR_WANT_WRITE:
 		case SSL_ERROR_ZERO_RETURN:
-			break;
+			return 0;
 		default:
 			return XERRF(e, XLOG_SSL, r, "SSL_read");
 		}
-	} else if ((r = l->client_msg_in_cb(t, buf, r,
-	    &t->client_cb_data)) == -1) {
-		counters_add(COUNTER_SSL_BYTES_IN, r);
+	}
+
+	l->counters.ssl_bytes_in += r;
+
+	if ((r = l->client_msg_in_cb(t, buf, r, &t->client_cb_data)) == -1) {
 		return XERRF(e, XLOG_APP, XLOG_CALLBACK_ERR,
 		    "t->client_cb_data failed");
 	}
@@ -698,7 +698,7 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		if (n == -1)
 			return XERRF(e, XLOG_ERRNO, errno, "write");
 
-		counters_add(COUNTER_RAW_BYTES_OUT, n);
+		l->counters.raw_bytes_out += n;
 
 		if (n < t->retry_len) {
 			t->retry_len -= n;
@@ -729,7 +729,7 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		if (n != -1) {
 			xlog(LOG_DEBUG, NULL, "%s: wrote %d bytes on fd %d",
 			    __func__, n, t->fd);
-			counters_add(COUNTER_RAW_BYTES_OUT, n);
+			l->counters.raw_bytes_out += n;
 		}
 		if (n == -1) {
 			return XERRF(e, XLOG_ERRNO, errno, "write");
@@ -782,7 +782,7 @@ tlsev_reply(struct tlsev *t, const unsigned char *buf, int len)
 		return -1;
 	}
 
-	counters_add(COUNTER_SSL_BYTES_OUT, r);
+	t->listener->counters.ssl_bytes_out += r;
 
 	if (t->wpending == 0) {
 #ifdef __linux__
@@ -870,8 +870,7 @@ tlsev_new_client(struct tlsev_listener *l, int fd,
 	}
 
 	if (l->accepting) {
-		counters_incr(COUNTER_ACTIVE_CLIENTS);
-		counters_incr(COUNTER_TOTAL_CLIENTS);
+		l->counters.client_accepts++;
 		if (++l->active_clients >= l->max_clients) {
 			xlog(LOG_WARNING, NULL, "max_clients reached (%d); "
 			    "not accepting new connections", l->active_clients);
@@ -1067,7 +1066,7 @@ tlsev_ev_write(struct tlsev_listener *l, struct tlsev *t)
 				return -1;
 			}
 #endif
-			counters_incr(COUNTER_READ_PAUSES);
+			l->counters.read_pauses++;
 			xlog(LOG_DEBUG, NULL, "pausing reads for fd %d", t->fd);
 		}
 		/*
@@ -1194,8 +1193,7 @@ tlsev_poll(struct tlsev_listener *l)
 						 * wake up just for an accept()
 						 * we didn't handle.
 						 */
-						counters_incr(
-						    COUNTER_WAKE_FOR_ACCEPT);
+						l->counters.wasted_accepts++;
 					}
 					continue;
 				}
@@ -1208,11 +1206,11 @@ tlsev_poll(struct tlsev_listener *l)
 					xlog_strerror(LOG_ERR, errno,
 					    "dropping max_clients to %d",
 					    l->max_clients);
+					l->counters.file_ulimit_hits++;
 					continue;
 				}
-				if (errno == ENFILE) {
-					// TODO: Add a counter
-				}
+				if (errno == ENFILE)
+					l->counters.sys_ulimit_hits++;
 
 				// TODO: Add a counter, also some way to
 				// not log the same message too quick
@@ -1249,7 +1247,6 @@ tlsev_poll(struct tlsev_listener *l)
 				xlog_strerror(LOG_ERR, errno, "close");
 			} else {
 				l->active_clients--;
-				counters_decr(COUNTER_ACTIVE_CLIENTS);
 			}
 			continue;
 		}
@@ -1287,13 +1284,14 @@ tlsev_poll(struct tlsev_listener *l)
 }
 
 int
-tlsev_run(struct tlsev_listener *l, int(*tasks)(void *), void *task_args)
+tlsev_run(struct tlsev_listener *l,
+    int(*tasks)(struct tlsev_listener *, void *), void *task_args)
 {
 	clock_gettime(CLOCK_MONOTONIC, &l->last_purge);
 	while (!l->shutdown_triggered || l->active_clients > 0) {
 		if (tlsev_poll(l) == -1)
 			return -1;
-		if (tasks != NULL && !tasks(task_args))
+		if (tasks != NULL && !tasks(l, task_args))
 			return -1;
 	}
 	return 0;
@@ -1303,4 +1301,12 @@ void
 tlsev_shutdown(struct tlsev_listener *l)
 {
 	l->shutdown_triggered = 1;
+}
+
+void
+tlsev_dump_counters(struct tlsev_listener *l, struct tlsev_counters *c)
+{
+	l->counters.active_clients = l->active_clients;
+	memcpy(c, &l->counters, sizeof(struct tlsev_counters));
+	bzero(&l->counters, sizeof(struct tlsev_counters));
 }

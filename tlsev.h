@@ -34,6 +34,19 @@ struct tlsev_peer {
 };
 RB_HEAD(tlsev_peer_tree, tlsev_peer);
 
+struct tlsev_counters {
+	uint64_t raw_bytes_in;
+	uint64_t raw_bytes_out;
+	uint64_t ssl_bytes_in;
+	uint64_t ssl_bytes_out;
+	uint64_t client_accepts;
+	uint64_t read_pauses;
+	uint64_t wasted_accepts;
+	uint64_t file_ulimit_hits;
+	uint64_t sys_ulimit_hits;
+	uint64_t active_clients;
+};
+
 struct tlsev_listener {
 	SSL_CTX                *ctx;
 	int                    *lsock;
@@ -47,6 +60,7 @@ struct tlsev_listener {
 	struct timespec         last_purge;
 	volatile sig_atomic_t   shutdown_triggered;
 
+	struct tlsev_counters   counters;
 	int                     active_clients;
 	int                     accepting;
 	uint32_t                max_clients;
@@ -114,7 +128,8 @@ int                  tlsev_auto_rcv_lowat(struct tlsev_listener *, int);
 int                  tlsev_add_fd_cb(struct tlsev_listener *,
                          struct tlsev_fd_cb *);
 void                 tlsev_destroy(struct tlsev_listener *);
-int                  tlsev_run(struct tlsev_listener *, int(*)(void *), void *);
+int                  tlsev_run(struct tlsev_listener *,
+                         int(*)(struct tlsev_listener *, void *), void *);
 void                 tlsev_shutdown(struct tlsev_listener *);
 X509                *tlsev_peer_cert(struct tlsev *);
 struct sockaddr_in6 *tlsev_peer(struct tlsev *);
@@ -124,6 +139,8 @@ uint64_t             tlsev_id(struct tlsev *);
 int                  tlsev_fd(struct tlsev *);
 struct tlsev *       tlsev_get(struct tlsev_listener *, int);
 struct tlsev *       tlsev_get_by_ctx(X509_STORE_CTX *);
+void                 tlsev_dump_counters(struct tlsev_listener *,
+                         struct tlsev_counters *);
 
 __END_DECLS
 

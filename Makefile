@@ -5,10 +5,9 @@ CFLAGS = -Wall -g
 LIBS = -lcrypto -lssl -pthread
 
 SRCS = mdr.c mdrc.c mdr_mdrd.c mdr_tests.c flatconf.c idxheap.c tlsev.c \
-	util.c xlog.c counters.c
+	util.c xlog.c
 
-MDRD_OBJS = flatconf.o idxheap.o mdr.o mdr_mdrd.o tlsev.o util.o xlog.o \
-	counters.o
+MDRD_OBJS = flatconf.o idxheap.o mdr.o mdr_mdrd.o tlsev.o util.o xlog.o
 MDRD_ECHO_OBJS = mdr.o mdr_mdrd.o xlog.o
 YACC=yacc
 
