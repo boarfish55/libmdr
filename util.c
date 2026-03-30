@@ -378,7 +378,7 @@ spawnproc_exec(struct spawnproc *sp, char *const argv[], pid_t *cpid,
 	} cmsgbuf;
 
 	if (argv == NULL || argv[0] == NULL)
-		return XERRF(e, XLOG_APP, XLOG_INVAL, "argv is empty");
+		return XERRF(e, XLOG_APP, XLOG_INVALID, "argv is empty");
 
 	if (user != NULL)
 		len += strlen(user) + 1;
@@ -387,7 +387,7 @@ spawnproc_exec(struct spawnproc *sp, char *const argv[], pid_t *cpid,
 	for (i = 0; argv[i] != NULL; i++) {
 		len += strlen(argv[i]) + 1;
 		if (len > max)
-			return XERRF(e, XLOG_APP, XLOG_INVAL,
+			return XERRF(e, XLOG_APP, XLOG_INVALID,
 			    "total length of command exceeds allowed value");
 	}
 

@@ -20,8 +20,10 @@ enum {
 	XLOG_SUCCESS = 0,
 	XLOG_FAIL,         /* Non-specific failure */
 	XLOG_EOF,          /* EOF on a pipe/socket */
-	XLOG_POLICY,       /* Policy violation */
-	XLOG_INVAL,        /* An invalid value was obtained */
+	XLOG_DENIED,       /* Operation was denied */
+	XLOG_LIMITED,      /* Operation was throttled or a limit was reached */
+	XLOG_INVALID,      /* An invalid value was obtained */
+	XLOG_BADMSG,       /* Message is malformed */
 	XLOG_NOTFOUND,     /* Entity not found */
 	XLOG_IO,           /* IO error */
 	XLOG_OVERFLOW,     /* Value too large for container */
@@ -31,7 +33,9 @@ enum {
 	XLOG_NOTSUP,       /* Function/feature not implemented or supported */
 	XLOG_TIMEOUT,      /* Operation timed out */
 	XLOG_WOULDBLOCK,   /* Operation would block but is set non-blocking */
-	XLOG_CALLBACK_ERR, /* Callback error */
+	XLOG_CALLBACK_ERR, /* A callback encountered an error the current
+			      context is unaware of (look for callback's own
+			      error handling) */
 
 	XLOG_USER_DEFINED = 65536 /* Users can define their own errors
 				     from this pointCallback error */

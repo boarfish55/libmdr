@@ -451,7 +451,7 @@ tlsev_create(struct tlsev_listener *l, int fd, SSL_CTX *ctx,
 
 	if ((p = tlsev_peer_tree_find(l, peer)) != NULL) {
 		if (p->count >= l->max_conn_per_ip) {
-			return XERRF(e, XLOG_APP, XLOG_POLICY,
+			return XERRF(e, XLOG_APP, XLOG_LIMITED,
 			    "client IP reached max allowed connections");
 		}
 		p->count++;
