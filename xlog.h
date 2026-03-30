@@ -12,21 +12,29 @@ enum xerr_space {
 	XLOG_APP,      /* App-internal error */
 	XLOG_ERRNO,    /* Standard errno code used internally only */
 	XLOG_SSL,      /* SSL error codes */
+	XLOG_EAI,      /* getaddrinfo() error codes */
 	XLOG_DB        /* DB error */
 };
 
 enum {
 	XLOG_SUCCESS = 0,
+	XLOG_FAIL,         /* Non-specific failure */
 	XLOG_EOF,          /* EOF on a pipe/socket */
 	XLOG_POLICY,       /* Policy violation */
 	XLOG_INVAL,        /* An invalid value was obtained */
-	XLOG_NOENT,        /* Entity not found */
+	XLOG_NOTFOUND,     /* Entity not found */
 	XLOG_IO,           /* IO error */
 	XLOG_OVERFLOW,     /* Value too large for container */
 	XLOG_RANGE,        /* Value exceeds allowed range */
 	XLOG_SHORTIO,      /* Short read/write */
+	XLOG_BUSY,         /* Resource is busy */
+	XLOG_NOTSUP,       /* Function/feature not implemented or supported */
+	XLOG_TIMEOUT,      /* Operation timed out */
 	XLOG_WOULDBLOCK,   /* Operation would block but is set non-blocking */
-	XLOG_CALLBACK_ERR  /* Callback error */
+	XLOG_CALLBACK_ERR, /* Callback error */
+
+	XLOG_USER_DEFINED = 65536 /* Users can define their own errors
+				     from this pointCallback error */
 };
 
 #define XLOG_ALL     0xFFFF
@@ -56,8 +64,8 @@ struct xerr {
 struct xerr *xerrz(struct xerr *);
 
 /*
- * Fills the xlog_err structure with PotatoFS-specific error code, as well
- * as underlying library's or OS's context-specific error.
+ * Fills the xlog_err structure with an application-specific error code, as
+ * well as the underlying library's or OS's context-specific error.
  * Formats an error message appropriate to the situation.
  * Returns -1 if either err or c_err is non-zero, or 0 if both are 0 as well.
  * As such, it can be used directly as part of the caller's return.
