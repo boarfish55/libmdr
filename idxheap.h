@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+__BEGIN_DECLS
+
 struct idxheap_item {
 	void                *data;
 	size_t               index;
@@ -35,5 +37,7 @@ void *idxheap_update(struct idxheap *, const void *);
 void *idxheap_removei(struct idxheap *, int);
 void *idxheap_top(struct idxheap *);
 void *idxheap_removek(struct idxheap *, void *);
+
+__END_DECLS
 
 #endif

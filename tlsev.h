@@ -42,9 +42,12 @@ struct tlsev_counters {
 	uint64_t client_accepts;
 	uint64_t read_pauses;
 	uint64_t wasted_accepts;
+	uint64_t accept_conn_aborted;
 	uint64_t file_ulimit_hits;
 	uint64_t sys_ulimit_hits;
 	uint64_t active_clients;
+	uint64_t max_clients_reached;
+	uint64_t session_timeouts;
 };
 
 struct tlsev_listener {

@@ -1259,9 +1259,14 @@ read_counters()
 		printf("  client_accepts: %llu\n", c.tlsev.client_accepts);
 		printf("  read_pauses: %llu\n", c.tlsev.read_pauses);
 		printf("  wasted_accepts: %llu\n", c.tlsev.wasted_accepts);
+		printf("  accept_conn_aborted: %llu\n",
+		    c.tlsev.accept_conn_aborted);
 		printf("  file_ulimit_hits: %llu\n", c.tlsev.file_ulimit_hits);
 		printf("  sys_ulimit_hits: %llu\n", c.tlsev.sys_ulimit_hits);
 		printf("  active_clients: %llu\n", c.tlsev.active_clients);
+		printf("  max_clients_reached: %llu\n",
+		    c.tlsev.max_clients_reached);
+		printf("  session_timeouts: %llu\n", c.tlsev.session_timeouts);
 
 		global.tlsev.raw_bytes_in += c.tlsev.raw_bytes_in;
 		global.tlsev.raw_bytes_out += c.tlsev.raw_bytes_out;
@@ -1270,9 +1275,14 @@ read_counters()
 		global.tlsev.client_accepts += c.tlsev.client_accepts;
 		global.tlsev.read_pauses += c.tlsev.read_pauses;
 		global.tlsev.wasted_accepts += c.tlsev.wasted_accepts;
+		global.tlsev.accept_conn_aborted +=
+		    c.tlsev.accept_conn_aborted;
 		global.tlsev.file_ulimit_hits += c.tlsev.file_ulimit_hits;
 		global.tlsev.sys_ulimit_hits += c.tlsev.sys_ulimit_hits;
 		global.tlsev.active_clients += c.tlsev.active_clients;
+		global.tlsev.max_clients_reached +=
+		    c.tlsev.max_clients_reached;
+		global.tlsev.session_timeouts += c.tlsev.session_timeouts;
 		global.messages_in += c.messages_in;
 		global.messages_in_rejected += c.messages_in_rejected;
 		global.messages_out += c.messages_out;
@@ -1291,9 +1301,14 @@ read_counters()
 	printf("  client_accepts: %llu\n", global.tlsev.client_accepts);
 	printf("  read_pauses: %llu\n", global.tlsev.read_pauses);
 	printf("  wasted_accepts: %llu\n", global.tlsev.wasted_accepts);
+	printf("  accept_conn_aborted: %llu\n",
+	    global.tlsev.accept_conn_aborted);
 	printf("  file_ulimit_hits: %llu\n", global.tlsev.file_ulimit_hits);
 	printf("  sys_ulimit_hits: %llu\n", global.tlsev.sys_ulimit_hits);
 	printf("  active_clients: %llu\n", global.tlsev.active_clients);
+	printf("  max_clients_reached: %llu\n",
+	    global.tlsev.max_clients_reached);
+	printf("  session_timeouts: %llu\n", global.tlsev.session_timeouts);
 }
 
 int
@@ -1530,12 +1545,18 @@ parent_loop()
 		    chld_counters.tlsev.read_pauses;
 		counter_pipes[pidx].counters.tlsev.wasted_accepts +=
 		    chld_counters.tlsev.wasted_accepts;
+		counter_pipes[pidx].counters.tlsev.accept_conn_aborted +=
+		    chld_counters.tlsev.accept_conn_aborted;
 		counter_pipes[pidx].counters.tlsev.file_ulimit_hits +=
 		    chld_counters.tlsev.file_ulimit_hits;
 		counter_pipes[pidx].counters.tlsev.sys_ulimit_hits +=
 		    chld_counters.tlsev.sys_ulimit_hits;
 		counter_pipes[pidx].counters.tlsev.active_clients =
 		    chld_counters.tlsev.active_clients;
+		counter_pipes[pidx].counters.tlsev.max_clients_reached =
+		    chld_counters.tlsev.max_clients_reached;
+		counter_pipes[pidx].counters.tlsev.session_timeouts =
+		    chld_counters.tlsev.session_timeouts;
 
 		counter_pipes[pidx].counters.messages_in +=
 		    chld_counters.messages_in;

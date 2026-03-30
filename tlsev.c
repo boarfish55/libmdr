@@ -569,7 +569,7 @@ tlsev_close(struct tlsev_listener *l, struct tlsev *t)
 		    "in tlsev_peer_tree for fd %d", t->fd);
 	}
 
-	xlog(LOG_INFO, NULL, "closing fd %d", t->fd);
+	xlog(LOG_DEBUG, NULL, "closing fd %d", t->fd);
 	if ((r = close(t->fd)) == -1)
 		xlog_strerror(LOG_ERR, errno, "close: %d", t->fd);
 	if (t->retry_buf != NULL)
@@ -872,6 +872,7 @@ tlsev_new_client(struct tlsev_listener *l, int fd,
 	if (l->accepting) {
 		l->counters.client_accepts++;
 		if (++l->active_clients >= l->max_clients) {
+			l->counters.max_clients_reached++;
 			xlog(LOG_WARNING, NULL, "max_clients reached (%d); "
 			    "not accepting new connections", l->active_clients);
 			l->accepting = 0;
@@ -1159,6 +1160,7 @@ tlsev_poll(struct tlsev_listener *l)
 			    (now.tv_sec == t->last_used_at.tv_sec + timeout &&
 			     now.tv_nsec <= t->last_used_at.tv_nsec))
 				break;
+			l->counters.session_timeouts++;
 			xlog(LOG_NOTICE, NULL, "timeout reached for "
 			    "fd %d after %ds; closing socket", t->fd,
 			    now.tv_sec - t->last_used_at.tv_sec);
@@ -1204,17 +1206,26 @@ tlsev_poll(struct tlsev_listener *l)
 						l->max_clients =
 						    l->active_clients;
 					xlog_strerror(LOG_ERR, errno,
-					    "dropping max_clients to %d",
+					    "fd limit reached; dropping "
+					    "max_clients to %d",
 					    l->max_clients);
 					l->counters.file_ulimit_hits++;
 					continue;
-				}
-				if (errno == ENFILE)
+				} else if (errno == ENFILE) {
+					/*
+					 * We use LOG_DEBUG because this
+					 * could be very noisy over syslog.
+					 */
+					xlog_strerror(LOG_DEBUG, errno,
+					    "system fd limit reached; "
+					    "active_clients is %d",
+					    l->active_clients);
 					l->counters.sys_ulimit_hits++;
-
-				// TODO: Add a counter, also some way to
-				// not log the same message too quick
-				xlog_strerror(LOG_ERR, errno, "accept");
+				} else if (errno == ECONNABORTED) {
+					l->counters.accept_conn_aborted++;
+				} else {
+					xlog_strerror(LOG_ERR, errno, "accept");
+				}
 				continue;
 			}
 
