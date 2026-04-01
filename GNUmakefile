@@ -9,6 +9,7 @@ LDFLAGS = $(shell pkg-config --libs libbsd-overlay libbsd-ctor \
 	-Wl,-z,relro -Wl,-z,now
 DEPFLAGS = -MMD -MP -MF $(DEPDIR)/$@.d
 YACC = byacc
+PREFIX ?= /usr/local
 
 SRCS = mdr.c mdrc.c mdr_mdrd.c mdr_tests.c flatconf.c idxheap.c tlsev.c \
 	util.c xlog.c
@@ -63,6 +64,14 @@ tests: mdr_tests
 		&& valgrind --keep-stacktraces=none --leak-check=full \
 		--track-origins=yes --show-leak-kinds=all -s ./mdr_tests \
 		|| ./mdr_tests
+
+install: all
+	install -o root -g root -m 0755 mdrd ${PREFIX}/bin/
+	install -o root -g root -m 0755 mdrc ${PREFIX}/bin/
+	install -o root -g root -m 0755 libmdr.a ${PREFIX}/lib/
+	install -o root -g root -m 0755 libmdr.so ${PREFIX}/lib/
+	install -o root -g root -m 0755 libflatconf.a ${PREFIX}/lib/
+	install -o root -g root -m 0755 libflatconf.so ${PREFIX}/lib/
 
 clean:
 	rm -f $(DEPDIR)/* *.o mdr_tests mdrc mdrd mdrd_backend_echo \

@@ -1,5 +1,7 @@
 .vimtags
 *.o
+*.a
+*.so
 mdr_tests
 mdrc
 mdrd
@@ -10,3 +12,4 @@ client1/
 client2/
 mdrd_backend_echo
 flatconf.c
+cov-int/

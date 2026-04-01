@@ -1,8 +1,11 @@
 CC = cc
 EXTRA_CFLAGS =
-CFLAGS = -Wall -g -I. ${EXTRA_CFLAGS}
+CFLAGS = -Wall -g ${EXTRA_CFLAGS}
+INCLUDES = -I.
 LIBS = -lcrypto -lssl
 YACC=yacc
+PREFIX ?= /usr/local
+INSTALL_OWNER ?= root
 
 SRCS = mdr.c mdrc.c mdr_mdrd.c mdr_tests.c flatconf.c idxheap.c tlsev.c \
 	util.c xlog.c
@@ -18,13 +21,13 @@ all: .depend mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a libmdr.so \
 	libflatconf.a libflatconf.so
 
 .depend: ${SRCS}
-	mkdep ${CFLAGS} ${SRCS}
+	mkdep ${CFLAGS} ${INCLUDES} ${SRCS}
 
 .SUFFIXES: .c .o .pic.o
 .c.pic.o:
-	${CC} ${CFLAGS} -c -fPIC $< -o $@
+	${CC} ${CFLAGS} ${INCLUDES} -c -fPIC $< -o $@
 .c.o:
-	${CC} ${CFLAGS} -c $< -o $@
+	${CC} ${CFLAGS} ${INCLUDES} -c $< -o $@
 
 libflatconf.a: flatconf.o
 	ar cr $@ flatconf.o
@@ -53,19 +56,19 @@ mdrd: ${MDRD_OBJS}
 mdrd_backend_echo: ${BE_ECHO_OBJS}
 	${CC} ${CFLAGS} ${BE_ECHO_OBJS} ${LIBS} -o $@
 
-tests: mdr_tests
+test: mdr_tests
 	test -x /usr/bin/valgrind \
 		&& valgrind --keep-stacktraces=none --leak-check=full \
 		--track-origins=yes --show-leak-kinds=all -s ./mdr_tests \
 		|| ./mdr_tests
 
 install: all
-	install -o root -g bin -m 0555 mdrd /usr/local/bin/
-	install -o root -g bin -m 0555 mdrc /usr/local/bin/
-	install -o root -g bin -m 0555 libmdr.a /usr/local/bin/
-	install -o root -g bin -m 0555 libmdr.so /usr/local/bin/
-	install -o root -g bin -m 0555 libflatconf.a /usr/local/bin/
-	install -o root -g bin -m 0555 libflatconf.so /usr/local/bin/
+	install -o root -g bin -m 0555 mdrd ${PREFIX}/bin/
+	install -o root -g bin -m 0555 mdrc ${PREFIX}/bin/
+	install -o root -g bin -m 0555 libmdr.a ${PREFIX}/lib/
+	install -o root -g bin -m 0555 libmdr.so ${PREFIX}/lib/
+	install -o root -g bin -m 0555 libflatconf.a ${PREFIX}/lib/
+	install -o root -g bin -m 0555 libflatconf.so ${PREFIX}/lib/
 
 clean:
 	rm -f *.o mdr_tests mdrc mdrd mdrd_backend_echo \
