@@ -176,7 +176,7 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 	char              *path;
 	int                i;
 #endif
-	char              *buf, *a, *start, *user, *group;
+	char              *buf, *a, *start, *user = NULL, *group = NULL;
 	char             **argv, **tmp;
 	int                argvlen, argvi;
 	size_t             sz;

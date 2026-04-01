@@ -1,51 +1,62 @@
-CC := cc
-DEPDIR := .deps
-CFLAGS := -Wall -g -I. -fstack-protector-strong -DYY_NO_LEAKS=1 -Wformat=0 \
+CC = cc
+EXTRA_CFLAGS =
+DEPDIR = .deps
+CFLAGS = -Wall -g -I. -fstack-protector-strong -DYY_NO_LEAKS=1 -Wformat=0 \
 	$(shell pkg-config --cflags libbsd-overlay libbsd-ctor \
 	libssl libcrypto)
-LDFLAGS := $(shell pkg-config --libs libbsd-overlay libbsd-ctor \
+LDFLAGS = $(shell pkg-config --libs libbsd-overlay libbsd-ctor \
 	libssl libcrypto) \
 	-Wl,-z,relro -Wl,-z,now
-YACC := byacc
-
 DEPFLAGS = -MMD -MP -MF $(DEPDIR)/$@.d
+YACC = byacc
 
-MDRC_SRCS = mdr.c mdrc.c
-MDRC_OBJS = $(MDRC_SRCS:.c=.o)
+SRCS = mdr.c mdrc.c mdr_mdrd.c mdr_tests.c flatconf.c idxheap.c tlsev.c \
+	util.c xlog.c
 
-MDRD_SRCS = mdr.c mdrd.c mdr_mdrd.c idxheap.c tlsev.c util.c flatconf.c \
-	xlog.c
-MDRD_OBJS = $(MDRD_SRCS:.c=.o)
+MDR_LIBOBJS = mdr.pic.o tlsev.pic.o idxheap.pic.o util.pic.o xlog.pic.o
+MDR_AROBJS = mdr.o tlsev.o idxheap.o util.o xlog.o
+MDRD_OBJS = mdrd.o idxheap.o flatconf.o mdr.o mdr_mdrd.o tlsev.o util.o xlog.o
+MDRC_OBJS = mdrc.o mdr.o
+BE_ECHO_OBJS = mdrd_backend_echo.o mdr.o mdr_mdrd.o xlog.o
+MDR_TESTS_OBJS = mdr_tests.o mdr.o util.o xlog.o
 
-MDRTESTS_SRCS = mdr.c mdr_tests.c util.c xlog.c
-MDRTESTS_OBJS = $(MDRTESTS_SRCS:.c=.o)
+all: mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a libmdr.so \
+	libflatconf.a libflatconf.so
 
-MDRD_ECHO_SRCS = mdrd_backend_echo.c mdr.c mdr_mdrd.c xlog.c
-MDRD_ECHO_OBJS = $(MDRD_ECHO_SRCS:.c=.o)
-
-all: mdrc mdr_tests mdrd mdrd_backend_echo
-
+.SUFFIXES: .c .o .pic.o
+.c.pic.o:
+	@mkdir -p $(DEPDIR)
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(DEPFLAGS) -c -fPIC $< -o $@
 .c.o:
 	@mkdir -p $(DEPDIR)
-	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(DEPFLAGS) -c $<
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(DEPFLAGS) -c $< -o $@
+
+libflatconf.a: flatconf.o
+	ar cr $@ flatconf.o
+
+libflatconf.so: flatconf.pic.o
+	${CC} -shared -o $@ flatconf.pic.o
+
+libmdr.a: ${MDR_AROBJS}
+	ar cr $@ ${MDR_AROBJS}
+
+libmdr.so: ${MDR_LIBOBJS}
+	${CC} -shared -o $@ ${MDR_LIBOBJS}
 
 flatconf.c: flatconf.y flatconf.h
-	$(YACC) -o flatconf.c flatconf.y
+	${YACC} -o flatconf.c flatconf.y
 
-mdr.o: mdr.c mdr.h
-	$(CC) $(CFLAGS) -c mdr.c -o mdr.o
+mdr_tests: ${MDR_TESTS_OBJS}
+	${CC} ${CFLAGS} ${MDR_TESTS_OBJS} ${LDFLAGS} -o $@
 
-mdr_tests: $(MDRTESTS_OBJS)
-	$(CC) $(CFLAGS) -o mdr_tests $(MDRTESTS_OBJS) $(LDFLAGS)
+mdrc: ${MDRC_OBJS}
+	${CC} ${CFLAGS} ${MDRC_OBJS} ${LDFLAGS} -o $@
 
-mdrc: $(MDRC_OBJS)
-	$(CC) $(CFLAGS) -o mdrc $(MDRC_OBJS) $(LDFLAGS)
+mdrd: ${MDRD_OBJS}
+	${CC} ${CFLAGS} ${MDRD_OBJS} ${LDFLAGS} -o $@
 
-mdrd: $(MDRD_OBJS)
-	$(CC) $(CFLAGS) -o mdrd $(MDRD_OBJS) $(LDFLAGS)
-
-mdrd_backend_echo: $(MDRD_ECHO_OBJS)
-	$(CC) $(CFLAGS) -o mdrd_backend_echo $(MDRD_ECHO_OBJS) $(LDFLAGS)
+mdrd_backend_echo: ${BE_ECHO_OBJS}
+	${CC} ${CFLAGS} ${BE_ECHO_OBJS} ${LDFLAGS} -o $@
 
 tests: mdr_tests
 	test -x /usr/bin/valgrind \
@@ -54,6 +65,7 @@ tests: mdr_tests
 		|| ./mdr_tests
 
 clean:
-	rm -f *.o mdr_tests mdrc mdrd mdrd_backend_echo flatconf.c
+	rm -f $(DEPDIR)/* *.o mdr_tests mdrc mdrd mdrd_backend_echo \
+		flatconf.c *.core core .depend *.so *.a *.tmp
 
 -include $(DEPDIR)/*
