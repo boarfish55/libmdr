@@ -1,3 +1,8 @@
+/*
+ * Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+ *
+ * SPDX-License-Identifier: ISC
+ */
 #include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/types.h>

@@ -1,3 +1,8 @@
+/*
+ * Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+ *
+ * SPDX-License-Identifier: ISC
+ */
 #ifndef MDR_MDRD_H
 #define MDR_MDRD_H
 
