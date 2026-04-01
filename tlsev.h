@@ -7,8 +7,8 @@
 #include <openssl/bio.h>
 #include <openssl/x509.h>
 #include <netdb.h>
-#include "idxheap.h"
-#include "xlog.h"
+#include <idxheap.h>
+#include <xlog.h>
 
 #define TLSEV_IO_SIZE     32768
 #define TLSEV_MAX_CLIENTS 1000000000

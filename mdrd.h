@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <stdint.h>
-#include "mdr.h"
+#include <mdr.h>
 
 /* Backend response flags */
 #define MDRD_BEOUT_FNONE  0x00000000

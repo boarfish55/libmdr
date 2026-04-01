@@ -1,39 +1,57 @@
 CC = cc
-CFLAGS = -Wall -g
-
-# pthread for semaphores
-LIBS = -lcrypto -lssl -pthread
+EXTRA_CFLAGS =
+CFLAGS = -Wall -g -I. ${EXTRA_CFLAGS}
+LIBS = -lcrypto -lssl
+YACC=yacc
 
 SRCS = mdr.c mdrc.c mdr_mdrd.c mdr_tests.c flatconf.c idxheap.c tlsev.c \
 	util.c xlog.c
 
-MDRD_OBJS = flatconf.o idxheap.o mdr.o mdr_mdrd.o tlsev.o util.o xlog.o
-MDRD_ECHO_OBJS = mdr.o mdr_mdrd.o xlog.o
-YACC=yacc
+MDR_LIBOBJS = mdr.pic.o tlsev.pic.o idxheap.pic.o util.pic.o xlog.pic.o
+MDR_AROBJS = mdr.o tlsev.o idxheap.o util.o xlog.o
+MDRD_OBJS = mdrd.o idxheap.o flatconf.o mdr.o mdr_mdrd.o tlsev.o util.o xlog.o
+MDRC_OBJS = mdrc.o mdr.o
+BE_ECHO_OBJS = mdrd_backend_echo.o mdr.o mdr_mdrd.o xlog.o
+MDR_TESTS_OBJS = mdr_tests.o mdr.o util.o xlog.o
 
-all: .depend mdrc mdr_tests mdrd mdrd_backend_echo
+all: .depend mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a libmdr.so \
+	libflatconf.a libflatconf.so
 
 .depend: ${SRCS}
 	mkdep ${CFLAGS} ${SRCS}
 
-.SUFFIXES: .c .o
+.SUFFIXES: .c .o .pic.o
+.c.pic.o:
+	${CC} ${CFLAGS} -c -fPIC $< -o $@
 .c.o:
-	${CC} ${CFLAGS} -c $<
+	${CC} ${CFLAGS} -c $< -o $@
+
+libflatconf.a: flatconf.o
+	ar cr $@ flatconf.o
+
+libflatconf.so: flatconf.pic.o
+	${CC} -shared -o $@ flatconf.pic.o
+
+libmdr.a: ${MDR_AROBJS}
+	ar cr $@ ${MDR_AROBJS}
+
+libmdr.so: ${MDR_LIBOBJS}
+	${CC} -shared -o $@ ${MDR_LIBOBJS}
 
 flatconf.c: flatconf.y flatconf.h
-	$(YACC) -o flatconf.c flatconf.y
+	${YACC} -o flatconf.c flatconf.y
 
-mdr_tests: mdr_tests.c mdr.o util.o xlog.o
-	${CC} ${CFLAGS} mdr_tests.c $(LIBS) mdr.o util.o xlog.o -o mdr_tests
+mdr_tests: ${MDR_TESTS_OBJS}
+	${CC} ${CFLAGS} ${MDR_TESTS_OBJS} ${LIBS} -o $@
 
-mdrc: mdrc.c mdr.o mdr_mdrd.o
-	${CC} ${CFLAGS} mdrc.c $(LIBS) mdr.o -o mdrc
+mdrc: ${MDRC_OBJS}
+	${CC} ${CFLAGS} ${MDRC_OBJS} ${LIBS} -o $@
 
-mdrd: mdrd.c $(MDRD_OBJS)
-	${CC} ${CFLAGS} mdrd.c $(LIBS) ${MDRD_OBJS} -o mdrd
+mdrd: ${MDRD_OBJS}
+	${CC} ${CFLAGS} ${MDRD_OBJS} ${LIBS} -o $@
 
-mdrd_backend_echo: mdrd_backend_echo.c mdr.o mdr_mdrd.o xlog.o
-	${CC} ${CFLAGS} mdrd_backend_echo.c $(LIBS) ${MDRD_ECHO_OBJS} -o mdrd_backend_echo
+mdrd_backend_echo: ${BE_ECHO_OBJS}
+	${CC} ${CFLAGS} ${BE_ECHO_OBJS} ${LIBS} -o $@
 
 tests: mdr_tests
 	test -x /usr/bin/valgrind \
@@ -42,8 +60,13 @@ tests: mdr_tests
 		|| ./mdr_tests
 
 install: all
-	install -o root -g wheel -m 0555 mdrd_backend_echo /usr/local/bin/
-	install -o root -g wheel -m 0555 mdrd /usr/local/bin/
+	install -o root -g bin -m 0555 mdrd /usr/local/bin/
+	install -o root -g bin -m 0555 mdrc /usr/local/bin/
+	install -o root -g bin -m 0555 libmdr.a /usr/local/bin/
+	install -o root -g bin -m 0555 libmdr.so /usr/local/bin/
+	install -o root -g bin -m 0555 libflatconf.a /usr/local/bin/
+	install -o root -g bin -m 0555 libflatconf.so /usr/local/bin/
 
 clean:
-	rm -f *.o mdr_tests mdrc mdrd mdrd_backend_echo flatconf.c *.core .depend
+	rm -f *.o mdr_tests mdrc mdrd mdrd_backend_echo \
+		flatconf.c *.core .depend *.so *.a *.tmp
