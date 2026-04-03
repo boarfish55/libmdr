@@ -33,13 +33,13 @@ libflatconf.a: flatconf.o
 	ar cr $@ flatconf.o
 
 libflatconf.so: flatconf.pic.o
-	${CC} -shared -o ${@}.0.0 flatconf.pic.o
+	${CC} -shared -o $@ flatconf.pic.o
 
 libmdr.a: ${MDR_AROBJS}
 	ar cr $@ ${MDR_AROBJS}
 
 libmdr.so: ${MDR_LIBOBJS}
-	${CC} -shared -o ${@}.0.0 ${MDR_LIBOBJS}
+	${CC} -shared -o $@ ${MDR_LIBOBJS}
 
 flatconf.c: flatconf.y flatconf.h
 	${YACC} -o flatconf.c flatconf.y
@@ -69,11 +69,11 @@ install: all
 	install -d -o root -g bin -m 0555 LICENSE ${PREFIX}/share/doc/libmdr/
 	install -d -o root -g bin -m 0555 mdrd.conf.sample ${PREFIX}/share/doc/libmdr/
 	install -d -o root -g bin -m 0555 libmdr.a ${PREFIX}/lib/
-	install -d -o root -g bin -m 0555 libmdr.so.* ${PREFIX}/lib/
+	install -d -o root -g bin -m 0555 libmdr.so ${PREFIX}/lib/
 	install -d -o root -g bin -m 0555 libflatconf.a ${PREFIX}/lib/
-	install -d -o root -g bin -m 0555 libflatconf.so.* ${PREFIX}/lib/
+	install -d -o root -g bin -m 0555 libflatconf.so ${PREFIX}/lib/
 	install -d -o root -g bin -m 0555 mdrd_backend_echo ${PREFIX}/libexec/libmdr/
 
 clean:
 	rm -f *.o mdr_tests mdrc mdrd mdrd_backend_echo \
-		flatconf.c *.core .depend *.so *.so.[0-9].[0-9] *.a *.tmp
+		flatconf.c *.core .depend *.so *.a *.tmp
