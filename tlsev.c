@@ -698,7 +698,7 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 	pending = BIO_pending(t->w);
 	if (t->retry_buf != NULL) {
 		n = write(t->fd, t->retry_buf_pos, t->retry_len);
-		if (n < 0)
+		if (n == -1)
 			return XERRF(e, XLOG_ERRNO, errno, "write");
 
 		xlog(LOG_DEBUG, NULL, "%s: wrote %ld bytes on fd %d",
@@ -732,14 +732,14 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		pending -= r;
 
 		n = write(t->fd, buf, r);
-		if (n != -1) {
-			xlog(LOG_DEBUG, NULL, "%s: wrote %ld bytes on fd %d",
-			    __func__, n, t->fd);
-			l->counters.raw_bytes_out += n;
-		}
-		if (n == -1) {
+		if (n == -1)
 			return XERRF(e, XLOG_ERRNO, errno, "write");
-		} else if (n < r) {
+
+		xlog(LOG_DEBUG, NULL, "%s: wrote %ld bytes on fd %d",
+		    __func__, n, t->fd);
+		l->counters.raw_bytes_out += n;
+
+		if (n < r) {
 			/*
 			 * On a short write, our TCP output buffer is likely
 			 * full. Empty our BIO into retry_buf an try writing
@@ -751,6 +751,14 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 			t->retry_buf_pos = t->retry_buf;
 			memcpy(t->retry_buf, buf + n, r - n);
 			t->retry_len = r - n;
+
+			if (pending > (SSIZE_MAX - t->retry_len)) {
+				xlog(LOG_WARNING, NULL,
+				    "%s: retry_buf would overflow: "
+				    "t->retry_len=%ld, pending=%d",
+				    __func__, t->retry_len, pending);
+				pending = SSIZE_MAX - t->retry_len;
+			}
 
 			r = BIO_read(t->w, t->retry_buf + t->retry_len,
 			    pending);
