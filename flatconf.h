@@ -8,6 +8,8 @@
 
 #include <stdint.h>
 
+__BEGIN_DECLS
+
 enum flatconf_var_type {
 	FLATCONF_NONE = 0,
 	FLATCONF_STRING,
@@ -31,5 +33,7 @@ struct flatconf {
 
 int  flatconf_read(const char *, struct flatconf *, void(*)(const char *));
 void flatconf_free(struct flatconf *);
+
+__END_DECLS
 
 #endif
