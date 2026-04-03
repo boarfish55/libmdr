@@ -63,12 +63,16 @@ test: mdr_tests
 		|| ./mdr_tests
 
 install: all
-	install -o root -g bin -m 0555 mdrd ${PREFIX}/bin/
-	install -o root -g bin -m 0555 mdrc ${PREFIX}/bin/
-	install -o root -g bin -m 0555 libmdr.a ${PREFIX}/lib/
-	install -o root -g bin -m 0555 libmdr.so ${PREFIX}/lib/
-	install -o root -g bin -m 0555 libflatconf.a ${PREFIX}/lib/
-	install -o root -g bin -m 0555 libflatconf.so ${PREFIX}/lib/
+	install -d -o root -g bin -m 0555 mdrc ${PREFIX}/bin/
+	install -d -o root -g bin -m 0555 mdrd ${PREFIX}/sbin/
+	install -d -o root -g bin -m 0555 README.md ${PREFIX}/share/doc/libmdr/
+	install -d -o root -g bin -m 0555 LICENSE ${PREFIX}/share/doc/libmdr/
+	install -d -o root -g bin -m 0555 mdrd.conf.sample ${PREFIX}/share/doc/libmdr/
+	install -d -o root -g bin -m 0555 libmdr.a ${PREFIX}/lib/
+	install -d -o root -g bin -m 0555 libmdr.so.* ${PREFIX}/lib/
+	install -d -o root -g bin -m 0555 libflatconf.a ${PREFIX}/lib/
+	install -d -o root -g bin -m 0555 libflatconf.so.* ${PREFIX}/lib/
+	install -d -o root -g bin -m 0555 mdrd_backend_echo ${PREFIX}/libexec/libmdr/
 
 clean:
 	rm -f *.o mdr_tests mdrc mdrd mdrd_backend_echo \
