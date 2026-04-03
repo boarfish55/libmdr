@@ -709,6 +709,13 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		if (n < t->retry_len) {
 			t->retry_len -= n;
 			t->retry_buf_pos += n;
+			if (pending > (SSIZE_MAX - t->retry_len)) {
+				xlog(LOG_WARNING, NULL,
+				    "%s: retry_len + pending would overflow: "
+				    "t->retry_len=%ld, pending=%d",
+				    __func__, t->retry_len, pending);
+				pending = SSIZE_MAX - t->retry_len;
+			}
 			return pending + t->retry_len;
 		} else {
 			t->retry_len = 0;
