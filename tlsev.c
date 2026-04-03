@@ -698,7 +698,7 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 	pending = BIO_pending(t->w);
 	if (t->retry_buf != NULL) {
 		n = write(t->fd, t->retry_buf_pos, t->retry_len);
-		if (n == -1)
+		if (n < 0)
 			return XERRF(e, XLOG_ERRNO, errno, "write");
 
 		xlog(LOG_DEBUG, NULL, "%s: wrote %ld bytes on fd %d",
@@ -733,7 +733,7 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 
 		n = write(t->fd, buf, r);
 		if (n != -1) {
-			xlog(LOG_DEBUG, NULL, "%s: wrote %d bytes on fd %d",
+			xlog(LOG_DEBUG, NULL, "%s: wrote %ld bytes on fd %d",
 			    __func__, n, t->fd);
 			l->counters.raw_bytes_out += n;
 		}

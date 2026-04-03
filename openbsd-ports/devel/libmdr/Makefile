@@ -1,0 +1,40 @@
+COMMENT =	Minimal Data Representation, a data serialization library
+CATEGORIES =	devel
+V =		0.1.3
+DISTNAME =	libmdr-${V}
+HOMEPAGE =	https://www.overnet.ca
+MAINTAINER =	Pascal Lalonde <plalonde@overnet.ca>
+SHARED_LIBS =	mdr		0.1
+SHARED_LIBS +=	flatconf	0.1
+
+GH_ACCOUNT =    boarfish55
+GH_PROJECT =    libmdr
+GH_TAGNAME =    ${V}
+
+PERMIT_PACKAGE =	Yes
+
+# uses pledge()
+
+MAKE_FLAGS =	EXTRA_CFLAGS=-O2
+
+do-install:
+	${INSTALL_PROGRAM} ${WRKBUILD}/mdrc ${PREFIX}/bin/
+	${INSTALL_PROGRAM} ${WRKBUILD}/mdrd ${PREFIX}/sbin/
+
+	${INSTALL_PROGRAM_DIR} ${PREFIX}/libexec/libmdr/
+	${INSTALL_PROGRAM} ${WRKBUILD}/mdrd_backend_echo \
+		${PREFIX}/libexec/libmdr/
+
+	${INSTALL_DATA} ${WRKBUILD}/libmdr.so \
+		${PREFIX}/lib/libmdr.so.${LIBmdr_VERSION}
+	${INSTALL_DATA} ${WRKBUILD}/libmdr.a ${PREFIX}/lib/libmdr.a
+	${INSTALL_DATA} ${WRKBUILD}/libflatconf.so \
+		${PREFIX}/lib/libflatconf.so.${LIBflatconf_VERSION}
+	${INSTALL_DATA} ${WRKBUILD}/libflatconf.a ${PREFIX}/lib/libflatconf.a
+
+	${INSTALL_DATA_DIR} ${PREFIX}/share/doc/libmdr/
+	${INSTALL_DATA} ${WRKBUILD}/README.md ${PREFIX}/share/doc/libmdr/
+	${INSTALL_DATA} ${WRKBUILD}/LICENSE ${PREFIX}/share/doc/libmdr/
+	${INSTALL_DATA} ${WRKBUILD}/mdrd.conf.sample ${PREFIX}/share/doc/libmdr/
+
+.include <bsd.port.mk>

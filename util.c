@@ -198,7 +198,7 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 		unsigned char  buf[CMSG_SPACE(sizeof(int) * 2)];
 	} cmsgbuf;
 
-	if (max == -1)
+	if (max < 0)
 		return -1;
 
 	if (socketpair(AF_LOCAL, SOCK_STREAM, 0, sv) == -1)
@@ -391,7 +391,7 @@ spawnproc_exec(struct spawnproc *sp, char *const argv[], pid_t *cpid,
 		unsigned char  buf[CMSG_SPACE(sizeof(int) * 2)];
 	} cmsgbuf;
 
-	if (max == -1)
+	if (max < 0)
 		return XERRF(e, XLOG_ERRNO, errno, "sysconf(_SC_ARG_MAX)");
 
 	if (argv == NULL || argv[0] == NULL)

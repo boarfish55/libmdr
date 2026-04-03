@@ -374,7 +374,7 @@ pack_bein(struct pmdr *m, uint64_t id, int fd, struct sockaddr_in6 *peer,
 
 	if (cert_len > mdrd_conf.max_cert_size) {
 		xlog(LOG_ERR, NULL, "%s: X509 length above limit: "
-		    "%lu > %lu", __func__, cert_len, mdrd_conf.max_cert_size);
+		    "%d > %lu", __func__, cert_len, mdrd_conf.max_cert_size);
 	}
 
 	pv[0].type = MDR_U64;

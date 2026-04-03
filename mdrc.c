@@ -145,6 +145,7 @@ make_spec(uint32_t domain, uint16_t code, uint16_t variant,
 
 	if ((m_spec = mdr_register_spec(def)) == NULL)
 		err(1, "mdr_register_spec");
+	free(def);
 }
 
 void
