@@ -119,7 +119,7 @@ struct tlsev {
 
 	char                  *retry_buf;
 	char                  *retry_buf_pos;
-	int                    retry_len;
+	ssize_t                retry_len;
 
 	void                  *client_cb_data;
 };

@@ -256,8 +256,8 @@ read:
 			goto read;
 		}
 
-		return ERROR;
 		yyerror("unknown parser state");
+		return ERROR;
 	}
 	return 0;
 }
@@ -278,36 +278,39 @@ flatconf_append_value(int type)
 	case STRING:
 		if ((v->value = strdup(yylval.string)) == NULL) {
 			yyerror("strdup failed");
-			return 0;
+			goto fail;
 		}
 		break;
 	case WORD:
 		if ((v->value = strdup(yylval.word)) == NULL) {
 			yyerror("strdup failed");
-			return 0;
+			goto fail;
 		}
 		break;
 	case NEGATIVE_INT:
 		if ((v->value = malloc(sizeof(int64_t))) == NULL) {
 			yyerror("malloc failed");
-			return 0;
+			goto fail;
 		}
 		*(int64_t *)v->value = yylval.negative_int;
 		break;
 	case POSITIVE_INT:
 		if ((v->value = malloc(sizeof(uint64_t))) == NULL) {
 			yyerror("malloc failed");
-			return 0;
+			goto fail;
 		}
 		*(uint64_t *)v->value = yylval.positive_int;
 		break;
 	default:
 		yyerror("unknown value type: %d", type);
-		return 0;
+		goto fail;
 	}
 	v->next = flatconf_values;
 	flatconf_values = v;
 	return 1;
+fail:
+	free(v);
+	return 0;
 }
 
 static void
@@ -353,6 +356,7 @@ flatconf_get_long(void *dst, size_t sz)
 			yyerror("integer value too large for int64");
 			return 0;
 		}
+		/* Fallthrough */
 	case NEGATIVE_INT:
 		*((int64_t *)dst) = *((int64_t *)flatconf_values->value);
 		break;

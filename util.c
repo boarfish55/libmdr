@@ -198,6 +198,9 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 		unsigned char  buf[CMSG_SPACE(sizeof(int) * 2)];
 	} cmsgbuf;
 
+	if (max == -1)
+		return -1;
+
 	if (socketpair(AF_LOCAL, SOCK_STREAM, 0, sv) == -1)
 		return -1;
 
@@ -247,8 +250,10 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 	if ((buf = malloc(max)) == NULL)
 		return -1;
 	argvlen = 16;
-	if ((argv = reallocarray(NULL, argvlen, sizeof(char *))) == NULL)
+	if ((argv = reallocarray(NULL, argvlen, sizeof(char *))) == NULL) {
+		free(buf);
 		return -1;
+	}
 
 	for (;;) {
 		r = readall(sv[1], &sz, sizeof(size_t));
@@ -260,6 +265,10 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 			xlog(LOG_NOTICE, NULL, "%s: socket closed; exiting",
 			    __func__);
 			goto end;
+		}
+		if (sz > LONG_MAX || sz > max) {
+			xlog(LOG_ERR, NULL, "%s: command too long", __func__);
+			exit(1);
 		}
 
 		r = readall(sv[1], buf, sz);
@@ -382,6 +391,9 @@ spawnproc_exec(struct spawnproc *sp, char *const argv[], pid_t *cpid,
 		unsigned char  buf[CMSG_SPACE(sizeof(int) * 2)];
 	} cmsgbuf;
 
+	if (max == -1)
+		return XERRF(e, XLOG_ERRNO, errno, "sysconf(_SC_ARG_MAX)");
+
 	if (argv == NULL || argv[0] == NULL)
 		return XERRF(e, XLOG_APP, XLOG_INVALID, "argv is empty");
 
@@ -400,15 +412,19 @@ spawnproc_exec(struct spawnproc *sp, char *const argv[], pid_t *cpid,
 		return XERRF(e, XLOG_ERRNO, errno, "malloc");
 	p = buf;
 
-	len = strlen(user);
-	memcpy(p, user, len);
-	p += len;
-	*p++ = '\0';
+	if (user != NULL) {
+		len = strlen(user);
+		memcpy(p, user, len);
+		p += len;
+		*p++ = '\0';
+	}
 
-	len = strlen(group);
-	memcpy(p, group, len);
-	p += len;
-	*p++ = '\0';
+	if (group != NULL) {
+		len = strlen(group);
+		memcpy(p, group, len);
+		p += len;
+		*p++ = '\0';
+	}
 
 	for (i = 0; argv[i] != NULL; i++) {
 		len = strlen(argv[i]);

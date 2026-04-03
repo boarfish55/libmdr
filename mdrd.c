@@ -362,7 +362,7 @@ static int
 pack_bein(struct pmdr *m, uint64_t id, int fd, struct sockaddr_in6 *peer,
     struct umdr *msg, X509 *peer_cert)
 {
-	size_t           cert_len;
+	int              cert_len;
 	unsigned char   *cert_buf;
 	struct pmdr_vec  pv[6];
 
@@ -757,8 +757,9 @@ backend_msg_in_cb(int fd)
 		break;
 	default:
 		xlog(LOG_ERR, NULL,
-		    "%s: unknown message from backend: %x",
+		    "%s: unknown message from backend: 0x%llx",
 		    __func__, umdr_dcv(&beout));
+		goto fail;
 	}
 
 	id = uv[0].v.u64;
@@ -1104,19 +1105,19 @@ get_listen_socket(int domain, int backlog, unsigned short port,
 	if (flags & O_NONBLOCK &&
 	    fcntl(fd, F_SETFD, O_NONBLOCK) == -1) {
 		xlog_strerror(LOG_ERR, errno, "fcntl");
-		return -1;
+		goto fail;
 	}
 	if (domain != AF_LOCAL &&
 	    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)) == -1) {
 		xlog_strerror(LOG_ERR, errno, "setsockopt");
-		return -1;
+		goto fail;
 	}
 #ifdef __linux__
 	if (domain != AF_LOCAL &&
 	    setsockopt(fd, IPPROTO_TCP, TCP_DEFER_ACCEPT,
 	    &defer_accept_seconds, sizeof(defer_accept_seconds)) == -1) {
 		xlog_strerror(LOG_ERR, errno, "setsockopt");
-		return -1;
+		goto fail;
 	}
 #endif
 
@@ -1124,7 +1125,7 @@ get_listen_socket(int domain, int backlog, unsigned short port,
 	if (domain != AF_LOCAL && mdrd_conf.so_debug &&
 	    setsockopt(fd, SOL_SOCKET, SO_DEBUG, &one, sizeof(one)) == -1) {
 		xlog_strerror(LOG_ERR, errno, "setsockopt");
-		return -1;
+		goto fail;
 	}
 #endif
 	if (domain != AF_LOCAL && mdrd_conf.rcvbuf > 0) {
@@ -1148,7 +1149,7 @@ get_listen_socket(int domain, int backlog, unsigned short port,
 		if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF,
 		    &bufsz, sizeof(bufsz)) == -1) {
 			xlog_strerror(LOG_ERR, errno, "setsockopt");
-			return -1;
+			goto fail;
 		}
 	}
 	if (domain != AF_LOCAL && mdrd_conf.sndbuf > 0) {
@@ -1156,7 +1157,7 @@ get_listen_socket(int domain, int backlog, unsigned short port,
 		if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF,
 		    &bufsz, sizeof(bufsz)) == -1) {
 			xlog_strerror(LOG_ERR, errno, "setsockopt");
-			return -1;
+			goto fail;
 		}
 	}
 
@@ -1167,7 +1168,7 @@ get_listen_socket(int domain, int backlog, unsigned short port,
 		sa6.sin6_port = htons(port);
 		if (bind(fd, (struct sockaddr *)&sa6, sizeof(sa6)) == -1) {
 			xlog_strerror(LOG_ERR, errno, "bind");
-			return -1;
+			goto fail;
 		}
 	} else if (domain == AF_INET) {
 		bzero(&sa, sizeof(sa));
@@ -1175,7 +1176,7 @@ get_listen_socket(int domain, int backlog, unsigned short port,
 		sa.sin_port = htons(port);
 		if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) == -1) {
 			xlog_strerror(LOG_ERR, errno, "bind");
-			return -1;
+			goto fail;
 		}
 	} else {
 		unlink(path);
@@ -1184,16 +1185,19 @@ get_listen_socket(int domain, int backlog, unsigned short port,
 		strlcpy(sun.sun_path, path, sizeof(sun.sun_path));
 		if (bind(fd, (struct sockaddr *)&sun, SUN_LEN(&sun)) == -1) {
 			xlog_strerror(LOG_ERR, errno, "bind: %s", path);
-			return -1;
+			goto fail;
 		}
 	}
 
 	if (listen(fd, backlog) == -1) {
 		xlog_strerror(LOG_ERR, errno, "listen");
-		return -1;
+		goto fail;
 	}
 
 	return fd;
+fail:
+	close(fd);
+	return -1;
 }
 
 void
@@ -1344,6 +1348,7 @@ send_counters()
 	}
 
 	if ((pid = fork()) == -1) {
+		close(sock);
 		xlog_strerror(LOG_ERR, errno, "fork");
 		return -1;
 	} else if (pid > 0) {

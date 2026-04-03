@@ -780,6 +780,11 @@ struct mdr_test {
 		"pack arrays",
 		1,
 		&test_pack_array
+	},
+	{
+		"",
+		1,
+		NULL
 	}
 };
 

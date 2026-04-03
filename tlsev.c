@@ -420,7 +420,7 @@ tlsev_bio_read_cb(BIO *b, int oper, const char *data, size_t len, int argi,
 	if (t != NULL) {
 		xlog(LOG_DEBUG, NULL,
 		    "%s: %lu/%lu bytes read/requested on fd %d",
-		    __func__, *read_bytes, len, (t == NULL) ? -1 : t->fd);
+		    __func__, *read_bytes, len, t->fd);
 
 		t->tlswant = (len - *read_bytes < 1)
 		    ? 1
@@ -629,7 +629,8 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		return XERRF(e, XLOG_APP, XLOG_EOF, "read EOF");
 
 	l->counters.raw_bytes_in += n;
-	xlog(LOG_DEBUG, NULL, "%s: %d bytes read on fd %d", __func__, n, t->fd);
+	xlog(LOG_DEBUG, NULL, "%s: %ld bytes read on fd %d",
+	    __func__, n, t->fd);
 
 	if ((r = BIO_write(t->r, buf, n)) <= 0)
 		return XERRF(e, XLOG_SSL, ERR_get_error(), "BIO_write");
@@ -697,11 +698,11 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 	pending = BIO_pending(t->w);
 	if (t->retry_buf != NULL) {
 		n = write(t->fd, t->retry_buf_pos, t->retry_len);
-		if (n != -1)
-			xlog(LOG_DEBUG, NULL, "%s: wrote %d bytes on fd %d",
-			    __func__, n, t->fd);
 		if (n == -1)
 			return XERRF(e, XLOG_ERRNO, errno, "write");
+
+		xlog(LOG_DEBUG, NULL, "%s: wrote %ld bytes on fd %d",
+		    __func__, n, t->fd);
 
 		l->counters.raw_bytes_out += n;
 
@@ -953,7 +954,7 @@ tlsev_ev_read(struct tlsev_listener *l, struct tlsev *t)
 	 */
 	if ((t->wpending = BIO_pending(t->w)) == -1) {
 		xlog(LOG_ERR, NULL, "BIO_pending "
-		    "failed (%d) on write BIO for "
+		    "failed (%ld) on write BIO for "
 		    "fd=%d", ERR_get_error(), t->fd);
 		tlsev_close(l, t);
 		return -1;
@@ -1167,7 +1168,7 @@ tlsev_poll(struct tlsev_listener *l)
 				break;
 			l->counters.session_timeouts++;
 			xlog(LOG_NOTICE, NULL, "timeout reached for "
-			    "fd %d after %ds; closing socket", t->fd,
+			    "fd %d after %lds; closing socket", t->fd,
 			    now.tv_sec - t->last_used_at.tv_sec);
 			tlsev_close(l, t);
 			t = idxheap_peek(&l->tlsev_store, 0);

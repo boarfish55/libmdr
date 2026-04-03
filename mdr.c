@@ -433,7 +433,7 @@ mdr_unpack_str_nochk(struct mdr *m, const char **ref, uint64_t *len)
 	if (len != NULL)
 		*len = bytes_sz - 1;
 
-	if ((*ref)[*len] != '\0') {
+	if ((*ref)[bytes_sz - 1] != '\0') {
 		errno = EOVERFLOW;
 		return MDR_FAIL;
 	}
@@ -633,10 +633,6 @@ mdr_unpack_array(struct mdr *m, uint8_t type, struct umdr_vec_ah *ah)
 	if (*(uint8_t *)m->pos & 0x80) {
 		packed_n = be32toh(*(uint32_t *)m->pos) & 0x7fffffff;
 		m->pos += sizeof(uint32_t);
-		if (packed_n > INT32_MAX) {
-			errno = EOVERFLOW;
-			return MDR_FAIL;
-		}
 	} else {
 		packed_n = *(uint8_t *)m->pos;
 		m->pos += sizeof(uint8_t);
