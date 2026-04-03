@@ -33,13 +33,13 @@ libflatconf.a: flatconf.o
 	ar cr $@ flatconf.o
 
 libflatconf.so: flatconf.pic.o
-	${CC} -shared -o $@ flatconf.pic.o
+	${CC} -shared -o ${@}.0.0 flatconf.pic.o
 
 libmdr.a: ${MDR_AROBJS}
 	ar cr $@ ${MDR_AROBJS}
 
 libmdr.so: ${MDR_LIBOBJS}
-	${CC} -shared -o $@ ${MDR_LIBOBJS}
+	${CC} -shared -o ${@}.0.0 ${MDR_LIBOBJS}
 
 flatconf.c: flatconf.y flatconf.h
 	${YACC} -o flatconf.c flatconf.y
@@ -72,4 +72,4 @@ install: all
 
 clean:
 	rm -f *.o mdr_tests mdrc mdrd mdrd_backend_echo \
-		flatconf.c *.core .depend *.so *.a *.tmp
+		flatconf.c *.core .depend *.so *.so.[0-9].[0-9] *.a *.tmp

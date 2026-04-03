@@ -1,7 +1,7 @@
 .vimtags
 *.o
 *.a
-*.so
+*.so.[0-9].[0-9]
 mdr_tests
 mdrc
 mdrd
