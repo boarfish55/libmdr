@@ -1,11 +1,11 @@
 COMMENT =	Minimal Data Representation, a data serialization library
 CATEGORIES =	devel
-V =		0.1.3
+V =		0.2.0
 DISTNAME =	libmdr-${V}
 HOMEPAGE =	https://www.overnet.ca
 MAINTAINER =	Pascal Lalonde <plalonde@overnet.ca>
-SHARED_LIBS =	mdr		0.1
-SHARED_LIBS +=	flatconf	0.1
+SHARED_LIBS =	mdr		0.2
+SHARED_LIBS +=	flatconf	0.2
 
 GH_ACCOUNT =    boarfish55
 GH_PROJECT =    libmdr
