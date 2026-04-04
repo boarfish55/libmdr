@@ -109,6 +109,19 @@ tlsev_grow_events_buffer(struct tlsev_listener *l)
 	return 0;
 }
 
+static int
+bio_pending_x(BIO *b)
+{
+	int r = BIO_pending(b);
+	/*
+	 * For BIO_s_mem(3), BIO_pending returning an error would normally
+	 * indicate an programming error.
+	 */
+	if (r < 0)
+		abort();
+	return r;
+}
+
 #ifndef __linux__
 static int
 kq_ev_set(struct tlsev_listener *l, int fd, short filter, u_short flags)
@@ -295,6 +308,13 @@ tlsev_set_max_conns_per_ip(struct tlsev_listener *l, uint16_t n)
 	return 0;
 }
 
+size_t
+tlsev_outbufsz(struct tlsev *t)
+{
+	size_t pending = bio_pending_x(t->w);
+	return pending + t->retry_len;
+}
+
 int
 tlsev_auto_rcv_lowat(struct tlsev_listener *l, int on)
 {
@@ -477,7 +497,6 @@ tlsev_create(struct tlsev_listener *l, int fd, SSL_CTX *ctx,
 	t->id = l->next_id++;
 	t->fd = fd;
 	t->listener = l;
-	t->wpending = 0;
 	bzero(&t->peer_addr, sizeof(t->peer_addr));
 	memcpy(&t->peer_addr, peer, peerlen);
 	t->peer_len = peerlen;
@@ -607,40 +626,37 @@ tlsev_get_by_ctx(X509_STORE_CTX *ctx)
 static int
 tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 {
-	ssize_t n;
-	int     r;
-
+	int  r;
 	/*
 	 * TLS 1.2 records are 16KB max + expansions up to 2KB.
 	 * TLS 1.3 can go above this wih record size limit extension
 	 * but let's keep it reasonable.
 	 */
-	char    buf[TLSEV_IO_SIZE];
+	char buf[TLSEV_IO_SIZE];
 
 	clock_gettime(CLOCK_MONOTONIC, &t->last_used_at);
 	if (idxheap_update(&l->tlsev_store, t) == NULL)
 		xlog(LOG_ERR, NULL, "%s: idxheap_update: returned NULL "
 		    "for fd %d", __func__, t->fd);
 
-	n = read(t->fd, buf, sizeof(buf));
-	if (n == -1)
+	if ((r = read(t->fd, buf, sizeof(buf))) == -1)
 		return XERRF(e, XLOG_ERRNO, errno, "read");
-	else if (n == 0)
+	else if (r == 0)
 		return XERRF(e, XLOG_APP, XLOG_EOF, "read EOF");
 
-	l->counters.raw_bytes_in += n;
+	l->counters.raw_bytes_in += r;
 	xlog(LOG_DEBUG, NULL, "%s: %ld bytes read on fd %d",
-	    __func__, n, t->fd);
+	    __func__, r, t->fd);
 
-	if ((r = BIO_write(t->r, buf, n)) <= 0)
+	/*
+	 * Writes to a BIO_s_mem will write the entire data or fail on
+	 * malloc. Short writes will never occur.
+	 */
+	if (BIO_write(t->r, buf, r) <= 0)
 		return XERRF(e, XLOG_SSL, ERR_get_error(), "BIO_write");
 
-	if (r < n)
-		return XERRF(e, XLOG_APP, XLOG_SHORTIO,
-		    "BIO_write short write");
-
 	if (!SSL_is_init_finished(t->ssl)) {
-		if ((r = SSL_accept(t->ssl)) <= 0) {
+		if (r <= 0) {
 			r = SSL_get_error(t->ssl, r);
 			switch (r) {
 			case SSL_ERROR_WANT_READ:
@@ -657,9 +673,9 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 	}
 
 	/*
-	 * Normally this should be enough to empty the BIO_s_mem since we
-	 * reuse the same buffer size as the raw bytes, minus the TLS
-	 * overhead.
+	 * Normally the same buffer we used for the raw bytes should be
+	 * large enough to drain the underlying BIO_s_mem, since we
+	 * don't have the TLS overhead.
 	 */
 	if ((r = SSL_read(t->ssl, buf, sizeof(buf))) <= 0) {
 		r = SSL_get_error(t->ssl, r);
@@ -675,7 +691,7 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 
 	l->counters.ssl_bytes_in += r;
 
-	if ((r = l->client_msg_in_cb(t, buf, r, &t->client_cb_data)) == -1) {
+	if (l->client_msg_in_cb(t, buf, r, &t->client_cb_data) == -1) {
 		return XERRF(e, XLOG_APP, XLOG_CALLBACK_ERR,
 		    "t->client_cb_data failed");
 	}
@@ -683,40 +699,44 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 	return 0;
 }
 
+/*
+ * Returns 0 on success, -1 on error.
+ */
 static int
 tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 {
-	ssize_t n;
-	int     r, pending;
-	char    buf[TLSEV_IO_SIZE];
+	ssize_t  r;
+	int      pending;
+	char    *bio_data;
 
 	clock_gettime(CLOCK_MONOTONIC, &t->last_used_at);
 	if (idxheap_update(&l->tlsev_store, t) == NULL)
 		xlog(LOG_ERR, NULL, "%s: idxheap_update: returned NULL "
 		    "for fd %d", __func__, t->fd);
 
-	pending = BIO_pending(t->w);
+	/*
+	 * If we had any pending bytes in our retry_buf, try to
+	 * send them now before we pull more from our read BIO.
+	 */
 	if (t->retry_buf != NULL) {
-		n = write(t->fd, t->retry_buf_pos, t->retry_len);
-		if (n == -1)
+		r = write(t->fd, t->retry_buf_pos, t->retry_len);
+		if (r == -1)
 			return XERRF(e, XLOG_ERRNO, errno, "write");
 
 		xlog(LOG_DEBUG, NULL, "%s: wrote %ld bytes on fd %d",
-		    __func__, n, t->fd);
+		    __func__, r, t->fd);
 
-		l->counters.raw_bytes_out += n;
+		l->counters.raw_bytes_out += r;
 
-		if (n < t->retry_len) {
-			t->retry_len -= n;
-			t->retry_buf_pos += n;
-			if (pending > (SSIZE_MAX - t->retry_len)) {
-				xlog(LOG_WARNING, NULL,
-				    "%s: retry_len + pending would overflow: "
-				    "t->retry_len=%ld, pending=%d",
-				    __func__, t->retry_len, pending);
-				pending = SSIZE_MAX - t->retry_len;
-			}
-			return pending + t->retry_len;
+		if (r < t->retry_len) {
+			t->retry_len -= r;
+			t->retry_buf_pos += r;
+			/*
+			 * Return immediately if we weren't even able
+			 * to send all our retry_buf; no sense in trying
+			 * to get more bytes from our read BIO.
+			 */
+			return 0;
 		} else {
 			t->retry_len = 0;
 			free(t->retry_buf);
@@ -727,110 +747,103 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 
 	/*
 	 * BIO_s_mem BIOs are not efficient with small reads followed by
-	 * writes. It is best to attempt to completely drain it before any
-	 * further writes happen.
+	 * writes. It is best to completely drain it before any further
+	 * writes happen to it and thus cause needless memory copies.
+	 *
+	 * We borrow a pointer to the BIO's data so we can "peek" and
+	 * send as much as we can. Any remaining data we'll read out
+	 * and store in our retry_buf.
 	 */
-	while (pending > 0) {
-		r = BIO_read(t->w, buf, (pending > sizeof(buf))
-		    ? sizeof(buf)
-		    : pending);
-		if (r <= 0)
-			break;
+	pending = BIO_get_mem_data(t->w, &bio_data);
+	r = write(t->fd, bio_data, pending);
+	if (r == -1)
+		return XERRF(e, XLOG_ERRNO, errno, "write");
+
+	xlog(LOG_DEBUG, NULL, "%s: wrote %ld bytes on fd %d",
+	    __func__, r, t->fd);
+
+	l->counters.raw_bytes_out += r;
+
+	if (r < pending) {
+		/*
+		 * On a short write, our TCP output buffer is likely
+		 * full. Save the remaining bytes into retry_buf
+		 * and try again later.
+		 */
 		pending -= r;
+		if ((t->retry_buf = malloc(pending)) == NULL)
+			return XERRF(e, XLOG_ERRNO, errno, "malloc");
 
-		n = write(t->fd, buf, r);
-		if (n == -1)
-			return XERRF(e, XLOG_ERRNO, errno, "write");
-
-		xlog(LOG_DEBUG, NULL, "%s: wrote %ld bytes on fd %d",
-		    __func__, n, t->fd);
-		l->counters.raw_bytes_out += n;
-
-		if (n < r) {
-			/*
-			 * On a short write, our TCP output buffer is likely
-			 * full. Empty our BIO into retry_buf an try writing
-			 * later.
-			 */
-			if ((t->retry_buf = malloc(pending + (r - n))) == NULL)
-				return XERRF(e, XLOG_ERRNO, errno, "realloc");
-
-			t->retry_buf_pos = t->retry_buf;
-			memcpy(t->retry_buf, buf + n, r - n);
-			t->retry_len = r - n;
-
-			if (pending > (SSIZE_MAX - t->retry_len)) {
-				xlog(LOG_WARNING, NULL,
-				    "%s: retry_buf would overflow: "
-				    "t->retry_len=%ld, pending=%d",
-				    __func__, t->retry_len, pending);
-				pending = SSIZE_MAX - t->retry_len;
-			}
-
-			r = BIO_read(t->w, t->retry_buf + t->retry_len,
-			    pending);
-			if (r <= 0)
-				break;
-			t->retry_len += r;
-			pending -= r;
-			/*
-			 * Normally at this point our t->w should be empty
-			 * so we can break.
-			 *
-			 * If for some reason it is not empty, we don't want
-			 * to loop and do another BIO_read so stop here anyway.
-			 *
-			 * This should never happen with BIO_s_mem but just
-			 * in case.
-			 */
-			break;
-		}
+		t->retry_buf_pos = t->retry_buf;
+		memcpy(t->retry_buf, bio_data + r, pending);
+		t->retry_len = pending;
 	}
 
-	return pending + t->retry_len;
+	/*
+	 * BIO_reset() is faster than BIO_read() as it does a memset()
+	 * instead of memcpy() on the internal buffer. In both cases,
+	 * subsequent writes to the BIO will not need to move data to
+	 * the start of the buffer.
+	 */
+	BIO_reset(t->w);
+	return 0;
 }
 
 int
 tlsev_reply(struct tlsev *t, const unsigned char *buf, int len)
 {
-	int                r;
+	int                r, writes_on = (tlsev_outbufsz(t) > 0);
 #ifdef __linux__
 	struct epoll_event ev;
 #endif
+	errno = 0;
 	if ((r = SSL_write(t->ssl, buf, len)) <= 0) {
 		xlog(LOG_ERR, NULL, "%s: SSL_write: %s", __func__,
 		    ERR_error_string(SSL_get_error(t->ssl, r), NULL));
+		/*
+		 * Per SSL_write, either we have more than INT_MAX buffered, or
+		 * malloc failure. Latter is more likely.
+		 */
+		if ((bio_pending_x(t->w) + len) > INT_MAX)
+			errno = EOVERFLOW;
+		else
+			errno = ENOMEM;
 		return -1;
 	}
 
 	t->listener->counters.ssl_bytes_out += r;
 
-	if (t->wpending == 0) {
+	/*
+	 * Start polling for write if we previously had no pending writes,
+	 * meaning polling would have been turned off...
+	 */
+	if (!writes_on) {
 #ifdef __linux__
 		bzero(&ev, sizeof(ev));
 		ev.data.fd = t->fd;
 		ev.events = EPOLLIN|EPOLLOUT;
-		if (epoll_ctl(t->listener->epollfd, EPOLL_CTL_MOD, t->fd, &ev) == -1) {
+		if (epoll_ctl(t->listener->epollfd, EPOLL_CTL_MOD, t->fd,
+		    &ev) == -1) {
+			errno = EIO;
 			xlog_strerror(LOG_ERR, errno, "epoll_ctl");
 			tlsev_close(t->listener, t);
 			return -1;
 		}
 #else
 		if (kq_ev_set(t->listener, t->fd, EVFILT_WRITE, EV_ADD) == -1) {
+			errno = EIO;
 			xlog_strerror(LOG_ERR, errno, "kq_ev_set");
 			tlsev_close(t->listener, t);
 			return -1;
 		}
 #endif
 	}
-	if ((t->wpending = BIO_pending(t->w)) == -1) {
-		xlog(LOG_ERR, NULL, "%s: SSL_write: %s", __func__,
-		    ERR_error_string(SSL_get_error(t->ssl, r), NULL));
-		return -1;
-	}
-	xlog(LOG_DEBUG, NULL, "%s: fd %d t->pending = %d", __func__, t->fd,
-	    t->wpending);
-	return t->wpending;
+	/*
+	 * Then update wpending with the new amount of raw bytes pending.
+	 */
+	xlog(LOG_DEBUG, NULL, "%s: fd %d outbufsz=%ld", __func__,
+	    t->fd, tlsev_outbufsz(t));
+	return tlsev_outbufsz(t);
 }
 
 void
@@ -927,8 +940,7 @@ tlsev_ev_read(struct tlsev_listener *l, struct tlsev *t)
 #ifdef __linux__
 	struct epoll_event   ev;
 #endif
-	r = tlsev_in(l, t, xerrz(&e));
-	if (r == -1) {
+	if ((r = tlsev_in(l, t, xerrz(&e))) == -1) {
 		if (xerr_is(&e, XLOG_APP, XLOG_CALLBACK_ERR)) {
 			xlog(LOG_WARNING, &e, "fd=%d", t->fd);
 			tlsev_close(l, t);
@@ -962,20 +974,10 @@ tlsev_ev_read(struct tlsev_listener *l, struct tlsev *t)
 	}
 
 	/*
-	 * Get how many bytes can be read from our
-	 * outgoing (write) BIO. Normally this shouldn't
-	 * increase after a read, unless we are
-	 * processing an SSL handshake (SSL_accept).
+	 * If we processed an SSL handshake in tlsev_in() above, we may
+	 * have bytes to send out, so start polling for write.
 	 */
-	if ((t->wpending = BIO_pending(t->w)) == -1) {
-		xlog(LOG_ERR, NULL, "BIO_pending "
-		    "failed (%ld) on write BIO for "
-		    "fd=%d", ERR_get_error(), t->fd);
-		tlsev_close(l, t);
-		return -1;
-	}
-
-	if (t->wpending > 0) {
+	if (tlsev_outbufsz(t) > 0) {
 #ifdef __linux__
 		bzero(&ev, sizeof(ev));
 		ev.data.fd = t->fd;
@@ -996,10 +998,10 @@ tlsev_ev_read(struct tlsev_listener *l, struct tlsev *t)
 	}
 
 	if (r == -1) {
-		if (t->wpending > 0) {
+		if (tlsev_outbufsz(t) > 0) {
 			xlog(LOG_DEBUG, NULL, "remote is shutting down "
-			    "but we have %d bytes pending on fd %d",
-			    t->wpending, t->fd);
+			    "but we have %d bytes to send on fd %d",
+			    tlsev_outbufsz(t), t->fd);
 			tlsev_drain(t);
 		} else
 			tlsev_close(l, t);
@@ -1010,28 +1012,30 @@ tlsev_ev_read(struct tlsev_listener *l, struct tlsev *t)
 static int
 tlsev_ev_write(struct tlsev_listener *l, struct tlsev *t)
 {
-	int         r;
 	struct xerr e;
 #ifdef __linux__
 	struct epoll_event   ev;
 #endif
-
-	r = tlsev_out(l, t, xerrz(&e));
-	if (r == -1) {
+	if (tlsev_out(l, t, xerrz(&e)) == -1) {
 		xlog(LOG_ERR, &e, "write on fd %d", t->fd);
 		tlsev_close(l, t);
 		return -1;
 	}
-	t->wpending = r;
-	xlog(LOG_DEBUG, NULL, "t->wpending=%d on fd %d", t->wpending, t->fd);
 
-	if (r == 0) {
-		/*
-		 * If reads were paused because we
-		 * had pending data, we can now
-		 * resume them.
-		 */
+	xlog(LOG_DEBUG, NULL, "outbufsz=%ld on fd %d",
+	    tlsev_outbufsz(t), t->fd);
+
+	/*
+	 * We have no more bytes to send; consider stopping polling
+	 * for writes.
+	 */
+	if (tlsev_outbufsz(t) == 0) {
 		if (t->reads_paused) {
+			/*
+			 * If reads were paused because we had pending data,
+			 * we can now resume them since we have nothing else
+			 * to send.
+			 */
 			t->reads_paused = 0;
 #ifndef __linux__
 			if (kq_ev_set(l, t->fd, EVFILT_READ, EV_ADD) == -1) {
@@ -1068,6 +1072,8 @@ tlsev_ev_write(struct tlsev_listener *l, struct tlsev *t)
 		 * If after coming out of writing back to the client we still
 		 * have buffered data that couldn't make it to the socket
 		 * buffer, and reads weren't already blocked, block them now.
+		 * In other words, don't drain the incoming TCP buffer to
+		 * send pressure back to the client.
 		 */
 		if (!t->reads_paused) {
 			t->reads_paused = 1;

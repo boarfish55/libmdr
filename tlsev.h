@@ -15,7 +15,9 @@
 #include <idxheap.h>
 #include <xlog.h>
 
-#define TLSEV_IO_SIZE     32768
+#define TLSEV_IO_SIZE     65536      /* Must be no larger than INT_MAX,
+					and really no larger than the
+					ulimit stack space */
 #define TLSEV_MAX_CLIENTS 1000000000
 
 __BEGIN_DECLS
@@ -103,20 +105,29 @@ struct tlsev {
 	struct tlsev_listener *listener;
 	uint64_t               id;
 	int                    fd;
-	SSL                   *ssl;
-	BIO                   *r;
-	BIO                   *w;
-	int                    wpending;
 	int                    reads_paused;
 	int                    rcvlowat;
 	int                    tlswant;
 	int                    drain;
 	struct timespec        last_used_at;
 
+	SSL                   *ssl;
+	BIO                   *r;
+	BIO                   *w;
+	/*
+	 * How many bytes are ready to be sent out to the client in
+	 * the w BIO.
+	 */
 	struct sockaddr_in6    peer_addr;
 	socklen_t              peer_len;
 	X509                  *peer_cert;
 
+	/*
+	 * We cannot put bytes back into a read BIO, so when sending bytes
+	 * back out to a client, if we get a short write, we have to store
+	 * the bytes in retry_buf. In low-traffic situations it shouldn't
+	 * be used.
+	 */
 	char                  *retry_buf;
 	char                  *retry_buf_pos;
 	ssize_t                retry_len;
@@ -143,6 +154,7 @@ X509                *tlsev_peer_cert(struct tlsev *);
 struct sockaddr_in6 *tlsev_peer(struct tlsev *);
 int                  tlsev_reply(struct tlsev *, const unsigned char *, int);
 void                 tlsev_drain(struct tlsev *);
+size_t               tlsev_outbufsz(struct tlsev *);
 uint64_t             tlsev_id(struct tlsev *);
 int                  tlsev_fd(struct tlsev *);
 struct tlsev *       tlsev_get(struct tlsev_listener *, int);

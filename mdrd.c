@@ -720,6 +720,11 @@ backend_msg_in_cb(int fd)
 		goto fail;
 	}
 
+	// TODO: we need an "out" queue of messages tied to a tlsev,
+	// that we can retry during listener_tasks. When our outqueue
+	// is full we could send a backoff message to the backend
+	// for this session ID.
+
 	if (umdr_init(&beout, beout_buf, r, MDR_FNONE) == MDR_FAIL) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: umdr_init/beout", __func__);
@@ -828,6 +833,10 @@ backend_msg_in_cb(int fd)
 	 * TODO: backend could overflow us here. We should cap how many
 	 * bytes pending we have and create a message to tell our backend
 	 * to stop pause message for this client.
+	 *
+	 * Check the result of tlsev_outbufsz(t) and determine what's
+	 * acceptable.
+	 *
 	 * This only matters in a "streaming" situation where we don't
 	 * have 1:1 requests/replies. We'll need a message serial number
 	 * to properly inform the backend where to resme.
