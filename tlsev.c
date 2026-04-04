@@ -645,7 +645,7 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		return XERRF(e, XLOG_APP, XLOG_EOF, "read EOF");
 
 	l->counters.raw_bytes_in += r;
-	xlog(LOG_DEBUG, NULL, "%s: %ld bytes read on fd %d",
+	xlog(LOG_DEBUG, NULL, "%s: %d bytes read on fd %d",
 	    __func__, r, t->fd);
 
 	/*
@@ -754,7 +754,8 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 	 * send as much as we can. Any remaining data we'll read out
 	 * and store in our retry_buf.
 	 */
-	pending = BIO_get_mem_data(t->w, &bio_data);
+	if ((pending = BIO_get_mem_data(t->w, &bio_data)) <= 0)
+		abort();
 	r = write(t->fd, bio_data, pending);
 	if (r == -1)
 		return XERRF(e, XLOG_ERRNO, errno, "write");
@@ -804,7 +805,7 @@ tlsev_reply(struct tlsev *t, const unsigned char *buf, int len)
 		 * Per SSL_write, either we have more than INT_MAX buffered, or
 		 * malloc failure. Latter is more likely.
 		 */
-		if ((bio_pending_x(t->w) + len) > INT_MAX)
+		if (((size_t)bio_pending_x(t->w) + len) > INT_MAX)
 			errno = EOVERFLOW;
 		else
 			errno = ENOMEM;
@@ -999,9 +1000,9 @@ tlsev_ev_read(struct tlsev_listener *l, struct tlsev *t)
 
 	if (r == -1) {
 		if (tlsev_outbufsz(t) > 0) {
-			xlog(LOG_DEBUG, NULL, "remote is shutting down "
-			    "but we have %d bytes to send on fd %d",
-			    tlsev_outbufsz(t), t->fd);
+			xlog(LOG_DEBUG, NULL, "%s: remote is shutting down "
+			    "but we have %ld bytes to send on fd %d",
+			    __func__, tlsev_outbufsz(t), t->fd);
 			tlsev_drain(t);
 		} else
 			tlsev_close(l, t);

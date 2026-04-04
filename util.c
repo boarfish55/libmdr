@@ -186,7 +186,7 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 	int                argvlen, argvi;
 	size_t             sz;
 	struct sigaction   act;
-	long               max = (sysconf(_SC_ARG_MAX) * 2) + (32 * 2);
+	long               max;
 	struct xerr        e;
 	int                fds[2];
 	struct spawnmsg    smsg;
@@ -198,8 +198,14 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 		unsigned char  buf[CMSG_SPACE(sizeof(int) * 2)];
 	} cmsgbuf;
 
-	if (max < 1)
+	if ((max = sysconf(_SC_ARG_MAX)) == -1)
 		return -1;
+	/*
+	 * We want at least twice _SC_ARG_MAX to allow for this many
+	 * arguments plus the separator. We also want a bit of extra space
+	 * for uid/gid.
+	 */
+	max = (max * 2) + (32 * 2);
 
 	if (socketpair(AF_LOCAL, SOCK_STREAM, 0, sv) == -1)
 		return -1;
@@ -299,8 +305,7 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 
 			if (argvi + 1 >= argvlen) {
 				argvlen *= 2;
-				tmp = realloc(argv,
-				    argvlen * sizeof(char *));
+				tmp = realloc(argv, argvlen * sizeof(char *));
 				if (tmp == NULL) {
 					xlog_strerror(LOG_ERR, errno,
 					    "%s: realloc", __func__);
@@ -380,7 +385,7 @@ spawnproc_exec(struct spawnproc *sp, char *const argv[], pid_t *cpid,
 	 * Give enough room for ARG_MAX and a uid/gid, each with accompaying
 	 * \0 character.
 	 */
-	long             max = (sysconf(_SC_ARG_MAX) * 2) + (32 * 2);
+	long             max;
 	int              fds[2];
 	struct spawnmsg  smsg;
 	struct msghdr    msg;
@@ -391,8 +396,9 @@ spawnproc_exec(struct spawnproc *sp, char *const argv[], pid_t *cpid,
 		unsigned char  buf[CMSG_SPACE(sizeof(int) * 2)];
 	} cmsgbuf;
 
-	if (max < 1)
+	if ((max = sysconf(_SC_ARG_MAX)) == -1)
 		return XERRF(e, XLOG_ERRNO, errno, "sysconf(_SC_ARG_MAX)");
+	max = (max * 2) + (32 * 2);
 
 	if (argv == NULL || argv[0] == NULL)
 		return XERRF(e, XLOG_APP, XLOG_INVALID, "argv is empty");
