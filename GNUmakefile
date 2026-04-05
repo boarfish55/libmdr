@@ -1,5 +1,7 @@
 CC = cc
 EXTRA_CFLAGS =
+VERSION = 0.2.0
+VERSION_MAJOR = $(shell echo ${VERSION} | cut -d. -f 1)
 DEPDIR = .deps
 CFLAGS = -Wall -g -I. -fstack-protector-strong -DYY_NO_LEAKS=1 -Wformat=0 \
 	$(shell pkg-config --cflags libbsd-overlay libbsd-ctor \
@@ -36,13 +38,13 @@ libflatconf.a: flatconf.o
 	ar cr $@ flatconf.o
 
 libflatconf.so: flatconf.pic.o
-	${CC} -shared -o $@ flatconf.pic.o
+	${CC} -shared -Wl,-soname,libflatconf.so.${VERSION_MAJOR} -o $@ flatconf.pic.o
 
 libmdr.a: ${MDR_AROBJS}
 	ar cr $@ ${MDR_AROBJS}
 
 libmdr.so: ${MDR_LIBOBJS}
-	${CC} -shared -o $@ ${MDR_LIBOBJS}
+	${CC} -shared -Wl,-soname,libmdr.so.${VERSION_MAJOR} -o $@ ${MDR_LIBOBJS}
 
 flatconf.c: flatconf.y mdr/flatconf.h
 	${YACC} -o flatconf.c flatconf.y
@@ -70,20 +72,16 @@ install: all
 	mkdir -p ${DESTDIR}/sbin
 	mkdir -p ${DESTDIR}/lib
 	mkdir -p ${DESTDIR}/include/mdr
+	mkdir -p ${DESTDIR}/share/doc/libmdr/examples
 
 	install -m 0755 mdrd ${DESTDIR}/sbin/
 	install -m 0755 mdrc ${DESTDIR}/bin/
-	install -m 0644 mdr.h ${DESTDIR}/include/mdr/
-	install -m 0644 mdrd.h ${DESTDIR}/include/mdr/
-	install -m 0644 tlsev.h ${DESTDIR}/include/mdr/
-	install -m 0644 xlog.h ${DESTDIR}/include/mdr/
-	install -m 0644 util.h ${DESTDIR}/include/mdr/
-	install -m 0644 idxheap.h ${DESTDIR}/include/mdr/
-	install -m 0644 flatconf.h ${DESTDIR}/include/mdr/
+	install -m 0644 mdr/*.h ${DESTDIR}/include/mdr/
 	install -m 0644 libmdr.a ${DESTDIR}/lib/
 	install -m 0644 libmdr.so ${DESTDIR}/lib/
 	install -m 0644 libflatconf.a ${DESTDIR}/lib/
 	install -m 0644 libflatconf.so ${DESTDIR}/lib/
+	install -m 0644 mdrd.conf.sample ${DESTDIR}/share/doc/libmdr/examples
 
 clean:
 	rm -f $(DEPDIR)/* *.o mdr_tests mdrc mdrd mdrd_backend_echo \
