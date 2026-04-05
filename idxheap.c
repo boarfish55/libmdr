@@ -6,7 +6,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <strings.h>
-#include "idxheap.h"
+#include <mdr/idxheap.h>
 
 static void                 idxheap_swap(struct idxheap *, int, int);
 static struct idxheap_item *idxheap_remove_key_internal(struct idxheap *,

@@ -16,8 +16,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include "util.h"
-#include "xlog.h"
+#include <mdr/util.h>
+#include <mdr/xlog.h>
 
 struct spawnmsg {
 	int   status;

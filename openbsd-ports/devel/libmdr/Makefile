@@ -32,6 +32,9 @@ do-install:
 		${PREFIX}/lib/libflatconf.so.${LIBflatconf_VERSION}
 	${INSTALL_DATA} ${WRKBUILD}/libflatconf.a ${PREFIX}/lib/libflatconf.a
 
+	${INSTALL_DATA_DIR} ${PREFIX}/include/mdr/
+	${INSTALL_DATA} ${WRKBUILD}/mdr/*.h ${PREFIX}/include/mdr/
+
 	${INSTALL_DATA_DIR} ${PREFIX}/share/doc/libmdr/
 	${INSTALL_DATA} ${WRKBUILD}/README.md ${PREFIX}/share/doc/libmdr/
 	${INSTALL_DATA} ${WRKBUILD}/LICENSE ${PREFIX}/share/doc/libmdr/

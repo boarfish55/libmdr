@@ -18,8 +18,8 @@
 #include <strings.h>
 #include <stdio.h>
 #include <unistd.h>
-#include "tlsev.h"
-#include "idxheap.h"
+#include <mdr/tlsev.h>
+#include <mdr/idxheap.h>
 
 static int tlsev_data_idx = -1;
 

@@ -13,8 +13,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "mdr.h"
-#include "util.h"
+#include <mdr/mdr.h>
+#include <mdr/util.h>
 
 int verbose = 0;
 

@@ -13,7 +13,7 @@
 #include <string.h>
 #include <syslog.h>
 #include <unistd.h>
-#include "flatconf.h"
+#include <mdr/flatconf.h>
 
 static int yyparse();
 
