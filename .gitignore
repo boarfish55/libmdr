@@ -13,3 +13,12 @@ client2/
 mdrd_backend_echo
 flatconf.c
 cov-int/
+debian/*.ex
+debian/tmp/
+debian/libmdr[0-9]/
+debian/libmdr-dev/
+debian/files/
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/*.log
+debian/*.substvars
