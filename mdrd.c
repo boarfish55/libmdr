@@ -28,12 +28,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "flatconf.h"
-#include "mdr.h"
-#include "mdrd.h"
-#include "util.h"
-#include "tlsev.h"
-#include "xlog.h"
+#include <mdr/flatconf.h>
+#include <mdr/mdr.h>
+#include <mdr/mdrd.h>
+#include <mdr/util.h>
+#include <mdr/tlsev.h>
+#include <mdr/xlog.h>
 
 const char *program = "mdrd";
 X509_STORE *store = NULL;

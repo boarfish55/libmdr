@@ -14,7 +14,7 @@
 #include <unistd.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
-#include "mdr.h"
+#include <mdr/mdr.h>
 
 const char            *program = "mdrc";
 const struct mdr_spec *m_spec;

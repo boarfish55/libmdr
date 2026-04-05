@@ -12,8 +12,8 @@
 #include <openssl/bio.h>
 #include <openssl/x509.h>
 #include <netdb.h>
-#include <idxheap.h>
-#include <xlog.h>
+#include <mdr/idxheap.h>
+#include <mdr/xlog.h>
 
 #define TLSEV_IO_SIZE     65536      /* Must be no larger than INT_MAX,
 					and really no larger than the

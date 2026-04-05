@@ -16,7 +16,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
-#include "xlog.h"
+#include <mdr/xlog.h>
 
 const struct module_dbg_map_entry module_dbg_map[] = {
 	{ "all",       XLOG_ALL },

@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "mdr.h"
+#include <mdr/mdr.h>
 
 union mdr_num_v {
 	uint8_t  u8;

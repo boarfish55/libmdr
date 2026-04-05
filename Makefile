@@ -41,7 +41,7 @@ libmdr.a: ${MDR_AROBJS}
 libmdr.so: ${MDR_LIBOBJS}
 	${CC} -shared -o $@ ${MDR_LIBOBJS}
 
-flatconf.c: flatconf.y flatconf.h
+flatconf.c: flatconf.y mdr/flatconf.h
 	${YACC} -o flatconf.c flatconf.y
 
 mdr_tests: ${MDR_TESTS_OBJS}

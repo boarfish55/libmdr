@@ -8,8 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "mdr.h"
-#include "mdrd.h"
+#include <mdr/mdr.h>
+#include <mdr/mdrd.h>
 
 static int
 session_cmp(struct mdrd_besession *s1, struct mdrd_besession *s2)

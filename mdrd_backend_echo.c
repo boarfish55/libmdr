@@ -14,10 +14,10 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include "mdr.h"
-#include "mdrd.h"
-#include "util.h"
-#include "xlog.h"
+#include <mdr/mdr.h>
+#include <mdr/mdrd.h>
+#include <mdr/util.h>
+#include <mdr/xlog.h>
 
 /*
  * A simple mdrd echo backend; it echoes back the nested mdr that's
