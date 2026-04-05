@@ -27,6 +27,10 @@ override_dh_auto_install:
 		debian/tmp/lib/${DEB_HOST_MULTIARCH}/libmdr.so.${DEB_VERSION}
 	ln -fs debian/tmp/lib/${DEB_HOST_MULTIARCH}/libmdr.so.${DEB_VERSION} \
 		debian/tmp/lib/${DEB_HOST_MULTIARCH}/libmdr.so.${DEB_VERSION_MAJOR}
+	mv debian/tmp/lib/libflatconf.so \
+		debian/tmp/lib/${DEB_HOST_MULTIARCH}/libflatconf.so.${DEB_VERSION}
+	ln -fs debian/tmp/lib/${DEB_HOST_MULTIARCH}/libflatconf.so.${DEB_VERSION} \
+		debian/tmp/lib/${DEB_HOST_MULTIARCH}/libflatconf.so.${DEB_VERSION_MAJOR}
 
 
 # dh_make generated override targets.

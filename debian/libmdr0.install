@@ -1,4 +1,3 @@
 bin
 sbin
-include
-lib
+lib/*/*.so.*
