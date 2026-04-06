@@ -3,8 +3,8 @@
  *
  * SPDX-License-Identifier: ISC
  */
-#ifndef XLOG_H
-#define XLOG_H
+#ifndef MDR_XLOG_H
+#define MDR_XLOG_H
 
 #include <limits.h>
 #include <stdint.h>

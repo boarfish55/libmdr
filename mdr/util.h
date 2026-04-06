@@ -3,8 +3,8 @@
  *
  * SPDX-License-Identifier: ISC
  */
-#ifndef UTIL_H
-#define UTIL_H
+#ifndef MDR_UTIL_H
+#define MDR_UTIL_H
 
 #include <mdr/xlog.h>
 
