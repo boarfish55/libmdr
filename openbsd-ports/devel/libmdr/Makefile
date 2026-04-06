@@ -40,7 +40,7 @@ do-install:
 	${INSTALL_DATA} ${WRKBUILD}/LICENSE ${PREFIX}/share/doc/libmdr/
 	${INSTALL_DATA} ${WRKBUILD}/mdrd.conf.sample ${PREFIX}/share/doc/libmdr/
 
-	${WRKBUILD}/mdr.pc.sh > ${PREFIX}/lib/pkgconfig/mdr.pc
-	${WRKBUILD}/flatconf.pc.sh > ${PREFIX}/lib/pkgconfig/flatconf.pc
+	LIBDIRSUFFIX=lib ${WRKBUILD}/mdr.pc.sh > ${PREFIX}/lib/pkgconfig/mdr.pc
+	LIBDIRSUFFIX=lib ${WRKBUILD}/flatconf.pc.sh > ${PREFIX}/lib/pkgconfig/flatconf.pc
 
 .include <bsd.port.mk>
