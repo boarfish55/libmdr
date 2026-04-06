@@ -1,3 +1,9 @@
+libmdr (0.4.3) unstable; urgency=medium
+
+  * Oops, we had removed SSL_accept()
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Mon, 06 Apr 2026 19:24:12 -0400
+
 libmdr (0.4.2) unstable; urgency=medium
 
   * Fix missing symbols for library, fix header guards
