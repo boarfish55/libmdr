@@ -38,10 +38,10 @@ override_dh_auto_install:
 		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/libflatconf.so.${DEB_VERSION_MAJOR}
 	mv debian/tmp/usr/share/doc/libmdr debian/tmp/usr/share/doc/libmdr${DEB_VERSION_MAJOR}
 	mkdir -p debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/pkgconfig
-	PREFIX=/usr VERSION=${DEB_VERSION} LIBDIRSUFFIX=lib/${DEB_HOST_MULTIARCH} \
+	PC_PREFIX=/usr VERSION=${DEB_VERSION} LIBDIRSUFFIX=lib/${DEB_HOST_MULTIARCH} \
 	       ./mdr.pc.sh \
 		> debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/pkgconfig/mdr.pc
-	PREFIX=/usr VERSION=${DEB_VERSION} LIBDIRSUFFIX=lib/${DEB_HOST_MULTIARCH} \
+	PC_PREFIX=/usr VERSION=${DEB_VERSION} LIBDIRSUFFIX=lib/${DEB_HOST_MULTIARCH} \
 	       ./flatconf.pc.sh \
 		> debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/pkgconfig/flatconf.pc
 
