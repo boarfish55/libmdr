@@ -1,5 +1,5 @@
-libmdr (0.2.0) UNRELEASED; urgency=medium
+libmdr (0.3.1) unstable; urgency=medium
 
-  * Initial release.
+  * Initial Debian packaging
 
- -- Pascal Lalonde <plalonde@overnet.ca>  Sat, 04 Apr 2026 17:37:05 -0400
+ -- Pascal Lalonde <plalonde@overnet.ca>  Sun, 05 Apr 2026 22:55:46 -0400
