@@ -4,6 +4,13 @@ set -e
 
 cmd="$1"
 
+branch=$(git branch --show-current)
+
+if [ "$branch" != "master" ]; then
+	echo "$(basename $0): must be run on master branch"
+	exit 2
+fi
+
 cur=$(git describe --abbrev=0)
 cur=${cur#v}
 
