@@ -1,6 +1,6 @@
 CC = cc
 EXTRA_CFLAGS =
-VERSION = 0.4.0
+VERSION = 0.4.1
 VERSION_MAJOR != echo ${VERSION} | cut -d. -f 1
 CFLAGS = -Wall -g ${EXTRA_CFLAGS}
 INCLUDES = -I.
@@ -12,7 +12,8 @@ INSTALL_OWNER ?= root
 SRCS = mdr.c mdrc.c mdr_mdrd.c mdr_tests.c flatconf.c idxheap.c tlsev.c \
 	util.c xlog.c
 
-MDR_LIBOBJS = mdr.pic.o tlsev.pic.o idxheap.pic.o util.pic.o xlog.pic.o
+MDR_LIBOBJS = mdr.pic.o mdrd.pic.o tlsev.pic.o idxheap.pic.o util.pic.o \
+	      xlog.pic.o
 MDR_AROBJS = mdr.o tlsev.o idxheap.o util.o xlog.o
 MDRD_OBJS = mdrd.o idxheap.o flatconf.o mdr.o mdr_mdrd.o tlsev.o util.o xlog.o
 MDRC_OBJS = mdrc.o mdr.o
