@@ -1,4 +1,5 @@
 usr/bin
 usr/sbin
 usr/lib/*/*.so.*
+usr/lib/*/*.so
 usr/share
