@@ -1,3 +1,12 @@
+libmdr (0.3.2) unstable; urgency=medium
+
+  * lintian
+  * lintian
+  * Enable hardening
+  * Split binaries from libs for lintian
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Mon, 06 Apr 2026 00:35:55 -0400
+
 libmdr (0.3.1) unstable; urgency=medium
 
   * Initial Debian packaging
