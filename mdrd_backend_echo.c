@@ -45,6 +45,8 @@ main(int argc, char **argv)
 	struct mdrd_besession  *sess;
 	char                    hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
 	X509_STORE             *store;
+	X509_NAME              *name;
+	char                    subject[LINE_MAX];
 
 	if (argc < 3)
 		usage();
@@ -142,6 +144,13 @@ main(int argc, char **argv)
 					exit(1);
 				}
 				continue;
+			}
+
+			name = X509_get_subject_name(sess->cert);
+			if (X509_NAME_oneline(name, subject,
+			    sizeof(subject)) != NULL) {
+				xlog(LOG_NOTICE, NULL,
+				    "request from subject %s", subject);
 			}
 
 			/* Verify the cert */

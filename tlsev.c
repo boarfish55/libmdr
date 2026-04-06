@@ -656,7 +656,7 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		return XERRF(e, XLOG_SSL, ERR_get_error(), "BIO_write");
 
 	if (!SSL_is_init_finished(t->ssl)) {
-		if (r <= 0) {
+		if ((r = SSL_accept(t->ssl)) <= 0) {
 			r = SSL_get_error(t->ssl, r);
 			switch (r) {
 			case SSL_ERROR_WANT_READ:
