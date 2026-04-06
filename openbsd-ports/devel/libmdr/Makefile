@@ -1,7 +1,7 @@
 COMMENT =	Minimal Data Representation, a data serialization library
 CATEGORIES =	devel
-V =		0.2.0
-DISTNAME =	libmdr-${V}
+VERSION =	0.2.0
+DISTNAME =	libmdr-${VERSION}
 HOMEPAGE =	https://www.overnet.ca
 MAINTAINER =	Pascal Lalonde <plalonde@overnet.ca>
 SHARED_LIBS =	mdr		0.2
@@ -9,7 +9,7 @@ SHARED_LIBS +=	flatconf	0.2
 
 GH_ACCOUNT =    boarfish55
 GH_PROJECT =    libmdr
-GH_TAGNAME =    ${V}
+GH_TAGNAME =    ${VERSION}
 
 PERMIT_PACKAGE =	Yes
 
@@ -39,5 +39,8 @@ do-install:
 	${INSTALL_DATA} ${WRKBUILD}/README.md ${PREFIX}/share/doc/libmdr/
 	${INSTALL_DATA} ${WRKBUILD}/LICENSE ${PREFIX}/share/doc/libmdr/
 	${INSTALL_DATA} ${WRKBUILD}/mdrd.conf.sample ${PREFIX}/share/doc/libmdr/
+
+	${WRKBUILD}/mdr.pc.sh > ${PREFIX}/lib/pkgconfig/mdr.pc
+	${WRKBUILD}/flatconf.pc.sh > ${PREFIX}/lib/pkgconfig/flatconf.pc
 
 .include <bsd.port.mk>
