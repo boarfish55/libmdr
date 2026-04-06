@@ -1,2 +1,2 @@
-include
-lib/*.a
+usr/include
+usr/lib/*/*.a
