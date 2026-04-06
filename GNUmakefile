@@ -39,13 +39,15 @@ libflatconf.a: flatconf.o
 	ar cr $@ flatconf.o
 
 libflatconf.so: flatconf.pic.o
-	${CC} -shared -Wl,-soname,libflatconf.so.${VERSION_MAJOR} -o $@ flatconf.pic.o
+	${CC} -shared -Wl,-z,relro -Wl,-z,now \
+		-Wl,-soname,libflatconf.so.${VERSION_MAJOR} -o $@ flatconf.pic.o
 
 libmdr.a: ${MDR_AROBJS}
 	ar cr $@ ${MDR_AROBJS}
 
 libmdr.so: ${MDR_LIBOBJS}
-	${CC} -shared -Wl,-soname,libmdr.so.${VERSION_MAJOR} -o $@ ${MDR_LIBOBJS}
+	${CC} -shared -Wl,-z,relro -Wl,-z,now \
+		-Wl,-soname,libmdr.so.${VERSION_MAJOR} -o $@ ${MDR_LIBOBJS}
 
 flatconf.c: flatconf.y mdr/flatconf.h
 	${YACC} -o flatconf.c flatconf.y
