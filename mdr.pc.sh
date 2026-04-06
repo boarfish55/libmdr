@@ -1,7 +1,7 @@
 #!/bin/sh
 
 cat << EOF
-prefix=$PREFIX
+prefix=$PC_PREFIX
 exec_prefix=\${prefix}
 libdir=\${exec_prefix}/$LIBDIRSUFFIX
 includedir=\${prefix}/include

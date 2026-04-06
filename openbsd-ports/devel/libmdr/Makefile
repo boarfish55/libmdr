@@ -1,11 +1,11 @@
 COMMENT =	Minimal Data Representation, a data serialization library
 CATEGORIES =	devel
-VERSION =	0.2.0
+VERSION =	0.3.0
 DISTNAME =	libmdr-${VERSION}
 HOMEPAGE =	https://www.overnet.ca
 MAINTAINER =	Pascal Lalonde <plalonde@overnet.ca>
-SHARED_LIBS =	mdr		0.2
-SHARED_LIBS +=	flatconf	0.2
+SHARED_LIBS =	mdr		0.3
+SHARED_LIBS +=	flatconf	0.3
 
 GH_ACCOUNT =    boarfish55
 GH_PROJECT =    libmdr
@@ -40,7 +40,9 @@ do-install:
 	${INSTALL_DATA} ${WRKBUILD}/LICENSE ${PREFIX}/share/doc/libmdr/
 	${INSTALL_DATA} ${WRKBUILD}/mdrd.conf.sample ${PREFIX}/share/doc/libmdr/
 
-	LIBDIRSUFFIX=lib ${WRKBUILD}/mdr.pc.sh > ${PREFIX}/lib/pkgconfig/mdr.pc
-	LIBDIRSUFFIX=lib ${WRKBUILD}/flatconf.pc.sh > ${PREFIX}/lib/pkgconfig/flatconf.pc
+	VERSION=${VERSION} PC_PREFIX=/usr/local LIBDIRSUFFIX=lib \
+		${WRKBUILD}/mdr.pc.sh > ${PREFIX}/lib/pkgconfig/mdr.pc
+	VERSION=${VERSION} PC_PREFIX=/usr/local LIBDIRSUFFIX=lib \
+		${WRKBUILD}/flatconf.pc.sh > ${PREFIX}/lib/pkgconfig/flatconf.pc
 
 .include <bsd.port.mk>
