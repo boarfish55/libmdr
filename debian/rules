@@ -32,10 +32,14 @@ override_dh_auto_install:
 		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/libmdr.so.${DEB_VERSION}
 	ln -s libmdr.so.${DEB_VERSION} \
 		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/libmdr.so.${DEB_VERSION_MAJOR}
+	ln -s libmdr.so.${DEB_VERSION} \
+		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/libmdr.so
 	mv debian/tmp/usr/lib/libflatconf.so \
 		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/libflatconf.so.${DEB_VERSION}
 	ln -s libflatconf.so.${DEB_VERSION} \
 		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/libflatconf.so.${DEB_VERSION_MAJOR}
+	ln -s libflatconf.so.${DEB_VERSION} \
+		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/libflatconf.so
 	mv debian/tmp/usr/share/doc/libmdr debian/tmp/usr/share/doc/libmdr${DEB_VERSION_MAJOR}
 	mkdir -p debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/pkgconfig
 	PC_PREFIX=/usr VERSION=${DEB_VERSION} LIBDIRSUFFIX=lib/${DEB_HOST_MULTIARCH} \
@@ -44,10 +48,3 @@ override_dh_auto_install:
 	PC_PREFIX=/usr VERSION=${DEB_VERSION} LIBDIRSUFFIX=lib/${DEB_HOST_MULTIARCH} \
 	       ./flatconf.pc.sh \
 		> debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/pkgconfig/flatconf.pc
-
-
-# dh_make generated override targets.
-# This is an example for Cmake (see <https://bugs.debian.org/641051>).
-#override_dh_auto_configure:
-#	dh_auto_configure -- \
-#	-DCMAKE_LIBRARY_PATH=$(DEB_HOST_MULTIARCH)

@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: Pascal Lalonde <plalonde@overnet.ca>
 Rules-Requires-Root: no
 Build-Depends:
- debhelper-compat (= 13), libbsd-dev, libssl-dev, byacc, pkg-config
+ debhelper-compat (= 13), libbsd-dev, libssl-dev, byacc, pkgconf
 Standards-Version: 4.7.2
 Homepage: https:/www.overnet.ca
 
