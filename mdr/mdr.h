@@ -420,8 +420,6 @@ extern const struct mdr_spec *mdr_msg_mdrd_beout_empty;
 extern const struct mdr_spec *mdr_msg_mdrd_beclose;
 extern const struct mdr_spec *mdr_msg_mdrd_besesserr;
 
-#define MDR_DOMAIN_CERTALATOR    MDR_DCV(0x00000002, 0, 0)
-
 __END_DECLS
 
 #endif
