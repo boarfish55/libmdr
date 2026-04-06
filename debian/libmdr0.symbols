@@ -49,6 +49,14 @@ libmdr.so.0 libmdr0 #MINVER#
  mdr_registry_tree_RB_REMOVE@Base 0.2.0
  mdr_registry_tree_RB_REMOVE_COLOR@Base 0.2.0
  mdr_spec_base_sz@Base 0.2.0
+ mdrd_beout@Base 0.4.0
+ mdrd_beout_error@Base 0.4.0
+ mdrd_beout_ok@Base 0.4.0
+ mdrd_besession_set_data@Base 0.4.0
+ mdrd_recv@Base 0.4.0
+ mdrd_unpack_beclose@Base 0.4.0
+ mdrd_unpack_bein@Base 0.4.0
+ mdrd_unpack_besesserr@Base 0.4.0
  module_dbg_map@Base 0.2.0
  pmdr_acct_id@Base 0.2.0
  pmdr_add_tail_bytes@Base 0.2.0
@@ -72,6 +80,11 @@ libmdr.so.0 libmdr0 #MINVER#
  pmdr_trace_id@Base 0.2.0
  pmdr_variant@Base 0.2.0
  readall@Base 0.2.0
+ session_tree_SPLAY@Base 0.4.0
+ session_tree_SPLAY_INSERT@Base 0.4.0
+ session_tree_SPLAY_MINMAX@Base 0.4.0
+ session_tree_SPLAY_REMOVE@Base 0.4.0
+ sessions@Base 0.4.0
  spawn@Base 0.2.0
  spawnproc_close@Base 0.2.0
  spawnproc_exec@Base 0.2.0
