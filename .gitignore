@@ -2,11 +2,13 @@
 *.o
 *.a
 *.so
+.build/
 mdr_tests
 mdrc
 mdrd
 .depend
 .deps
+coverity/
 ca/
 client1/
 client2/
