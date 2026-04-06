@@ -47,10 +47,11 @@ echo "$cur => $major.$minor.$patch"
 read -p "Tag it? (y/N) " RESP
 
 if [ "$RESP" = "y" -o "$RESP" = "Y" ]; then
-	sed "s/^VERSION = [0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$/VERSION = $major.$minor.$patch/" Makefile
-	sed "s/^VERSION = [0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$/VERSION = $major.$minor.$patch/" GNUmakefile
-	git commit -m "$major.$minor.$patch"
-	git tag -m "v$major.$minor.$patch" "$major.$minor.$patch"
+	sed -i "s/^VERSION = [0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$/VERSION = $major.$minor.$patch/" Makefile
+	sed -i "s/^VERSION = [0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$/VERSION = $major.$minor.$patch/" GNUmakefile
+	git add Makefile GNUmakefile
+	echo git commit -m "$major.$minor.$patch"
+	echo git tag -m "v$major.$minor.$patch" "$major.$minor.$patch"
 fi
 
 exit 0
