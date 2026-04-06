@@ -3,7 +3,7 @@
 cat << EOF
 prefix=$PREFIX
 exec_prefix=\${prefix}
-libdir=\${exec_prefix}/lib
+libdir=\${exec_prefix}/$LIBDIRSUFFIX
 includedir=\${prefix}/include
  
 Name: Minimal Data Representation
