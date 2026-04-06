@@ -13,9 +13,21 @@ Section: misc
 Architecture: any
 Depends:
  libmdr0 (= ${binary:Version}),
- ${misc:Depends},
+ ${misc:Depends}, libssl3t64, libbsd0
 Description: Minimal Data Representation daemon
- Minimal Data Representation daemon
+ Minimal Data Representation (libmdr) ia a minimalistic serialization library
+ (plus a few extra tools, see below). It's C-friendly, has no definition
+ language and no code generation tool, using instead declarations with standard
+ C code in a style reminiscent of readv()/writev(). There are no optional
+ fields, instead opting to create new message definitions. It attempts to
+ minimize data copies when unpacking, as much as possible.
+ .
+ It comes with a few extra tools like an indexed heap datastructure, xlog
+ (extended logging, essentially a syslog wrapper), a TLS event library, a
+ simple config file handler (flatconf), a fork convenience utility that can
+ spawn other processes with reduced privileges, and more.
+ .
+ This package is for the mdrd daemon.
 
 Package: libmdr-dev
 Section: libdevel
