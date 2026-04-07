@@ -1,3 +1,10 @@
+libmdr (0.5.0) unstable; urgency=medium
+
+  * Handle EOF in mdrd_recv()
+  * Provide a way to cleanup/expire mdrd_bessessions
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Tue, 07 Apr 2026 13:05:15 -0400
+
 libmdr (0.4.3) unstable; urgency=medium
 
   * Oops, we had removed SSL_accept()
