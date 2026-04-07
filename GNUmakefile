@@ -14,15 +14,12 @@ DEPFLAGS = -MMD -MP -MF $(DEPDIR)/$@.d
 YACC = byacc
 DESTDIR ?= /usr/local
 
-SRCS = mdr.c mdrc.c mdr_mdrd.c mdr_tests.c flatconf.c idxheap.c tlsev.c \
-	util.c xlog.c
-
 MDR_LIBOBJS = mdr.pic.o mdr_mdrd.pic.o tlsev.pic.o idxheap.pic.o util.pic.o \
 	      xlog.pic.o
 MDR_AROBJS = mdr.o mdr_mdrd.o tlsev.o idxheap.o util.o xlog.o
 MDRD_OBJS = mdrd.o idxheap.o flatconf.o mdr.o mdr_mdrd.o tlsev.o util.o xlog.o
 MDRC_OBJS = mdrc.o mdr.o
-BE_ECHO_OBJS = mdrd_backend_echo.o mdr.o mdr_mdrd.o xlog.o
+BE_ECHO_OBJS = mdrd_backend_echo.o mdr.o mdr_mdrd.o xlog.o util.o
 MDR_TESTS_OBJS = mdr_tests.o mdr.o util.o xlog.o
 
 all: mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a libmdr.so \

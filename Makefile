@@ -18,7 +18,7 @@ MDR_AROBJS = mdr.o mdr_mdrd.o tlsev.o idxheap.o util.o xlog.o
 MDRD_OBJS = mdrd.o idxheap.o flatconf.o mdr.o mdr_mdrd.o tlsev.o util.o xlog.o
 MDRC_OBJS = mdrc.o mdr.o
 BE_ECHO_OBJS = mdrd_backend_echo.o mdr.o mdr_mdrd.o xlog.o
-MDR_TESTS_OBJS = mdr_tests.o mdr.o util.o xlog.o
+MDR_TESTS_OBJS = mdr_tests.o mdr.o util.o xlog.o util.o
 
 all: .depend mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a libmdr.so \
 	libflatconf.a libflatconf.so
