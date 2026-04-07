@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <mdr/mdr.h>
 #include <mdr/mdrd.h>
+#include <mdr/util.h>
 
 static int
 session_cmp(struct mdrd_besession *s1, struct mdrd_besession *s2)
@@ -33,6 +34,24 @@ session_free(struct mdrd_besession *s)
 	if (s->data != NULL && s->free_data != NULL)
 		s->free_data(s->data);
 	free(s);
+}
+
+int
+mdrd_purge_sessions(time_t age_seconds)
+{
+	struct timespec        now;
+	struct mdrd_besession *s, *next;
+	int                    purged = 0;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	for (s = SPLAY_MIN(session_tree, &sessions); s != NULL; s = next) {
+		next = SPLAY_NEXT(session_tree, &sessions, s);
+		if (now.tv_sec - s->last_seen.tv_sec > age_seconds) {
+			session_free(s);
+			purged++;
+		}
+	}
+	return purged;
 }
 
 /*
@@ -226,6 +245,9 @@ again:
 	if ((c = mdr_buf_from_fd(0, ubuf, sizeof(ubuf))) == MDR_FAIL)
 		return MDR_FAIL;
 
+	if (c == 0)
+		return 0;
+
 	if (umdr_init(&um, ubuf, c, MDR_FNONE) == MDR_FAIL) {
 		snprintf(errmsg, sizeof(errmsg), "failed on umdr_init (%d)",
 		    errno);
@@ -236,7 +258,7 @@ again:
 		pv[1].v.s = errmsg;
 		if (pmdr_pack(&pm, mdr_msg_error, pv, 2) == MDR_FAIL)
 			return MDR_FAIL;
-		if (write(1, pmdr_buf(&pm), pmdr_size(&pm)) < pmdr_size(&pm))
+		if (writeall(1, pmdr_buf(&pm), pmdr_size(&pm)) < pmdr_size(&pm))
 			return MDR_FAIL;
 	}
 
@@ -248,7 +270,7 @@ again:
 		pv[1].v.s = "message is not MDR_DOMAIN_MDRD";
 		if (pmdr_pack(&pm, mdr_msg_error, pv, 2) == MDR_FAIL)
 			return MDR_FAIL;
-		if (write(1, pmdr_buf(&pm), pmdr_size(&pm)) < pmdr_size(&pm))
+		if (writeall(1, pmdr_buf(&pm), pmdr_size(&pm)) < pmdr_size(&pm))
 			return MDR_FAIL;
 		goto again;
 	}
@@ -273,7 +295,7 @@ again:
 		pv[1].v.s = "expected MDR_DCV_MDRD_BEREQ";
 		if (pmdr_pack(&pm, mdr_msg_error, pv, 2) == MDR_FAIL)
 			return MDR_FAIL;
-		if (write(1, pmdr_buf(&pm), pmdr_size(&pm)) < pmdr_size(&pm))
+		if (writeall(1, pmdr_buf(&pm), pmdr_size(&pm)) < pmdr_size(&pm))
 			return MDR_FAIL;
 		goto again;
 	}
@@ -286,7 +308,7 @@ again:
 		pv[1].v.s = "unsupported message, or bad format";
 		if (pmdr_pack(&pm, mdr_msg_error, pv, 2) == MDR_FAIL)
 			return MDR_FAIL;
-		if (write(1, pmdr_buf(&pm), pmdr_size(&pm)) < pmdr_size(&pm))
+		if (writeall(1, pmdr_buf(&pm), pmdr_size(&pm)) < pmdr_size(&pm))
 			return MDR_FAIL;
 		goto again;
 	}
@@ -326,9 +348,11 @@ again:
 		sess->cert = peer_cert;
 		sess->data = NULL;
 		sess->free_data = NULL;
+		clock_gettime(CLOCK_MONOTONIC, &sess->last_seen);
 		SPLAY_INSERT(session_tree, &sessions, sess);
 	} else {
 		sess->is_new = 0;
+		clock_gettime(CLOCK_MONOTONIC, &sess->last_seen);
 	}
 
 	if (domain != 0 && !umdr_dcv_match(msg, domain, MDR_MASK_D)) {
