@@ -1070,7 +1070,7 @@ mdr_registry_clear()
 	}
 }
 
-size_t
+uint64_t
 mdr_spec_base_sz(const struct mdr_spec *spec, uint64_t max_payload_bytes)
 {
 	int    i;
@@ -1132,7 +1132,9 @@ mdr_spec_base_sz(const struct mdr_spec *spec, uint64_t max_payload_bytes)
 			break;
 		}
 	}
-	return sz;
+	if (max_payload_bytes > UINT64_MAX - sz)
+		return UINT64_MAX;
+	return sz + max_payload_bytes;
 }
 
 void *
