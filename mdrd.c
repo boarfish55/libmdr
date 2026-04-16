@@ -1001,7 +1001,9 @@ reload_cert_cb(SSL_CTX *ctx)
 	}
 
 	if (SSL_CTX_use_certificate_chain_file(ctx, mdrd_conf.cert_file) != 1) {
-		xlog(LOG_ERR, NULL, "SSL_CTX_use_certificate_chain_file: %s",
+		xlog(LOG_ERR, NULL,
+		    "SSL_CTX_use_certificate_chain_file: %s: %s",
+		    mdrd_conf.cert_file,
 		    ERR_error_string(ERR_get_error(), NULL));
 		return 0;
 	}
@@ -1727,7 +1729,8 @@ main(int argc, char **argv)
 		    "unveil: %s", mdrd_conf.cert_file);
 		exit(1);
 	}
-	if (unveil(mdrd_conf.crl_file, "r") == -1) {
+	if (*mdrd_conf.crl_file != '\0' &&
+	    unveil(mdrd_conf.crl_file, "r") == -1) {
 		xlog_strerror(LOG_ERR, errno,
 		    "unveil: %s", mdrd_conf.crl_file);
 		exit(1);
@@ -1740,7 +1743,7 @@ main(int argc, char **argv)
 	}
 	if (unveil(mdrd_conf.counters_sock, "rwc") == -1) {
 		xlog_strerror(LOG_ERR, errno,
-		    "unveil: %s", mdrd_conf.crl_file);
+		    "unveil: %s", mdrd_conf.counters_sock);
 		exit(1);
 	}
 	if (pledge("stdio rpath cpath recvfd inet dns proc unix", "") == -1) {
@@ -1775,7 +1778,9 @@ main(int argc, char **argv)
 
 	if (SSL_CTX_use_certificate_chain_file(ssl_ctx,
 	    mdrd_conf.cert_file) != 1) {
-		xlog(LOG_ERR, NULL, "SSL_CTX_use_certificate_chain_file: %s",
+		xlog(LOG_ERR, NULL,
+                    "SSL_CTX_use_certificate_chain_file: %s: %s",
+		    mdrd_conf.cert_file,
 		    ERR_error_string(ERR_get_error(), NULL));
 		exit(1);
 	}

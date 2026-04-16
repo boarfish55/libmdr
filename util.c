@@ -222,50 +222,75 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 
 	setproctitle("executor");
 
-	if (chdir("/") == -1)
-		return -1;
+	if (chdir("/") == -1) {
+		xlog_strerror(LOG_ERR, errno, "%s: chdir", __func__);
+		_exit(1);
+	}
 
 	sigemptyset(&act.sa_mask);
 	act.sa_flags = 0;
 	act.sa_handler = spawnproc_reap;
 	if (sigaction(SIGCHLD, &act, NULL) == -1 ||
 	    sigaction(SIGINT, &act, NULL) == -1 ||
-	    sigaction(SIGTERM, &act, NULL) == -1)
-		return -1;
-#ifdef __OpenBSD__
-	if (unveil("/dev/null", "rw") == -1 ||
-	    unveil("/etc/group", "r") == -1 ||
-	    unveil("/etc/passwd", "r") == -1 ||
-	    unveil("/etc/pwd.db", "r") == -1 ||
-	    unveil("/usr/libexec/ld.so", "r") == -1 ||
-	    unveil("/usr/lib", "r") == -1)
-		return -1;
-	for (i = 0; perms && perms[i] != NULL; i++) {
-		if ((path = strchr(perms[i], '=')) == NULL) {
-			errno = EINVAL;
-			return -1;
-		} else {
-			*path++ = '\0';
-		}
-		if (unveil(path, perms[i]) == -1)
-			return -1;
+	    sigaction(SIGTERM, &act, NULL) == -1) {
+		xlog_strerror(LOG_ERR, errno, "%s: sigaction", __func__);
+		_exit(1);
 	}
-	if (pledge("stdio rpath id proc exec sendfd", execpromises) == -1)
-		return -1;
+#ifdef __OpenBSD__
+	if (perms != NULL) {
+		if (unveil("/dev/null", "rw") == -1 ||
+		    unveil("/dev/urandom", "r") == -1 ||
+		    unveil("/dev/random", "r") == -1 ||
+		    unveil("/dev/zero", "r") == -1 ||
+		    unveil("/etc/group", "r") == -1 ||
+		    unveil("/etc/passwd", "r") == -1 ||
+		    unveil("/etc/pwd.db", "r") == -1 ||
+		    unveil("/usr/libexec/ld.so", "r") == -1 ||
+		    unveil("/var/run/ld.so.hints", "r") == -1 ||
+		    unveil("/usr/lib", "r") == -1 ||
+		    unveil("/usr/local/lib", "r") == -1) {
+			xlog_strerror(LOG_ERR, errno, "%s: unveil", __func__);
+			_exit(1);
+		}
+		for (i = 0; perms[i] != NULL; i++) {
+			if ((path = strchr(perms[i], '=')) == NULL) {
+				errno = EINVAL;
+				xlog(LOG_NOTICE, NULL, "%s: bad unveil format",
+				    __func__);
+				_exit(1);
+			} else {
+				*path++ = '\0';
+			}
+			if (unveil(path, perms[i]) == -1) {
+				xlog_strerror(LOG_ERR, errno,
+				    "%s: unveil", __func__);
+				_exit(1);
+			}
+			xlog(LOG_DEBUG, NULL,
+			    "unveiled %s [%s]", path, perms[i]);
+		}
+	}
+	if (pledge("stdio rpath id proc exec sendfd", execpromises) == -1) {
+		xlog_strerror(LOG_ERR, errno, "%s: pledge", __func__);
+		_exit(1);
+	}
 #endif
-	if ((buf = malloc(max)) == NULL)
-		return -1;
+	if ((buf = malloc(max)) == NULL) {
+		xlog_strerror(LOG_ERR, errno, "%s: malloc", __func__);
+		_exit(1);
+	}
 	argvlen = 16;
 	if ((argv = reallocarray(NULL, argvlen, sizeof(char *))) == NULL) {
+		xlog_strerror(LOG_ERR, errno, "%s: reallocarray", __func__);
 		free(buf);
-		return -1;
+		_exit(1);
 	}
 
 	for (;;) {
 		r = readall(sv[1], &sz, sizeof(size_t));
 		if (r == -1) {
 			xlog_strerror(LOG_ERR, errno, "%s: readall", __func__);
-			exit(1);
+			_exit(1);
 		}
 		if (r == 0) {
 			xlog(LOG_NOTICE, NULL, "%s: socket closed; exiting",
@@ -274,13 +299,13 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 		}
 		if (sz > LONG_MAX || sz > max) {
 			xlog(LOG_ERR, NULL, "%s: command too long", __func__);
-			exit(1);
+			_exit(1);
 		}
 
 		r = readall(sv[1], buf, sz);
 		if (r == -1) {
 			xlog_strerror(LOG_ERR, errno, "%s: readall", __func__);
-			exit(1);
+			_exit(1);
 		}
 		if (r == 0) {
 			xlog(LOG_NOTICE, NULL, "%s: socket closed; exiting",
@@ -354,7 +379,7 @@ again:
 				goto again;
 			xlog_strerror(LOG_ERR, errno, "%s: sendmsg (%d)",
 			    __func__, errno);
-			exit(1);
+			_exit(1);
 		}
 		close(fds[0]);
 		close(fds[1]);
