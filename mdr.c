@@ -1898,7 +1898,7 @@ mdr_buf_from_fd(int fd, void *buf, size_t buf_sz)
 
 	sz = be64toh(*(uint64_t *)buf);
 	if (sz > buf_sz) {
-		errno = EAGAIN;
+		errno = EOVERFLOW;
 		return MDR_FAIL;
 	}
 

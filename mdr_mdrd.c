@@ -245,6 +245,10 @@ again:
 	if ((c = mdr_buf_from_fd(0, ubuf, sizeof(ubuf))) == MDR_FAIL)
 		return MDR_FAIL;
 
+	// TODO: we need to poll on 0; on timeout, unblock so we can
+	// run tasks; errno will be set to ETIMEDOUT?
+	// This also means we need to buffer data between calls
+
 	if (c == 0)
 		return 0;
 
