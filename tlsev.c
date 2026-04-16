@@ -1279,6 +1279,10 @@ tlsev_poll(struct tlsev_listener *l)
 			if (!cleanup)
 				continue;
 
+			// TODO: sometimes we hit this error; this means we
+			// already tlsev_close()'d this fd. It's possible
+			// we sent an error then tlsev_close()d immediately
+			// after? Something to do with t->drain?
 			xlog(LOG_ERR, NULL,
 			    "tlsev_get on fd %d not found", evfd);
 
