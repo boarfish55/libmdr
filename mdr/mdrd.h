@@ -34,7 +34,7 @@ struct mdrd_recvhdl
 	size_t                 offset;
 
 	/* Read fields */
-	const struct umdr     *msg;
+	struct umdr           *msg;
 	struct mdrd_besession *session;
 };
 
