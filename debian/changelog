@@ -1,3 +1,9 @@
+libmdr (0.6.2) unstable; urgency=medium
+
+  * We can't make umdr const inside our mdrd_recvhdl, unpack isn't const
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Fri, 17 Apr 2026 15:03:25 -0400
+
 libmdr (0.6.1) unstable; urgency=medium
 
   * Reintroduce mdr_buf_from_BIO
