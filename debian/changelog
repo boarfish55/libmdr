@@ -1,3 +1,28 @@
+libmdr (0.6.0) unstable; urgency=medium
+
+  * Fix errno when buffer is too small in mdr_buf_from_fd
+  * OpenBSD unveil/pledge tweaks 
+  * Don't return from spawnproc_init() after forking
+  * logging
+  * We now get a timeout on mdrd_recv, which will return ETIMEDOUT on
+    errno when we didn't gather a full MDR within this time; for this to
+    work properly, we need to pass an offset so mdrd_recv can resume where
+    it left off
+  * Refactor mdrd_recv() to use a handle instead of passing a whole bunch
+    of parameters; this also let's it resume in case we couldn't read a full
+    message in one call, such as if we hit a timeout. With the timeout we
+    can now also run tasks in-between each message.
+  * We no longer use unpack_bein and instead we simply reference the umdr_vec
+    entry which remains in-scope thanks to the handle; one less memcpy()!
+  * mdrd_beout() now instructs the next call of mdrd_recv() to free the last
+    session if we sent a reply with MDRD_BEOUT_FCLOSE instead of freeing
+    directly, which could cause issues if we tried to access session fields
+    later.
+  * We made mdr_buf_from_fd() more generic, with a more generalized mdr_fill()
+    function.
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Fri, 17 Apr 2026 10:23:26 -0400
+
 libmdr (0.5.1) unstable; urgency=medium
 
   * Fix mdr_spec_base_sz which didn't include the payload size
