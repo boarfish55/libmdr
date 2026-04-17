@@ -553,7 +553,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 	struct client_cb_data *cb_data = (struct client_cb_data *)(*data);
 	void                  *tmp;
 	struct pmdr            bein;
-	int                    status, i;
+	int                    status = 0, i;
 	struct timespec        ts;
 	char                   errmsg[128];
 	char                   bein_buf[mdrd_conf.max_payload_size +
@@ -595,35 +595,29 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		case EAGAIN:
 			return 0;
 		case ENOTSUP:
-			if (error_reply(t, MDR_ERR_NOTSUPP,
-			    "mdr extension not supported") == -1)
-				return -1;
-			return 0;
+			error_reply(t, MDR_ERR_NOTSUPP,
+			    "mdr extension not supported");
+			return -1;
 		case EOVERFLOW:
-			if (error_reply(t, MDR_ERR_BADMSG,
-			    "invalid payload size") == -1)
-				return -1;
-			return 0;
+			error_reply(t, MDR_ERR_BADMSG, "invalid payload size");
+			return -1;
 		default:
 			xlog_strerror(LOG_ERR, errno,
 			    "%s: umdr_init", __func__);
-			if (error_reply(t, MDR_ERR_BEFAIL,
-			    "backend failure") == -1)
-				return -1;
-			return 0;
+			error_reply(t, MDR_ERR_BEFAIL, "backend failure");
+			return -1;
 		}
 	}
 
 	if (umdr_size(&cb_data->msg) > mdrd_conf.max_payload_size) {
-		snprintf(errmsg, sizeof(errmsg),
-		    "payload size in excess of configured limit (%llu bytes)",
-		    mdrd_conf.max_payload_size);
-		if (error_reply(t, MDR_ERR_SZEX, errmsg) == -1)
-			return -1;
 		xlog_strerror(LOG_ERR, errno, "%s: mdr size is above our "
 		    "configured maximum size of %lu bytes", __func__,
 		    mdrd_conf.max_payload_size);
-		return 0;
+		snprintf(errmsg, sizeof(errmsg),
+		    "payload size in excess of configured limit (%llu bytes)",
+		    mdrd_conf.max_payload_size);
+		error_reply(t, MDR_ERR_SZEX, errmsg);
+		return -1;
 	}
 
 	if (umdr_pending(&cb_data->msg) > 0) {
@@ -639,13 +633,14 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		    *mdrd_conf.allowed_mdr_domains[i])
 			break;
 	}
+
 	if (mdrd_conf.allowed_mdr_domains[i] == NULL) {
 		if (error_reply(t, MDR_ERR_NOTSUPP, "unsupported domain") == -1)
 			return -1;
 		listener_counters.messages_in_rejected++;
 		xlog(LOG_ERR, NULL,
 		    "%s: domain not allowed", __func__);
-		return 0;
+		goto end;
 	}
 
 	pmdr_init(&bein, bein_buf, sizeof(bein_buf), MDR_FNONE);
@@ -683,7 +678,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 			xlog_strerror(LOG_ERR, errno, "%s: writeall", __func__);
 		}
 	}
-
+end:
 	memmove(cb_data->buf, cb_data->buf + umdr_size(&cb_data->msg),
 	    cb_data->len - umdr_size(&cb_data->msg));
 	cb_data->len -= umdr_size(&cb_data->msg);

@@ -149,26 +149,6 @@ RB_PROTOTYPE(mdr_registry_tree, mdr_spec, entry, speccmp);
 RB_GENERATE(mdr_registry_tree, mdr_spec, entry, speccmp);
 
 
-static ssize_t
-readall(int fd, void *buf, size_t count)
-{
-        ssize_t r;
-        ssize_t n = 0;
-
-        while (n < count) {
-                r = read(fd, buf + n, count - n);
-                if (r == -1) {
-                        if (errno == EINTR)
-                                continue;
-                        return -1;
-                } else if (r == 0) {
-                        return n;
-                }
-                n += r;
-        }
-        return n;
-}
-
 static uint64_t
 mdr_size(const struct mdr *m)
 {
@@ -1868,18 +1848,42 @@ pmdr_set_trace_id(struct pmdr *m, const union mdr_trace_id *id)
 	return mdr_update_size(&m->m);
 }
 
+static ssize_t
+mdr_fill_read(void *buf, size_t sz, void *args)
+{
+	if (args == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return read(*(int *)args, buf, sz);
+}
+
 /*
- * fd must be blocking.
+ * fd must be blocking
  */
-// TODO: should we provide a generic function with a read callback?
 ptrdiff_t
-mdr_buf_from_fd(int fd, void *buf, size_t buf_sz)
+mdr_buf_from_fd(int fd, void *buf, size_t sz)
+{
+	ptrdiff_t r;
+	size_t    offset = 0;
+
+	while ((r = mdr_fill(buf, sz, &offset, &mdr_fill_read, &fd)) <= 0) {
+		if (r == -1 && errno != EAGAIN)
+			return -1;
+		if (r == 0)
+			return 0;
+	}
+	return r;
+}
+
+ptrdiff_t
+mdr_fill(void *buf, size_t buf_sz, size_t *offset,
+    ssize_t(*readcb)(void *, size_t, void *), void *args)
 {
 	int       r;
 	uint64_t  sz;
-	ptrdiff_t count = 0;
 
-	if (fd < 0 || buf == NULL) {
+	if (readcb == NULL || buf == NULL || offset == NULL) {
 		errno = EINVAL;
 		return MDR_FAIL;
 	}
@@ -1889,12 +1893,19 @@ mdr_buf_from_fd(int fd, void *buf, size_t buf_sz)
 		return MDR_FAIL;
 	}
 
-	r = readall(fd, buf, sizeof(uint64_t));
-	if (r == -1)
-		return MDR_FAIL;
-	else if (r == 0)
-		return 0;
-	count = r;
+	if (*offset < sizeof(uint64_t)) {
+		r = readcb(buf + *offset, sizeof(uint64_t) - *offset, args);
+		if (r == -1)
+			return MDR_FAIL;
+		else if (r == 0)
+			return 0;
+		*offset += r;
+
+		if (*offset < sizeof(uint64_t)) {
+			errno = EAGAIN;
+			return MDR_FAIL;
+		}
+	}
 
 	sz = be64toh(*(uint64_t *)buf);
 	if (sz > buf_sz) {
@@ -1902,20 +1913,24 @@ mdr_buf_from_fd(int fd, void *buf, size_t buf_sz)
 		return MDR_FAIL;
 	}
 
-	r = readall(fd, buf + r, sz - r);
+	if (*offset >= sz)
+		return sz;
+
+	r = readcb(buf + *offset, sz - *offset, args);
 	if (r == -1) {
 		return -1;
 	} else if (r == 0) {
-		/*
-		 * If we tried to read again we'd get EPIPE, so let's
-		 * just return that here.
-		 */
-		errno = EPIPE;
+		return 0;
+	}
+
+	*offset += r;
+
+	if (r < sz - *offset) {
+		errno = EAGAIN;
 		return MDR_FAIL;
 	}
-	count += r;
 
-	return count;
+	return sz;
 }
 
 ptrdiff_t
@@ -2058,8 +2073,8 @@ umdr_init(struct umdr *um, const void *buf, size_t buf_sz,
 /*
  * Only unpacks the mdr header without looking past standard fields (not
  * extra features). Useful when we only wish to initialize the buffer
- * to receive data, such as when using umdr_copy (the destination must
- * be initialized with umdr_init0).
+ * to receive data, such as when using umdr_copy. The destination must
+ * be initialized with umdr_init0().
  */
 ptrdiff_t
 umdr_init0(struct umdr *um, const void *buf, size_t buf_sz,
