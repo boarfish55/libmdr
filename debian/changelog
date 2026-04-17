@@ -1,3 +1,10 @@
+libmdr (0.6.1) unstable; urgency=medium
+
+  * Reintroduce mdr_buf_from_BIO
+  * Minor fixes
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Fri, 17 Apr 2026 14:51:02 -0400
+
 libmdr (0.6.0) unstable; urgency=medium
 
   * Fix errno when buffer is too small in mdr_buf_from_fd
