@@ -13,6 +13,7 @@
 #include <netdb.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <mdr/mdr.h>
 #include <mdr/mdrd.h>
