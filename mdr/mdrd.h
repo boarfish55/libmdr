@@ -23,19 +23,19 @@ struct mdrd_recvhdl
 	/*
 	 * User-provided fields
 	 */
-	void                        *buf;
-	size_t                       bufsz;
+	void                  *buf;
+	size_t                 bufsz;
 
 	/*
 	 * We need the umdr_vec here so the message doesn't
 	 * go out of scope.
 	 */
-	struct umdr_vec              uv[6];
-	size_t                       offset;
+	struct umdr_vec        uv[6];
+	size_t                 offset;
 
 	/* Read fields */
-	const struct umdr           *msg;
-	const struct mdrd_besession *session;
+	const struct umdr     *msg;
+	struct mdrd_besession *session;
 };
 
 struct mdrd_besession

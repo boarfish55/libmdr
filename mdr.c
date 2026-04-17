@@ -1868,11 +1868,36 @@ mdr_buf_from_fd(int fd, void *buf, size_t sz)
 	size_t    offset = 0;
 
 	while ((r = mdr_fill(buf, sz, &offset, &mdr_fill_read, &fd)) <= 0) {
-		if (r == -1 && errno != EAGAIN)
+		if (r == -1 && errno != EINTR)
 			return -1;
 		if (r == 0)
 			return 0;
 	}
+	return r;
+}
+
+static ssize_t
+mdr_fill_read_BIO(void *buf, size_t sz, void *args)
+{
+	if (args == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return BIO_read((BIO *)args, buf, sz);
+}
+
+/*
+ * BIO must be blocking
+ */
+ptrdiff_t
+mdr_buf_from_BIO(BIO *b, void *buf, size_t sz)
+{
+	ptrdiff_t r;
+	size_t    offset = 0;
+
+	while ((r = mdr_fill(buf, sz, &offset, &mdr_fill_read_BIO, b)) < 1)
+		return -1;
+
 	return r;
 }
 
@@ -1931,45 +1956,6 @@ mdr_fill(void *buf, size_t buf_sz, size_t *offset,
 	}
 
 	return sz;
-}
-
-ptrdiff_t
-mdr_buf_from_BIO(BIO *bio, void *buf, size_t buf_sz)
-{
-	int       r;
-	uint64_t  sz;
-	ptrdiff_t count = 0;
-
-	if (bio == NULL || buf == NULL) {
-		errno = EINVAL;
-		return MDR_FAIL;
-	}
-
-	if (buf_sz < mdr_hdr_size(0)) {
-		errno = EINVAL;
-		return MDR_FAIL;
-	}
-
-	while (count < sizeof(uint64_t)) {
-		if ((r = BIO_read(bio, buf + count,
-		    sizeof(uint64_t) - count)) < 1)
-			return -1;
-		count += r;
-	}
-
-	sz = be64toh(*(uint64_t *)buf);
-	if (sz > buf_sz) {
-		errno = EAGAIN;
-		return MDR_FAIL;
-	}
-
-	while (count < sz) {
-		if ((r = BIO_read(bio, buf + count, sz - count)) < 1)
-			return -1;
-		count += r;
-	}
-
-	return count;
 }
 
 ptrdiff_t

@@ -308,6 +308,7 @@ uint64_t       mdr_mkdcv(uint32_t, uint16_t, uint16_t);
 ptrdiff_t      mdr_fill(void *, size_t, size_t *,
                    ssize_t(*)(void *, size_t, void *), void *);
 ptrdiff_t      mdr_buf_from_fd(int, void *, size_t);
+ptrdiff_t      mdr_buf_from_BIO(BIO *, void *, size_t);
 
 ptrdiff_t      pmdr_init(struct pmdr *, void *, size_t, uint32_t);
 void           pmdr_free(struct pmdr *);

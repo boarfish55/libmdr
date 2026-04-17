@@ -46,7 +46,9 @@ process_messages()
 	char                 subject[LINE_MAX];
 	struct mdrd_recvhdl  mrh;
 	char                 buf[mdr_spec_base_sz(mdr_msg_mdrd_bein,
-	    4096 /* Max payload size */ + /* Max cert size */ 4096)];
+	    4096     /* Max payload size */
+	    + 4096   /* Max cert size */
+	    + sizeof(struct sockaddr_in6))];
 
 	/*
 	 * mdrd_recv() will populate mrh->msg and mrh->session. It uses
