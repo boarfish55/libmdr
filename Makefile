@@ -1,6 +1,6 @@
 CC = cc
 EXTRA_CFLAGS =
-VERSION = 0.5.1
+VERSION = 0.6.0
 VERSION_MAJOR != echo ${VERSION} | cut -d. -f 1
 CFLAGS = -Wall -g ${EXTRA_CFLAGS}
 INCLUDES = -I.
@@ -17,8 +17,8 @@ MDR_LIBOBJS = mdr.pic.o mdr_mdrd.pic.o tlsev.pic.o idxheap.pic.o util.pic.o \
 MDR_AROBJS = mdr.o mdr_mdrd.o tlsev.o idxheap.o util.o xlog.o
 MDRD_OBJS = mdrd.o idxheap.o flatconf.o mdr.o mdr_mdrd.o tlsev.o util.o xlog.o
 MDRC_OBJS = mdrc.o mdr.o
-BE_ECHO_OBJS = mdrd_backend_echo.o mdr.o mdr_mdrd.o xlog.o
-MDR_TESTS_OBJS = mdr_tests.o mdr.o util.o xlog.o util.o
+BE_ECHO_OBJS = mdrd_backend_echo.o mdr.o mdr_mdrd.o xlog.o util.o
+MDR_TESTS_OBJS = mdr_tests.o mdr.o util.o xlog.o
 
 all: .depend mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a libmdr.so \
 	libflatconf.a libflatconf.so

@@ -18,6 +18,26 @@
 
 __BEGIN_DECLS
 
+struct mdrd_recvhdl
+{
+	/*
+	 * User-provided fields
+	 */
+	void                        *buf;
+	size_t                       bufsz;
+
+	/*
+	 * We need the umdr_vec here so the message doesn't
+	 * go out of scope.
+	 */
+	struct umdr_vec              uv[6];
+	size_t                       offset;
+
+	/* Read fields */
+	const struct umdr           *msg;
+	const struct mdrd_besession *session;
+};
+
 struct mdrd_besession
 {
 	uint64_t                     id;
@@ -29,11 +49,11 @@ struct mdrd_besession
 	void                        *data;
 	void                         (*free_data)(void *);
 	struct timespec              last_seen;
+	int                          must_free;
 	SPLAY_ENTRY(mdrd_besession)  entries;
 };
 
-ptrdiff_t mdrd_recv(struct umdr *, void *, size_t, size_t, uint64_t,
-              uint32_t, struct mdrd_besession **);
+ptrdiff_t mdrd_recv(struct mdrd_recvhdl *, int);
 void      mdrd_besession_set_data(struct mdrd_besession *, void *,
               void(*)(void *));
 int       mdrd_purge_sessions(time_t);
@@ -42,10 +62,10 @@ int mdrd_unpack_beclose(struct umdr *, uint64_t *);
 int mdrd_unpack_bein(struct umdr *, uint64_t *, int *, struct sockaddr *,
         socklen_t *, struct umdr *, X509 **);
 int mdrd_unpack_besesserr(struct umdr *, uint64_t *);
-int mdrd_beout_error(struct mdrd_besession *, uint32_t, uint32_t,
+int mdrd_beout_error(const struct mdrd_besession *, uint32_t, uint32_t,
         const char *);
-int mdrd_beout_ok(struct mdrd_besession *, uint32_t);
-int mdrd_beout(struct mdrd_besession *, uint32_t, const struct pmdr *);
+int mdrd_beout_ok(const struct mdrd_besession *, uint32_t);
+int mdrd_beout(const struct mdrd_besession *, uint32_t, const struct pmdr *);
 
 __END_DECLS
 
