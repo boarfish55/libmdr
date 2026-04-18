@@ -23,8 +23,8 @@ BE_ECHO_OBJS = mdrd_backend_echo.o mdr.o mdr_mdrd.o xlog.o util.o
 MDR_TESTS_OBJS = mdr_tests.o mdr.o util.o xlog.o
 
 all: mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a libflatconf.a \
-	libmdr.so.${VERSION} libmdr.so.${VERSION_MAJOR} \
-	libflatconf.so.${VERSION} libflatconf.so.${VERSION_MAJOR}
+	libmdr.so libmdr.so.${VERSION} libmdr.so.${VERSION_MAJOR} \
+	libflatconf.so libflatconf.so.${VERSION} libflatconf.so.${VERSION_MAJOR}
 
 .SUFFIXES: .c .o .pic.o
 .c.pic.o:
@@ -45,6 +45,9 @@ libflatconf.so.${VERSION}: flatconf.pic.o
 libflatconf.so.${VERSION_MAJOR}: libflatconf.so.${VERSION}
 	ln -fs libflatconf.so.${VERSION} $@
 
+libflatconf.so: libflatconf.so.${VERSION}
+	ln -fs libflatconf.so.${VERSION} $@
+
 libmdr.a: ${MDR_AROBJS}
 	ar cr $@ ${MDR_AROBJS}
 
@@ -54,6 +57,9 @@ libmdr.so.${VERSION}: ${MDR_LIBOBJS}
 		-o $@ ${MDR_LIBOBJS}
 
 libmdr.so.${VERSION_MAJOR}: libmdr.so.${VERSION}
+	ln -fs libmdr.so.${VERSION} $@
+
+libmdr.so: libmdr.so.${VERSION}
 	ln -fs libmdr.so.${VERSION} $@
 
 flatconf.c: flatconf.y mdr/flatconf.h
