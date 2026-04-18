@@ -1,6 +1,6 @@
 COMMENT =	Minimal Data Representation, a data serialization library
 CATEGORIES =	devel
-VERSION =	0.6.2
+VERSION =	0.6.4
 DISTNAME =	libmdr-${VERSION}
 HOMEPAGE =	https://www.overnet.ca
 MAINTAINER =	Pascal Lalonde <plalonde@overnet.ca>
@@ -25,12 +25,10 @@ do-install:
 	${INSTALL_PROGRAM} ${WRKBUILD}/mdrd_backend_echo \
 		${PREFIX}/libexec/libmdr/
 
-	${INSTALL_DATA} ${WRKBUILD}/libmdr.so \
-		${PREFIX}/lib/libmdr.so.${LIBmdr_VERSION}
-	${INSTALL_DATA} ${WRKBUILD}/libmdr.a ${PREFIX}/lib/libmdr.a
-	${INSTALL_DATA} ${WRKBUILD}/libflatconf.so \
-		${PREFIX}/lib/libflatconf.so.${LIBflatconf_VERSION}
-	${INSTALL_DATA} ${WRKBUILD}/libflatconf.a ${PREFIX}/lib/libflatconf.a
+	${INSTALL_DATA} ${WRKBUILD}/libmdr.so.* ${PREFIX}/lib/
+	${INSTALL_DATA} ${WRKBUILD}/libmdr.a ${PREFIX}/lib/
+	${INSTALL_DATA} ${WRKBUILD}/libflatconf.so.* ${PREFIX}/lib/
+	${INSTALL_DATA} ${WRKBUILD}/libflatconf.a ${PREFIX}/lib/
 
 	${INSTALL_DATA_DIR} ${PREFIX}/include/mdr/
 	${INSTALL_DATA} ${WRKBUILD}/mdr/*.h ${PREFIX}/include/mdr/
