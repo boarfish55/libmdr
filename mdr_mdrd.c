@@ -268,12 +268,22 @@ mdrd_recv(struct mdrd_recvhdl *mrh, int timeout_ms)
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
+	if (mrh == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
 	/*
 	 * If the session in our previous call needs to be freed because
 	 * we saw MDRD_BEOUT_FCLOSE set on a response, do it here.
 	 */
-	if (mrh->session != NULL && mrh->session->must_free)
-		session_free((struct mdrd_besession *)mrh->session);
+	if (mrh->session != NULL) {
+		if (mrh->session->must_free)
+			session_free(mrh->session);
+		mrh->session->must_free = 0;
+		mrh->session = NULL;
+	}
+	mrh->msg = NULL;
 again:
 	pfd.fd = 0;
 	pfd.events = POLLIN;

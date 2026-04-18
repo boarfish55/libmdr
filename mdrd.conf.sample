@@ -12,6 +12,7 @@ listen_backlog = 1024
 prefork = 2
 pid_file = "/tmp/mdrd.pid"
 counters_sock = "/tmp/mdrd_counters.sock"
+dbg_delay_to_backend_seconds = 0
 
 # Maximum number of concurrent client connections per fork
 max_clients = 10000
