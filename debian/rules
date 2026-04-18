@@ -27,7 +27,11 @@ override_dh_auto_build:
 override_dh_auto_install:
 	dh_auto_install --destdir=debian/tmp/usr
 	mkdir -p debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}
+	mv debian/tmp/usr/lib/libmdr.so \
+		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/
 	mv debian/tmp/usr/lib/libmdr.so.* \
+		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/
+	mv debian/tmp/usr/lib/libflatconf.so \
 		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/
 	mv debian/tmp/usr/lib/libflatconf.so.* \
 		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/
