@@ -1,3 +1,9 @@
+libmdr (0.6.3p1) unstable; urgency=medium
+
+  * Fix rules
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Fri, 17 Apr 2026 21:59:43 -0400
+
 libmdr (0.6.3) unstable; urgency=medium
 
   * Fix segfault when purging sessions at the start of mdrd_recv()
