@@ -1,6 +1,6 @@
 CC = cc
 EXTRA_CFLAGS =
-VERSION = 0.6.3
+VERSION = 0.6.5
 VERSION_MAJOR != echo ${VERSION} | cut -d. -f 1
 CFLAGS = -Wall -g ${EXTRA_CFLAGS}
 INCLUDES = -I.
@@ -20,8 +20,9 @@ MDRC_OBJS = mdrc.o mdr.o
 BE_ECHO_OBJS = mdrd_backend_echo.o mdr.o mdr_mdrd.o xlog.o util.o
 MDR_TESTS_OBJS = mdr_tests.o mdr.o util.o xlog.o
 
-all: .depend mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a libmdr.so \
-	libflatconf.a libflatconf.so
+all: .depend mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a \
+	libmdr.so.${VERSION} \
+	libflatconf.a libflatconf.so.${VERSION}
 
 .depend: ${SRCS}
 	mkdep ${CFLAGS} ${INCLUDES} ${SRCS}
@@ -35,14 +36,16 @@ all: .depend mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a libmdr.so \
 libflatconf.a: flatconf.o
 	ar cr $@ flatconf.o
 
-libflatconf.so: flatconf.pic.o
-	${CC} -shared -Wl,-soname,libflatconf.so.${VERSION_MAJOR} -o $@ flatconf.pic.o
+libflatconf.so.${VERSION}: flatconf.pic.o
+	${CC} -shared -Wl,-soname,libflatconf.so.${VERSION_MAJOR} \
+		-o $@ flatconf.pic.o
 
 libmdr.a: ${MDR_AROBJS}
 	ar cr $@ ${MDR_AROBJS}
 
-libmdr.so: ${MDR_LIBOBJS}
-	${CC} -shared -Wl,-soname,libmdr.so.${VERSION_MAJOR} -o $@ ${MDR_LIBOBJS}
+libmdr.so.${VERSION}: ${MDR_LIBOBJS}
+	${CC} -shared -Wl,-soname,libmdr.so.${VERSION_MAJOR} \
+		-o $@ ${MDR_LIBOBJS}
 
 flatconf.c: flatconf.y mdr/flatconf.h
 	${YACC} -o flatconf.c flatconf.y
@@ -72,11 +75,11 @@ install: all
 	install -d -o root -g bin -m 0555 LICENSE ${PREFIX}/share/doc/libmdr/
 	install -d -o root -g bin -m 0555 mdrd.conf.sample ${PREFIX}/share/doc/libmdr/
 	install -d -o root -g bin -m 0555 libmdr.a ${PREFIX}/lib/
-	install -d -o root -g bin -m 0555 libmdr.so ${PREFIX}/lib/
+	install -d -o root -g bin -m 0555 libmdr.so.* ${PREFIX}/lib/
 	install -d -o root -g bin -m 0555 libflatconf.a ${PREFIX}/lib/
-	install -d -o root -g bin -m 0555 libflatconf.so ${PREFIX}/lib/
+	install -d -o root -g bin -m 0555 libflatconf.so.* ${PREFIX}/lib/
 	install -d -o root -g bin -m 0555 mdrd_backend_echo ${PREFIX}/libexec/libmdr/
 
 clean:
 	rm -f *.o mdr_tests mdrc mdrd mdrd_backend_echo \
-		flatconf.c *.core .depend *.so *.a *.tmp
+		flatconf.c *.core .depend *.so.[0-9]* *.a *.tmp
