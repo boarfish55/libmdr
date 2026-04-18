@@ -1,6 +1,6 @@
 CC = cc
 EXTRA_CFLAGS =
-VERSION = 0.6.6
+VERSION = 0.6.7
 VERSION_MAJOR = $(shell echo ${VERSION} | cut -d. -f 1)
 DEPDIR = .deps
 CFLAGS = -Wall -g -I. -pie -fstack-protector-strong -fstack-clash-protection \
@@ -94,8 +94,10 @@ install: all
 	install -m 0755 mdrc ${DESTDIR}/bin/
 	install -m 0644 mdr/*.h ${DESTDIR}/include/mdr/
 	install -m 0644 libmdr.a ${DESTDIR}/lib/
+	install -m 0644 libmdr.so ${DESTDIR}/lib/
 	install -m 0644 libmdr.so.* ${DESTDIR}/lib/
 	install -m 0644 libflatconf.a ${DESTDIR}/lib/
+	install -m 0644 libflatconf.so ${DESTDIR}/lib/
 	install -m 0644 libflatconf.so.* ${DESTDIR}/lib/
 	install -m 0644 mdrd.conf.sample ${DESTDIR}/share/doc/libmdr/examples
 
