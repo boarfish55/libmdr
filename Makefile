@@ -21,8 +21,8 @@ BE_ECHO_OBJS = mdrd_backend_echo.o mdr.o mdr_mdrd.o xlog.o util.o
 MDR_TESTS_OBJS = mdr_tests.o mdr.o util.o xlog.o
 
 all: .depend mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a \
-	libmdr.so.${VERSION_MAJOR} \
-	libflatconf.a libflatconf.so.${VERSION_MAJOR}
+	libmdr.so.${VERSION} \
+	libflatconf.a libflatconf.so.${VERSION}
 
 .depend: ${SRCS}
 	mkdep ${CFLAGS} ${INCLUDES} ${SRCS}
@@ -36,14 +36,14 @@ all: .depend mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a \
 libflatconf.a: flatconf.o
 	ar cr $@ flatconf.o
 
-libflatconf.so.${VERSION_MAJOR}: flatconf.pic.o
+libflatconf.so.${VERSION}: flatconf.pic.o
 	${CC} -shared -Wl,-soname,libflatconf.so.${VERSION_MAJOR} \
 		-o $@ flatconf.pic.o
 
 libmdr.a: ${MDR_AROBJS}
 	ar cr $@ ${MDR_AROBJS}
 
-libmdr.so.${VERSION_MAJOR}: ${MDR_LIBOBJS}
+libmdr.so.${VERSION}: ${MDR_LIBOBJS}
 	${CC} -shared -Wl,-soname,libmdr.so.${VERSION_MAJOR} \
 		-o $@ ${MDR_LIBOBJS}
 
