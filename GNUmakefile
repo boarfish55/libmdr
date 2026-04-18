@@ -88,9 +88,9 @@ install: all
 	install -m 0755 mdrc ${DESTDIR}/bin/
 	install -m 0644 mdr/*.h ${DESTDIR}/include/mdr/
 	install -m 0644 libmdr.a ${DESTDIR}/lib/
-	install -m 0644 libmdr.so ${DESTDIR}/lib/
+	install -m 0644 libmdr.so.* ${DESTDIR}/lib/
 	install -m 0644 libflatconf.a ${DESTDIR}/lib/
-	install -m 0644 libflatconf.so ${DESTDIR}/lib/
+	install -m 0644 libflatconf.so.* ${DESTDIR}/lib/
 	install -m 0644 mdrd.conf.sample ${DESTDIR}/share/doc/libmdr/examples
 
 clean:
