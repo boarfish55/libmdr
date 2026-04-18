@@ -1,3 +1,10 @@
+libmdr (0.6.3) unstable; urgency=medium
+
+  * Fix segfault when purging sessions at the start of mdrd_recv()
+  * Fix so lib generation and links
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Fri, 17 Apr 2026 21:57:51 -0400
+
 libmdr (0.6.2) unstable; urgency=medium
 
   * We can't make umdr const inside our mdrd_recvhdl, unpack isn't const
