@@ -28,13 +28,17 @@ override_dh_auto_install:
 	dh_auto_install --destdir=debian/tmp/usr
 	mkdir -p debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}
 	mv debian/tmp/usr/lib/libmdr.so \
-		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/
-	mv debian/tmp/usr/lib/libmdr.so.* \
-		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/
+		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/libmdr.so.${DEB_VERSION}
+	ln -s libmdr.so.${DEB_VERSION} \
+		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/libmdr.so.${DEB_VERSION_MAJOR}
+	ln -s libmdr.so.${DEB_VERSION} \
+		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/libmdr.so
 	mv debian/tmp/usr/lib/libflatconf.so \
-		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/
-	mv debian/tmp/usr/lib/libflatconf.so.* \
-		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/
+		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/libflatconf.so.${DEB_VERSION}
+	ln -s libflatconf.so.${DEB_VERSION} \
+		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/libflatconf.so.${DEB_VERSION_MAJOR}
+	ln -s libflatconf.so.${DEB_VERSION} \
+		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/libflatconf.so
 	mv debian/tmp/usr/lib/libmdr.a \
 		debian/tmp/usr/lib/${DEB_HOST_MULTIARCH}/
 	mv debian/tmp/usr/lib/libflatconf.a \
