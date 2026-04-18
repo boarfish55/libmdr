@@ -1,3 +1,9 @@
+libmdr (0.6.6) unstable; urgency=medium
+
+  * More deb madness fixes
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Fri, 17 Apr 2026 22:47:07 -0400
+
 libmdr (0.6.5) unstable; urgency=medium
 
   * Fix make install target on Linux
