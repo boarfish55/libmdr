@@ -1,6 +1,6 @@
 CC = cc
 EXTRA_CFLAGS =
-VERSION = 0.6.2
+VERSION = 0.6.3
 VERSION_MAJOR = $(shell echo ${VERSION} | cut -d. -f 1)
 DEPDIR = .deps
 CFLAGS = -Wall -g -I. -pie -fstack-protector-strong -fstack-clash-protection \
@@ -22,8 +22,9 @@ MDRC_OBJS = mdrc.o mdr.o
 BE_ECHO_OBJS = mdrd_backend_echo.o mdr.o mdr_mdrd.o xlog.o util.o
 MDR_TESTS_OBJS = mdr_tests.o mdr.o util.o xlog.o
 
-all: mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a libmdr.so \
-	libflatconf.a libflatconf.so
+all: mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a libflatconf.a \
+	libmdr.so.${VERSION} libmdr.so.${VERSION_MAJOR} \
+	libflatconf.so.${VERSION} libflatconf.so.${VERSION_MAJOR}
 
 .SUFFIXES: .c .o .pic.o
 .c.pic.o:
@@ -36,16 +37,24 @@ all: mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a libmdr.so \
 libflatconf.a: flatconf.o
 	ar cr $@ flatconf.o
 
-libflatconf.so: flatconf.pic.o
+libflatconf.so.${VERSION}: flatconf.pic.o
 	${CC} -shared -Wl,-z,relro -Wl,-z,now \
-		-Wl,-soname,libflatconf.so.${VERSION_MAJOR} -o $@ flatconf.pic.o
+		-Wl,-soname,libflatconf.so.${VERSION_MAJOR} \
+		-o $@ flatconf.pic.o
+
+libflatconf.so.${VERSION_MAJOR}: libflatconf.so.${VERSION}
+	ln -fs libflatconf.so.${VERSION} $@
 
 libmdr.a: ${MDR_AROBJS}
 	ar cr $@ ${MDR_AROBJS}
 
-libmdr.so: ${MDR_LIBOBJS}
+libmdr.so.${VERSION}: ${MDR_LIBOBJS}
 	${CC} -shared -Wl,-z,relro -Wl,-z,now \
-		-Wl,-soname,libmdr.so.${VERSION_MAJOR} -o $@ ${MDR_LIBOBJS}
+		-Wl,-soname,libmdr.so.${VERSION_MAJOR} \
+		-o $@ ${MDR_LIBOBJS}
+
+libmdr.so.${VERSION_MAJOR}: libmdr.so.${VERSION}
+	ln -fs libmdr.so.${VERSION} $@
 
 flatconf.c: flatconf.y mdr/flatconf.h
 	${YACC} -o flatconf.c flatconf.y
@@ -86,6 +95,6 @@ install: all
 
 clean:
 	rm -f $(DEPDIR)/* *.o mdr_tests mdrc mdrd mdrd_backend_echo \
-		flatconf.c *.core core .depend *.so *.a *.tmp
+		flatconf.c *.core core .depend *.so *.so.[0-9]* *.a *.tmp
 
 -include $(DEPDIR)/*
