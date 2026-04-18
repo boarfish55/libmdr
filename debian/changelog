@@ -1,3 +1,9 @@
+libmdr (0.6.7) unstable; urgency=medium
+
+  * Just kill me
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Fri, 17 Apr 2026 22:49:21 -0400
+
 libmdr (0.6.6) unstable; urgency=medium
 
   * More deb madness fixes
