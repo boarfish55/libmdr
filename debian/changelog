@@ -1,3 +1,13 @@
+libmdr (0.6.8) unstable; urgency=medium
+
+  * Fix case where, on OpenBSD, we could attempt to call kqueue with an
+    EV_SET for a file descriptor that was closed
+  * Fix a possible issue, on Linux, where we could attempt to process
+    writes on a tlsev handle after we closed it
+  * Make sure filter/events is set before we display the value in the logs
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Tue, 21 Apr 2026 10:03:29 -0400
+
 libmdr (0.6.7) unstable; urgency=medium
 
   * Just kill me
