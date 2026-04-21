@@ -1031,43 +1031,47 @@ tlsev_ev_write(struct tlsev_listener *l, struct tlsev *t)
 	 * for writes.
 	 */
 	if (tlsev_outbufsz(t) == 0) {
-		if (t->reads_paused) {
-			/*
-			 * If reads were paused because we had pending data,
-			 * we can now resume them since we have nothing else
-			 * to send.
-			 */
-			t->reads_paused = 0;
-#ifndef __linux__
-			if (kq_ev_set(l, t->fd, EVFILT_READ, EV_ADD) == -1) {
+		if (t->drain) {
+			tlsev_close(l, t);
+		} else {
+			xlog(LOG_DEBUG, NULL, "no pending bytes; "
+			    "disabling writes on fd %d", t->fd);
+#ifdef __linux__
+			bzero(&ev, sizeof(ev));
+			ev.data.fd = t->fd;
+			ev.events = EPOLLIN;
+			if (epoll_ctl(l->epollfd, EPOLL_CTL_MOD, t->fd, &ev) == -1) {
+				xlog_strerror(LOG_ERR, errno, "epoll_ctl");
+				tlsev_close(l, t);
+				return -1;
+			}
+#else
+			if (kq_ev_set(l, t->fd, EVFILT_WRITE, EV_DELETE) == -1) {
 				xlog_strerror(LOG_ERR, errno, "kq_ev_set");
 				tlsev_close(l, t);
 				return -1;
 			}
-			xlog(LOG_DEBUG, NULL,
-			    "reenabling reads on fd %d", t->fd);
 #endif
-		}
-#ifdef __linux__
-		bzero(&ev, sizeof(ev));
-		ev.data.fd = t->fd;
-		ev.events = EPOLLIN;
-		if (epoll_ctl(l->epollfd, EPOLL_CTL_MOD, t->fd, &ev) == -1) {
-			xlog_strerror(LOG_ERR, errno, "epoll_ctl");
-			tlsev_close(l, t);
-			return -1;
-		}
-#else
-		if (kq_ev_set(l, t->fd, EVFILT_WRITE, EV_DELETE) == -1) {
-			xlog_strerror(LOG_ERR, errno, "kq_ev_set");
-			tlsev_close(l, t);
-			return -1;
-		}
+			if (t->reads_paused) {
+				/*
+				 * If reads were paused because we had pending
+				 * data, we can now resume them since we have
+				 * nothing else to send.
+				 */
+				t->reads_paused = 0;
+#ifndef __linux__
+				if (kq_ev_set(l, t->fd, EVFILT_READ,
+				    EV_ADD) == -1) {
+					xlog_strerror(LOG_ERR, errno,
+					    "kq_ev_set");
+					tlsev_close(l, t);
+					return -1;
+				}
+				xlog(LOG_DEBUG, NULL,
+				    "reenabling reads on fd %d", t->fd);
 #endif
-		xlog(LOG_DEBUG, NULL, "no pending bytes; "
-		    "disabling writes on fd %d (drain=%d)", t->fd, t->drain);
-		if (t->drain)
-			tlsev_close(l, t);
+			}
+		}
 	} else {
 		/*
 		 * If after coming out of writing back to the client we still
@@ -1265,6 +1269,12 @@ tlsev_poll(struct tlsev_listener *l)
 
 		t = tlsev_get(l, evfd);
 		if (t == NULL) {
+			/*
+			 * If the descriptor is not for one of our TLS clients,
+			 * it could be for one of our custom handlers. If it
+			 * is, don't clean it up, and instead call the specified
+			 * handler.
+			 */
 			cleanup = 1;
 			for (i = 0; i < l->fd_callbacks_used; i++) {
 				if (l->fd_callbacks[i].fd != evfd)
@@ -1278,14 +1288,20 @@ tlsev_poll(struct tlsev_listener *l)
 
 			if (!cleanup)
 				continue;
-
-			// TODO: sometimes we hit this error; this means we
-			// already tlsev_close()'d this fd. It's possible
-			// we sent an error then tlsev_close()d immediately
-			// after? Something to do with t->drain?
+			/*
+			 * At this point, the fd was from one of our TLS clients
+			 * but the tlsev object is gone. So close it if it's
+			 * still open.
+			 */
+#ifdef __linux__
 			xlog(LOG_ERR, NULL,
-			    "tlsev_get on fd %d not found", evfd);
-
+			    "tlsev_get on fd %d not found (events=%d)",
+			    evfd, l->events[n].events);
+#else
+			xlog(LOG_ERR, NULL,
+			    "tlsev_get on fd %d not found (filter=%d)",
+			    evfd, l->events[n].filter);
+#endif
 			if (close(evfd) == -1) {
 				xlog_strerror(LOG_ERR, errno, "close");
 			} else {
@@ -1306,6 +1322,7 @@ tlsev_poll(struct tlsev_listener *l)
 		else if (l->events[n].filter == EVFILT_WRITE)
 			evtype = TLSEV_WRITE;
 #endif
+
 		/*
 		 * We process writes before reads to keep our
 		 * buffers small if possible.
@@ -1320,8 +1337,21 @@ tlsev_poll(struct tlsev_listener *l)
 				continue;
 		}
 
-		if (evtype & TLSEV_READ)
+
+		if (evtype & TLSEV_READ) {
+#ifdef __linux__
+			if (evtype & TLSEV_WRITE) {
+				/*
+				 * If TLSEV_WRITE is set it's possible we closed
+				 * our tlsev since then, so lookup again.
+				 */
+				t = tlsev_get(l, evfd);
+				if (t == NULL)
+					continue;
+			}
+#endif
 			tlsev_ev_read(l, t);
+		}
 	}
 	return 0;
 }

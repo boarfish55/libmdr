@@ -895,6 +895,8 @@ load_keys(struct xerr *e)
 	}
 	fclose(f);
 
+	// TODO: must also refresh CRLs on SIGHUP and recreate the store
+
 	if ((store = X509_STORE_new()) == NULL)
 		return XERRF(e, XLOG_SSL, ERR_get_error(), "X509_STORE_new");
 
