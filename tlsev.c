@@ -1267,6 +1267,19 @@ tlsev_poll(struct tlsev_listener *l)
 			continue;
 		}
 
+		evtype = TLSEV_NONE;
+#ifdef __linux__
+		if (l->events[n].events & EPOLLIN)
+			evtype |= TLSEV_READ;
+		if (l->events[n].events & EPOLLOUT)
+			evtype |= TLSEV_WRITE;
+#else
+		if (l->events[n].filter == EVFILT_READ)
+			evtype = TLSEV_READ;
+		else if (l->events[n].filter == EVFILT_WRITE)
+			evtype = TLSEV_WRITE;
+#endif
+
 		t = tlsev_get(l, evfd);
 		if (t == NULL) {
 			/*
@@ -1309,19 +1322,6 @@ tlsev_poll(struct tlsev_listener *l)
 			}
 			continue;
 		}
-
-		evtype = TLSEV_NONE;
-#ifdef __linux__
-		if (l->events[n].events & EPOLLIN)
-			evtype |= TLSEV_READ;
-		if (l->events[n].events & EPOLLOUT)
-			evtype |= TLSEV_WRITE;
-#else
-		if (l->events[n].filter == EVFILT_READ)
-			evtype = TLSEV_READ;
-		else if (l->events[n].filter == EVFILT_WRITE)
-			evtype = TLSEV_WRITE;
-#endif
 
 		/*
 		 * We process writes before reads to keep our
