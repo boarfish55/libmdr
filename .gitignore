@@ -2,6 +2,7 @@
 *.o
 *.a
 *.so
+*.so.[0-9]*
 .build/
 mdr_tests
 mdrc

@@ -13,7 +13,10 @@ Section: misc
 Architecture: any
 Depends:
  libmdr0 (= ${binary:Version}),
- ${misc:Depends}, libssl3t64, libbsd0, libc6
+ ${misc:Depends},
+ libssl3t64,
+ libbsd0,
+ libc6,
 Description: Minimal Data Representation daemon
  Minimal Data Representation (libmdr) ia a minimalistic serialization library
  (plus a few extra tools, see below). It's C-friendly, has no definition

@@ -23,6 +23,7 @@ libmdr.so.0 libmdr0 #MINVER#
  log_file@Base 0.2.0
  mdr_buf_from_BIO@Base 0.2.0
  mdr_buf_from_fd@Base 0.2.0
+ mdr_fill@Base 0.6.8
  mdr_hdr_size@Base 0.2.0
  mdr_mkdcv@Base 0.2.0
  mdr_msg_error@Base 0.2.0
@@ -53,6 +54,7 @@ libmdr.so.0 libmdr0 #MINVER#
  mdrd_beout_error@Base 0.4.0
  mdrd_beout_ok@Base 0.4.0
  mdrd_besession_set_data@Base 0.4.0
+ mdrd_purge_sessions@Base 0.6.8
  mdrd_recv@Base 0.4.0
  mdrd_unpack_beclose@Base 0.4.0
  mdrd_unpack_bein@Base 0.4.0
