@@ -455,13 +455,24 @@ verify_callback_daemon(int ok, X509_STORE_CTX *ctx)
 		X509_NAME_oneline(X509_get_subject_name(err_cert),
 		    name, sizeof(name));
 		e = X509_STORE_CTX_get_error(ctx);
+
+		/*
+		 * Some errors are acceptable if we don't require a client
+		 * cert but the client presents one anyway.
+		 *
+		 * We allow self-signed certs or certs not covered by
+		 * any CRL (such as self-signed certs).
+		 */
+		if (!mdrd_conf.require_client_cert &&
+		    (e == X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT ||
+		     e == X509_V_ERR_UNABLE_TO_GET_CRL))
+			ok = 1;
+
 		xlog(LOG_NOTICE, NULL, "verify error for %s (%s:%s): %s%s\n",
 		    name, hbuf, sbuf, X509_verify_cert_error_string(e),
-		    (mdrd_conf.require_client_cert)
-		    ? ""
-		    : "; valid cert not required so allowing anyway");
+		    (!ok) ? "" : " but a valid cert not required; allowing");
 	}
-	return ok || !mdrd_conf.require_client_cert;
+	return ok;
 }
 
 void
