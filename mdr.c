@@ -1549,6 +1549,11 @@ pmdr_pack(struct pmdr *pm, const struct mdr_spec *spec, struct pmdr_vec *pvec,
 	m->spec_fld_idx = 0;
 	*m->dcv = htobe64(spec->dcv);
 
+	if (pvec_sz != m->spec->types_count) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
 	for (i = 0; i < pvec_sz && i < m->spec->types_count; i++) {
 		if (pvec[i].type == MDR_RSVB) {
 			if (m->spec->types[i] != MDR_B) {
@@ -2138,6 +2143,11 @@ umdr_unpack(struct umdr *um, const struct mdr_spec *spec, struct umdr_vec *uvec,
 		}
 	} else
 		m->spec = spec;
+
+	if (uvec_sz != m->spec->types_count) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
 
 	for (i = 0; i < uvec_sz && i < m->spec->types_count; i++) {
 		uvec[i].type = m->spec->types[i];
