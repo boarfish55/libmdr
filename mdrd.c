@@ -896,6 +896,7 @@ load_crl(X509_STORE *store, const char *crl_path, struct xerr *e)
 		return XERRF(e, XLOG_SSL, ERR_get_error(),
 		    "X509_STORE_add_crl");
 	}
+	xlog(LOG_INFO, NULL, "loaded CRL %s", crl_path);
 	X509_CRL_free(crl);
 	return 0;
 }
