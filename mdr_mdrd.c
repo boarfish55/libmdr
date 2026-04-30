@@ -276,11 +276,12 @@ mdrd_recv(struct mdrd_recvhdl *mrh, int timeout_ms)
 	/*
 	 * If the session in our previous call needs to be freed because
 	 * we saw MDRD_BEOUT_FCLOSE set on a response, do it here.
+	 * We then set the session to NULL in either case because the next
+	 * message may be tied to another session.
 	 */
 	if (mrh->session != NULL) {
 		if (mrh->session->must_free)
 			session_free(mrh->session);
-		mrh->session->must_free = 0;
 		mrh->session = NULL;
 	}
 	mrh->msg = NULL;
