@@ -1056,6 +1056,11 @@ mdr_spec_base_sz(const struct mdr_spec *spec, uint64_t max_payload_bytes)
 	int    i;
 	size_t sz = mdr_hdr_size(MDR_FALL);
 
+	if (spec == NULL) {
+		errno = EINVAL;
+		return UINT64_MAX;
+	}
+
 	for (i = 0; i < spec->types_count; i++) {
 		switch (spec->types[i]) {
 		case MDR_U8:
@@ -1112,9 +1117,21 @@ mdr_spec_base_sz(const struct mdr_spec *spec, uint64_t max_payload_bytes)
 			break;
 		}
 	}
-	if (max_payload_bytes > UINT64_MAX - sz)
+	if (max_payload_bytes > UINT64_MAX - sz) {
+		errno = EOVERFLOW;
 		return UINT64_MAX;
+	}
 	return sz + max_payload_bytes;
+}
+
+size_t
+mdr_spec_vlen(const struct mdr_spec *spec)
+{
+	if (spec == NULL) {
+		errno = EINVAL;
+		return SIZE_MAX;
+	}
+	return spec->types_count;
 }
 
 void *
