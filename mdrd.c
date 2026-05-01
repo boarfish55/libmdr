@@ -465,7 +465,8 @@ verify_callback_daemon(int ok, X509_STORE_CTX *ctx)
 		 */
 		if (!mdrd_conf.require_client_cert &&
 		    (e == X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT ||
-		     e == X509_V_ERR_UNABLE_TO_GET_CRL))
+		     e == X509_V_ERR_UNABLE_TO_GET_CRL ||
+		     e == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY))
 			ok = 1;
 
 		xlog(LOG_NOTICE, NULL, "verify error for %s (%s:%s): %s%s\n",
