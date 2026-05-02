@@ -40,16 +40,23 @@ session_free(struct mdrd_besession *s)
 }
 
 int
-mdrd_purge_sessions(time_t age_seconds)
+mdrd_purge_sessions(struct mdrd_recvhdl *mrh, time_t age_seconds)
 {
 	struct timespec        now;
 	struct mdrd_besession *s, *next;
 	int                    purged = 0;
 
+	// TODO: we should have a heap sorted by last_seen for a more
+	// efficient purge.
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	for (s = SPLAY_MIN(session_tree, &sessions); s != NULL; s = next) {
 		next = SPLAY_NEXT(session_tree, &sessions, s);
-		if (now.tv_sec - s->last_seen.tv_sec >= age_seconds) {
+		/*
+		 * Don't delete a session if it's used by the current
+		 * mdrd_recvhdl.
+		 */
+		if ((mrh == NULL || s != mrh->session) &&
+		    now.tv_sec - s->last_seen.tv_sec >= age_seconds) {
 			session_free(s);
 			purged++;
 		}
@@ -401,8 +408,10 @@ again:
 
 	if (umdr_dcv(&um) == MDR_DCV_MDRD_BECLOSE ||
 	    umdr_dcv(&um) == MDR_DCV_MDRD_BESESSERR) {
-		if (sess != NULL)
+		if (sess != NULL) {
 			session_free(sess);
+			mrh->session = NULL;
+		}
 		/*
 		 * No response is expected on BECLOSE/BESESSERR.
 		 */
