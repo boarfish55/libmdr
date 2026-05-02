@@ -1566,7 +1566,7 @@ pmdr_pack(struct pmdr *pm, const struct mdr_spec *spec, struct pmdr_vec *pvec,
 	m->spec_fld_idx = 0;
 	*m->dcv = htobe64(spec->dcv);
 
-	if (pvec_sz != m->spec->types_count) {
+	if (pvec_sz < m->spec->types_count) {
 		errno = EINVAL;
 		return MDR_FAIL;
 	}
@@ -2161,7 +2161,7 @@ umdr_unpack(struct umdr *um, const struct mdr_spec *spec, struct umdr_vec *uvec,
 	} else
 		m->spec = spec;
 
-	if (uvec_sz != m->spec->types_count) {
+	if (uvec_sz < m->spec->types_count) {
 		errno = EINVAL;
 		return MDR_FAIL;
 	}
