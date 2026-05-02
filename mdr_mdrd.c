@@ -3,6 +3,7 @@
  *
  * SPDX-License-Identifier: ISC
  */
+#include <openssl/x509.h>
 #include <sys/time.h>
 #include <sys/tree.h>
 #include <errno.h>

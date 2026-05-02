@@ -1861,7 +1861,8 @@ main(int argc, char **argv)
 	}
 
 	if (!foreground) {
-		if (daemonize(program, mdrd_conf.pid_file, 0, 0, &e) == -1) {
+		if (daemonize(program, mdrd_conf.pid_file,
+		    mdrd_conf.enable_coredumps, 0, &e) == -1) {
 			xerr_print(&e);
 			exit(1);
 		}
@@ -1869,8 +1870,8 @@ main(int argc, char **argv)
 		xlog_init(program, (debug) ? "all" : NULL, NULL, 1);
 	}
 
-	if (spawnproc_init(&sproc, mdrd_conf.backend_promises,
-	    mdrd_conf.backend_unveils) == -1)
+	if (spawnproc_init(&sproc, mdrd_conf.enable_coredumps,
+	    mdrd_conf.backend_promises, mdrd_conf.backend_unveils) == -1)
 		err(1, "spawnproc_init");
 
 	if ((f = fopen(mdrd_conf.key_file, "r")) == NULL)
