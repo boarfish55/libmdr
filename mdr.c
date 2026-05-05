@@ -525,8 +525,7 @@ umdr_vec_anum(struct umdr_vec_ah *h, uint8_t type, void *dst,
 }
 
 static int32_t
-umdr_vec_asm(struct umdr_vec_ah *h, uint8_t type, void *dst,
-    int32_t maxlen)
+umdr_vec_asm(struct umdr_vec_ah *h, uint8_t type, void *dst, int32_t maxlen)
 {
 	int          i;
 	uint64_t     sz;
@@ -1555,7 +1554,7 @@ pmdr_pack(struct pmdr *pm, const struct mdr_spec *spec, struct pmdr_vec *pvec,
 	int         i;
 	struct mdr *m;
 
-	if (pm == NULL || (pvec == NULL && pvec_sz > 0)) {
+	if (pm == NULL || spec == NULL) {
 		errno = EINVAL;
 		return MDR_FAIL;
 	}
