@@ -356,6 +356,7 @@ const struct mdr_spec *mdr_registry_get(uint64_t);
 void                   mdr_registry_clear();
 
 uint64_t               mdr_spec_base_sz(const struct mdr_spec *, uint64_t);
+size_t                 mdr_spec_vlen(const struct mdr_spec *);
 
 #define MDR_DCV(domain, code, variant) \
     ((uint64_t)domain << 32 | (uint64_t)code << 16 | (uint64_t)variant)

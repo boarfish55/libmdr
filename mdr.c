@@ -525,8 +525,7 @@ umdr_vec_anum(struct umdr_vec_ah *h, uint8_t type, void *dst,
 }
 
 static int32_t
-umdr_vec_asm(struct umdr_vec_ah *h, uint8_t type, void *dst,
-    int32_t maxlen)
+umdr_vec_asm(struct umdr_vec_ah *h, uint8_t type, void *dst, int32_t maxlen)
 {
 	int          i;
 	uint64_t     sz;
@@ -1056,6 +1055,11 @@ mdr_spec_base_sz(const struct mdr_spec *spec, uint64_t max_payload_bytes)
 	int    i;
 	size_t sz = mdr_hdr_size(MDR_FALL);
 
+	if (spec == NULL) {
+		errno = EINVAL;
+		return UINT64_MAX;
+	}
+
 	for (i = 0; i < spec->types_count; i++) {
 		switch (spec->types[i]) {
 		case MDR_U8:
@@ -1112,9 +1116,21 @@ mdr_spec_base_sz(const struct mdr_spec *spec, uint64_t max_payload_bytes)
 			break;
 		}
 	}
-	if (max_payload_bytes > UINT64_MAX - sz)
+	if (max_payload_bytes > UINT64_MAX - sz) {
+		errno = EOVERFLOW;
 		return UINT64_MAX;
+	}
 	return sz + max_payload_bytes;
+}
+
+size_t
+mdr_spec_vlen(const struct mdr_spec *spec)
+{
+	if (spec == NULL) {
+		errno = EINVAL;
+		return SIZE_MAX;
+	}
+	return spec->types_count;
 }
 
 void *
@@ -1538,7 +1554,7 @@ pmdr_pack(struct pmdr *pm, const struct mdr_spec *spec, struct pmdr_vec *pvec,
 	int         i;
 	struct mdr *m;
 
-	if (pm == NULL || (pvec == NULL && pvec_sz > 0)) {
+	if (pm == NULL || spec == NULL) {
 		errno = EINVAL;
 		return MDR_FAIL;
 	}
@@ -1548,6 +1564,11 @@ pmdr_pack(struct pmdr *pm, const struct mdr_spec *spec, struct pmdr_vec *pvec,
 	m->spec = spec;
 	m->spec_fld_idx = 0;
 	*m->dcv = htobe64(spec->dcv);
+
+	if (pvec_sz < m->spec->types_count) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
 
 	for (i = 0; i < pvec_sz && i < m->spec->types_count; i++) {
 		if (pvec[i].type == MDR_RSVB) {
@@ -2138,6 +2159,11 @@ umdr_unpack(struct umdr *um, const struct mdr_spec *spec, struct umdr_vec *uvec,
 		}
 	} else
 		m->spec = spec;
+
+	if (uvec_sz < m->spec->types_count) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
 
 	for (i = 0; i < uvec_sz && i < m->spec->types_count; i++) {
 		uvec[i].type = m->spec->types[i];

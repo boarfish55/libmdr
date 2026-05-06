@@ -29,6 +29,11 @@ struct mdrd_recvhdl
 	/*
 	 * We need the umdr_vec here so the message doesn't
 	 * go out of scope.
+	 *
+	 * We gave 6 items in the umdr_vec for a mdrd_bein
+	 * message. 'offset' is used to track how many bytes
+	 * we've received so far for our message and where to
+	 * pick up on the next iteration.
 	 */
 	struct umdr_vec        uv[6];
 	size_t                 offset;
@@ -56,7 +61,7 @@ struct mdrd_besession
 ptrdiff_t mdrd_recv(struct mdrd_recvhdl *, int);
 void      mdrd_besession_set_data(struct mdrd_besession *, void *,
               void(*)(void *));
-int       mdrd_purge_sessions(time_t);
+int       mdrd_purge_sessions(struct mdrd_recvhdl *, time_t);
 
 int mdrd_unpack_beclose(struct umdr *, uint64_t *);
 int mdrd_unpack_bein(struct umdr *, uint64_t *, int *, struct sockaddr *,

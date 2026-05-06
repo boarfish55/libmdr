@@ -25,7 +25,8 @@ struct spawnmsg {
 };
 
 int
-daemonize(const char *program, const char *pid_path, int nochdir, int noclose, struct xerr *e)
+daemonize(const char *program, const char *pid_path, int nochdir, int noclose,
+    struct xerr *e)
 {
 	pid_t pid;
 	int   pid_fd;
@@ -173,7 +174,8 @@ spawnproc_reap(int sig)
 }
 
 int
-spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
+spawnproc_init(struct spawnproc *sp, int nochdir, const char *execpromises,
+    char **perms)
 {
 	int                sv[2], r;
 	pid_t              pid;
@@ -222,7 +224,7 @@ spawnproc_init(struct spawnproc *sp, const char *execpromises, char **perms)
 
 	setproctitle("executor");
 
-	if (chdir("/") == -1) {
+	if (!nochdir && chdir("/") == -1) {
 		xlog_strerror(LOG_ERR, errno, "%s: chdir", __func__);
 		_exit(1);
 	}

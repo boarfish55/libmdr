@@ -165,7 +165,7 @@ process_messages()
 		}
 	}
 
-	r = mdrd_purge_sessions(0);
+	r = mdrd_purge_sessions(NULL, 0);
 	xlog(LOG_NOTICE, NULL, "ending recv loop, puring %d sessions", r);
 }
 

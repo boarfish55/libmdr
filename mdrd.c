@@ -36,7 +36,6 @@
 #include <mdr/xlog.h>
 
 const char *program = "mdrd";
-X509_STORE *store = NULL;
 EVP_PKEY   *priv_key = NULL;
 SSL_CTX    *ssl_ctx = NULL;
 int         accept_socks[2];
@@ -50,9 +49,10 @@ struct tlsev_fd_cb    backend_reader;
 int                   backend_wfd;
 pid_t                 backend_pid = 0;
 volatile sig_atomic_t shutdown_triggered = 0;
-volatile sig_atomic_t reload_cert = 0;
+volatile sig_atomic_t reload_ssl_triggered = 0;
 struct timespec       last_cert_mtime = { 0, 0 };
 struct timespec       next_counter_update = { 0, 0 };
+struct timespec       next_crl_check = { 0, 0 };
 uint64_t              restarts;
 int                   counters_out;
 
@@ -62,6 +62,13 @@ char config_file_path[PATH_MAX] = "/etc/mdrd.conf";
 
 uint32_t *allowed_mdr_domains = NULL;
 int       allowed_mdr_domains_count = 0;
+
+struct crl_stat {
+	ino_t           ino;
+	struct timespec mtime;
+};
+struct crl_stat *crls = NULL;
+int              crl_count = 0;
 
 /*
  * This structure is used by listeners to to pack all counters prior
@@ -103,8 +110,9 @@ struct {
 	char  crl_path[PATH_MAX];
 	char  key_file[PATH_MAX];
 	int   require_client_cert;
-	int   monitor_cert;
+	int   monitor_ssl_files;
 
+	uint64_t crl_scan_interval_sec;
 	uint64_t port;
 	uint64_t listen_backlog;
 	uint64_t prefork;
@@ -140,6 +148,7 @@ struct {
 	"",
 	0,
 	1,
+	300,
 	9790,
 	128,
 	4,
@@ -230,10 +239,16 @@ struct flatconf flatconf_vars[] = {
 		sizeof(mdrd_conf.require_client_cert)
 	},
 	{
-		"monitor_cert",
+		"monitor_ssl_files",
 		FLATCONF_BOOLINT,
-		&mdrd_conf.monitor_cert,
-		sizeof(mdrd_conf.monitor_cert)
+		&mdrd_conf.monitor_ssl_files,
+		sizeof(mdrd_conf.monitor_ssl_files)
+	},
+	{
+		"crl_scan_interval_sec",
+		FLATCONF_ULONG,
+		&mdrd_conf.crl_scan_interval_sec,
+		sizeof(mdrd_conf.crl_scan_interval_sec)
 	},
 	{
 		"port",
@@ -440,13 +455,25 @@ verify_callback_daemon(int ok, X509_STORE_CTX *ctx)
 		X509_NAME_oneline(X509_get_subject_name(err_cert),
 		    name, sizeof(name));
 		e = X509_STORE_CTX_get_error(ctx);
+
+		/*
+		 * Some errors are acceptable if we don't require a client
+		 * cert but the client presents one anyway.
+		 *
+		 * We allow self-signed certs or certs not covered by
+		 * any CRL (such as self-signed certs).
+		 */
+		if (!mdrd_conf.require_client_cert &&
+		    (e == X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT ||
+		     e == X509_V_ERR_UNABLE_TO_GET_CRL ||
+		     e == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY))
+			ok = 1;
+
 		xlog(LOG_NOTICE, NULL, "verify error for %s (%s:%s): %s%s\n",
 		    name, hbuf, sbuf, X509_verify_cert_error_string(e),
-		    (mdrd_conf.require_client_cert)
-		    ? ""
-		    : "; valid cert not required so allowing anyway");
+		    (!ok) ? "" : " but a valid cert not required; allowing");
 	}
-	return ok || !mdrd_conf.require_client_cert;
+	return ok;
 }
 
 void
@@ -481,7 +508,7 @@ listener_handle_signals(int sig)
 {
 	switch (sig) {
 	case SIGHUP:
-		reload_cert = 1;
+		reload_ssl_triggered = 1;
 		break;
 	case SIGTERM:
 	case SIGINT:
@@ -852,68 +879,39 @@ fail:
 }
 
 static int
-load_crl(const char *crl_path, struct xerr *e)
+load_crl(X509_STORE *store, const char *crl_path, struct xerr *e)
 {
 	X509_CRL *crl;
 	FILE     *f;
 
 	if ((f = fopen(crl_path, "r")) == NULL)
 		return XERRF(e, XLOG_ERRNO, errno, "fopen: %s", crl_path);
-
 	if ((crl = PEM_read_X509_CRL(f, NULL, NULL, NULL)) == NULL) {
 		fclose(f);
 		return XERRF(e, XLOG_SSL, ERR_get_error(), "PEM_read_X509_CRL");
 	}
-
 	fclose(f);
 
-	if (!X509_STORE_add_crl(store, crl))
+	if (!X509_STORE_add_crl(store, crl)) {
+		X509_CRL_free(crl);
 		return XERRF(e, XLOG_SSL, ERR_get_error(),
 		    "X509_STORE_add_crl");
+	}
+	xlog(LOG_INFO, NULL, "loaded CRL %s", crl_path);
 	X509_CRL_free(crl);
 	return 0;
 }
 
 int
-load_keys(struct xerr *e)
+scan_crls(struct crl_stat *dst, size_t dst_sz, X509_STORE *store,
+    struct xerr *e)
 {
-	FILE          *f;
+	int            i = 0;
 	DIR           *d;
 	struct dirent *de;
 	int            de_len;
-	char           crl_path[PATH_MAX + NAME_MAX + 1];
-	X509          *crt;
-
-	if ((f = fopen(mdrd_conf.key_file, "r")) == NULL)
-		return XERRF(e, XLOG_ERRNO, errno, "fopen: %s",
-		    mdrd_conf.key_file);
-	if ((priv_key = PEM_read_PrivateKey(f, NULL, NULL, NULL)) == NULL) {
-		XERRF(e, XLOG_SSL, ERR_get_error(),
-		    "PEM_read_PrivateKey");
-		fclose(f);
-		return -1;
-	}
-	fclose(f);
-
-	// TODO: must also refresh CRLs on SIGHUP and recreate the store
-
-	if ((store = X509_STORE_new()) == NULL)
-		return XERRF(e, XLOG_SSL, ERR_get_error(), "X509_STORE_new");
-
-	if ((f = fopen(mdrd_conf.ca_file, "r")) == NULL)
-		return XERRF(e, XLOG_ERRNO, errno, "fopen: %s",
-		    mdrd_conf.ca_file);
-	if ((crt = PEM_read_X509(f, NULL, NULL, NULL)) == NULL) {
-		fclose(f);
-		return XERRF(e, XLOG_SSL, ERR_get_error(), "PEM_read_X509");
-	}
-	fclose(f);
-	if (!X509_STORE_add_cert(store, crt)) {
-		XERRF(e, XLOG_SSL, ERR_get_error(), "X509_STORE_add_cert");
-		X509_free(crt);
-		return -1;
-	}
-	X509_free(crt);
+	struct stat    st;
+	char           crl_path[PATH_MAX];
 
 	if (*mdrd_conf.crl_path != '\0') {
 		if ((d = opendir(mdrd_conf.crl_path)) == NULL)
@@ -938,25 +936,118 @@ load_keys(struct xerr *e)
 
 			snprintf(crl_path, sizeof(crl_path), "%s/%s",
 			    mdrd_conf.crl_path, de->d_name);
-			if (load_crl(crl_path, xerrz(e)) == -1) {
+			if (stat(crl_path, &st) == -1) {
+				closedir(d);
+				return XERRF(e, XLOG_ERRNO, errno,
+				    "stat: %s", mdrd_conf.crl_path);
+			}
+			if (dst != NULL && i < dst_sz) {
+				dst[i].ino = st.st_ino;
+				memcpy(&dst[i].mtime, &st.st_mtim,
+				    sizeof(struct timespec));
+			}
+			if (store != NULL &&
+			    load_crl(store, crl_path, xerrz(e)) == -1) {
 				closedir(d);
 				return XERR_PREPENDFN(e);
 			}
+			i++;
 		}
 		closedir(d);
+	} else if (*mdrd_conf.crl_file != '\0') {
+		if (stat(mdrd_conf.crl_file, &st) == -1)
+			return XERRF(e, XLOG_ERRNO, errno,
+			    "stat: %s", mdrd_conf.crl_file);
+		if (dst != NULL && i < dst_sz) {
+			dst[i].ino = st.st_ino;
+			memcpy(&dst[i].mtime, &st.st_mtim,
+			    sizeof(struct timespec));
+		}
+		if (store != NULL &&
+		    load_crl(store, mdrd_conf.crl_file, xerrz(e)) == -1)
+			return XERR_PREPENDFN(e);
+		i++;
+	}
+	return i;
+}
+
+X509_STORE *
+mk_store(struct xerr *e)
+{
+	FILE            *f = NULL;
+	X509            *crt;
+	X509_STORE      *store = NULL;
+	struct crl_stat *c;
+	int              r;
+
+	if ((store = X509_STORE_new()) == NULL) {
+		XERRF(e, XLOG_SSL, ERR_get_error(), "X509_STORE_new");
+		return NULL;
 	}
 
-	if (*mdrd_conf.crl_file != '\0') {
-		if (load_crl(mdrd_conf.crl_file, xerrz(e)) == -1)
-			return XERR_PREPENDFN(e);
+	if ((f = fopen(mdrd_conf.ca_file, "r")) == NULL) {
+		XERRF(e, XLOG_ERRNO, errno, "fopen: %s", mdrd_conf.ca_file);
+		goto fail;
+	}
+	if ((crt = PEM_read_X509(f, NULL, NULL, NULL)) == NULL) {
+		XERRF(e, XLOG_SSL, ERR_get_error(), "PEM_read_X509");
+		goto fail;
+	}
+	fclose(f);
+	f = NULL;
+
+	if (!X509_STORE_add_cert(store, crt)) {
+		XERRF(e, XLOG_SSL, ERR_get_error(), "X509_STORE_add_cert");
+		X509_free(crt);
+		goto fail;
+	}
+	X509_free(crt);
+
+	if ((r = scan_crls(NULL, 0, NULL, xerrz(e))) == -1) {
+		XERR_PREPENDFN(e);
+		goto fail;
+	}
+
+	if (mdrd_conf.monitor_ssl_files) {
+		if (crls != NULL) {
+			free(crls);
+			crls = NULL;
+			crl_count = 0;
+		}
+
+		if (r > 0) {
+			c = malloc(sizeof(struct crl_stat) * r);
+			if (c == NULL) {
+				XERRF(e, XLOG_ERRNO, errno, "malloc");
+				goto fail;
+			}
+			if ((r = scan_crls(c, r, store, xerrz(e))) == -1) {
+				free(c);
+				XERR_PREPENDFN(e);
+				goto fail;
+			}
+			crl_count = r;
+			crls = c;
+		}
+	} else if (scan_crls(NULL, 0, store, xerrz(e)) == -1) {
+		XERR_PREPENDFN(e);
+		goto fail;
 	}
 
 	if (!X509_STORE_set_flags(store, X509_V_FLAG_X509_STRICT|
-	    X509_V_FLAG_CRL_CHECK|X509_V_FLAG_CRL_CHECK_ALL))
-		return XERRF(e, XLOG_SSL, ERR_get_error(),
+	    X509_V_FLAG_CRL_CHECK|X509_V_FLAG_CRL_CHECK_ALL)) {
+		XERRF(e, XLOG_SSL, ERR_get_error(),
 		    "X509_STORE_set_flags");
+		goto fail;
+	}
 
-	return 0;
+	return store;
+fail:
+	if (store != NULL)
+		X509_STORE_free(store);
+	if (f != NULL)
+		fclose(f);
+	return NULL;
 }
 
 void
@@ -970,17 +1061,19 @@ cleanup()
 		free(counter_pipes);
 	if (priv_key != NULL)
 		EVP_PKEY_free(priv_key);
+	if (crls != NULL)
+		free(crls);
 }
 
 int
-reload_cert_cb(SSL_CTX *ctx)
+reload_cert(SSL_CTX *ctx)
 {
 	struct stat st;
 
-	if (!reload_cert && !mdrd_conf.monitor_cert)
+	if (!reload_ssl_triggered && !mdrd_conf.monitor_ssl_files)
 		return 1;
 
-	reload_cert = 0;
+	reload_ssl_triggered = 0;
 
 	if (stat(mdrd_conf.cert_file, &st) == -1) {
 		xlog_strerror(LOG_ERR, errno,
@@ -1012,13 +1105,84 @@ reload_cert_cb(SSL_CTX *ctx)
 }
 
 int
+reload_crls(SSL_CTX *ctx)
+{
+	X509_STORE      *store;
+	struct xerr      e;
+	struct crl_stat *c;
+	int              r, i, j, match;
+
+	if (!reload_ssl_triggered && !mdrd_conf.monitor_ssl_files)
+		return 1;
+
+	reload_ssl_triggered = 0;
+
+	if (ctx == NULL) {
+		xlog(LOG_ERR, NULL,
+		    "%s: no SSL_CTX, cannot reload cert", __func__);
+		return 1;
+	}
+
+	if ((r = scan_crls(NULL, 0, NULL, xerrz(&e))) == -1) {
+		xlog(LOG_ERR, &e, __func__);
+		return 1;
+	}
+
+	if (r != crl_count) {
+		if ((store = mk_store(xerrz(&e))) == NULL) {
+			xlog(LOG_ERR, &e, __func__);
+			return 1;
+		}
+		SSL_CTX_set_cert_store(ssl_ctx, store);
+		return 1;
+	}
+
+	c = malloc(sizeof(struct crl_stat) * r);
+	if (c == NULL) {
+		xlog_strerror(LOG_ERR, errno, "%s: malloc", __func__);
+		return 1;
+	}
+	if ((r = scan_crls(c, r, NULL, xerrz(&e))) == -1) {
+		free(c);
+		xlog(LOG_ERR, &e, __func__);
+		return 1;
+	}
+
+	for (i = 0, match = 1; i < r && match; i++) {
+		match = 0;
+		for (j = 0; j < r; j++) {
+			if (c[i].ino == crls[j].ino &&
+			    c[i].mtime.tv_sec == crls[j].mtime.tv_sec &&
+			    c[i].mtime.tv_nsec == crls[j].mtime.tv_nsec)
+				match = 1;
+		}
+		if (!match)
+			break;
+	}
+	free(c);
+
+	if (match)
+		return 1;
+
+	if ((store = mk_store(xerrz(&e))) == NULL) {
+		xlog(LOG_ERR, &e, __func__);
+		return 1;
+	}
+	SSL_CTX_set_cert_store(ssl_ctx, store);
+
+	xlog(LOG_NOTICE, NULL, "%s: reloaded cert/crl store", __func__);
+
+	return 1;
+}
+
+int
 listener_tasks(struct tlsev_listener *l, void *args)
 {
 	SSL_CTX         *ctx = (SSL_CTX *)args;
 	struct timespec  now;
 	int              r;
 
-	if (!reload_cert_cb(ctx))
+	if (!reload_cert(ctx))
 		return 0;
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
@@ -1038,6 +1202,13 @@ listener_tasks(struct tlsev_listener *l, void *args)
 		memcpy(&next_counter_update, &now, sizeof(now));
 	}
 
+	if (timespeccmp(&now, &next_crl_check, >=)) {
+		if (!reload_crls(ctx))
+			return 0;
+		now.tv_sec += mdrd_conf.crl_scan_interval_sec;
+		memcpy(&next_crl_check, &now, sizeof(now));
+	}
+
 	return 1;
 }
 
@@ -1047,6 +1218,7 @@ run()
 	int              status;
 	struct stat      st;
 	struct sigaction act;
+	struct timespec  now;
 
 	sigemptyset(&act.sa_mask);
 	act.sa_flags = 0;
@@ -1086,6 +1258,9 @@ run()
 		return 1;
 	}
 	memcpy(&last_cert_mtime, &st.st_mtim, sizeof(last_cert_mtime));
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	now.tv_sec += mdrd_conf.crl_scan_interval_sec;
+	memcpy(&next_crl_check, &now, sizeof(next_crl_check));
 
 	xlog(LOG_NOTICE, NULL, "running listener");
 	status = tlsev_run(&listener, &listener_tasks, ssl_ctx);
@@ -1590,10 +1765,12 @@ parent_loop()
 int
 main(int argc, char **argv)
 {
-	int              opt, i;
-	struct xerr      e;
-	struct sigaction act;
-	struct rlimit    zero_core = {0, 0};
+	int               opt, i;
+	struct xerr       e;
+	struct sigaction  act;
+	struct rlimit     zero_core = {0, 0};
+	FILE             *f;
+	X509_STORE       *store;
 
 	while ((opt = getopt(argc, argv, "c:hfd")) != -1) {
 		switch (opt) {
@@ -1684,7 +1861,8 @@ main(int argc, char **argv)
 	}
 
 	if (!foreground) {
-		if (daemonize(program, mdrd_conf.pid_file, 0, 0, &e) == -1) {
+		if (daemonize(program, mdrd_conf.pid_file,
+		    mdrd_conf.enable_coredumps, 0, &e) == -1) {
 			xerr_print(&e);
 			exit(1);
 		}
@@ -1692,14 +1870,18 @@ main(int argc, char **argv)
 		xlog_init(program, (debug) ? "all" : NULL, NULL, 1);
 	}
 
-	if (spawnproc_init(&sproc, mdrd_conf.backend_promises,
-	    mdrd_conf.backend_unveils) == -1)
+	if (spawnproc_init(&sproc, mdrd_conf.enable_coredumps,
+	    mdrd_conf.backend_promises, mdrd_conf.backend_unveils) == -1)
 		err(1, "spawnproc_init");
 
-	if (load_keys(xerrz(&e)) == -1) {
-		xlog(LOG_ERR, &e, __func__);
+	if ((f = fopen(mdrd_conf.key_file, "r")) == NULL)
+		err(1, "fopen: %s", mdrd_conf.key_file);
+	if ((priv_key = PEM_read_PrivateKey(f, NULL, NULL, NULL)) == NULL) {
+		fclose(f);
+		ERR_print_errors_fp(stderr);
 		exit(1);
 	}
+	fclose(f);
 
 	if (!mdrd_conf.enable_coredumps &&
 	    setrlimit(RLIMIT_CORE, &zero_core) == -1)
@@ -1719,6 +1901,11 @@ main(int argc, char **argv)
 	if (unveil(mdrd_conf.backend_argv[0], "x") == -1) {
 		xlog_strerror(LOG_ERR, errno,
 		    "unveil: %s", mdrd_conf.backend_argv[0]);
+		exit(1);
+	}
+	if (unveil(mdrd_conf.ca_file, "r") == -1) {
+		xlog_strerror(LOG_ERR, errno,
+		    "unveil: %s", mdrd_conf.cert_file);
 		exit(1);
 	}
 	if (unveil(mdrd_conf.cert_file, "r") == -1) {
@@ -1748,6 +1935,11 @@ main(int argc, char **argv)
 		exit(1);
 	}
 #endif
+	if ((store = mk_store(xerrz(&e))) == NULL) {
+		xlog(LOG_ERR, &e, __func__);
+		exit(1);
+	}
+
 	if ((ssl_ctx = SSL_CTX_new(TLS_method())) == NULL) {
 		xlog(LOG_ERR, NULL, "SSL_CTX_new: %s",
 		    ERR_error_string(ERR_get_error(), NULL));
