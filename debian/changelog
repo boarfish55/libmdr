@@ -1,3 +1,25 @@
+libmdr (0.7.0-1) unstable; urgency=medium
+
+  * deb build fixes for quilt
+  * Reload CRLs on change
+  * Fine tune error handling
+  * Be more strict about the number of array members passed to pack/unpack
+  * Log when we reload a CRL
+  * New function to get the length of a spec's vector, useful for stack array
+    sizes
+  * Fix bad deref
+  * On OpenBSD, we get X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY during our
+    tests for self-signed certs, so allow it when we don't require valid certs
+  * If we have coredumps enabled, don't chdir
+  * Fix leak on session close initiated by the backend
+  * Make sure we don't purge session in use by the current mdrd_recvhdl,
+    if provided
+  * Relax check in pack/unpack on the length of the mdr vector; make sure it
+    is large enough
+  * Make sure we can't pass a NULL spec to pmdr_pack()
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Wed, 06 May 2026 10:57:36 -0400
+
 libmdr (0.6.8-1) unstable; urgency=medium
 
   * New package using quilt, not native
