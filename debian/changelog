@@ -1,3 +1,10 @@
+libmdr (0.7.0-2) unstable; urgency=medium
+
+  * Refresh symbols and add a helper script
+  * lintian
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Wed, 06 May 2026 11:29:56 -0400
+
 libmdr (0.7.0-1) unstable; urgency=medium
 
   * deb build fixes for quilt
