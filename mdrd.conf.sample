@@ -5,7 +5,6 @@ ca_file = "/home/plalonde/prog/mdr/ca/root.pem"
 cert_file = "/home/plalonde/prog/mdr/ca/root.pem"
 crl_file = "/home/plalonde/prog/mdr/ca/root.crl"
 key_file = "/home/plalonde/prog/mdr/ca/key.pem"
-require_client_cert = false
 monitor_ssl_files = true
 crl_scan_interval_sec = 10
 port = 9790
@@ -14,6 +13,11 @@ prefork = 2
 pid_file = "/tmp/mdrd.pid"
 counters_sock = "/tmp/mdrd_counters.sock"
 dbg_delay_to_backend_seconds = 0
+
+# Setting require_client_cert to 'false' will allow self-signed certs, or certs
+# signed by unknown issuers. In this case, the backend should perform its own
+# certificate verification before granting the request any privilege.
+require_client_cert = false
 
 # Maximum number of concurrent client connections per fork
 max_clients = 10000

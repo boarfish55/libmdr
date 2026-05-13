@@ -1895,8 +1895,7 @@ main(int argc, char **argv)
 		err(1, "setrlimit");
 
 	if (geteuid() == 0) {
-		if (drop_privileges(mdrd_conf.gid,
-		    mdrd_conf.uid, &e) == -1) {
+		if (drop_privileges(mdrd_conf.uid, mdrd_conf.gid, &e) == -1) {
 			xlog(LOG_ERR, &e, __func__);
 			exit(1);
 		}
