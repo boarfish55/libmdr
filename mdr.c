@@ -619,6 +619,10 @@ mdr_unpack_array(struct mdr *m, uint8_t type, struct umdr_vec_ah *ah)
 		return MDR_FAIL;
 
 	if (*(uint8_t *)m->pos & 0x80) {
+		if (m->buf_sz - mdr_tell(m) < sizeof(uint32_t)) {
+			errno = EAGAIN;
+			return MDR_FAIL;
+		}
 		packed_n = be32toh(*(uint32_t *)m->pos) & 0x7fffffff;
 		m->pos += sizeof(uint32_t);
 	} else {
@@ -666,16 +670,33 @@ mdr_unpack_array(struct mdr *m, uint8_t type, struct umdr_vec_ah *ah)
 		m->pos += sizeof(uint64_t) * packed_n;
 		return mdr_tell(m);
 	case MDR_AS:
+		/*
+		 * We can at most return as many arrays as we can fit
+		 * single-byte strings so bound how many items we report so
+		 * the caller doesn't have to.
+		 */
+		asize = be64toh(*(uint64_t *)m->pos);
+		m->pos += sizeof(uint64_t);
+		if (mdr_size(m) - mdr_tell(m) < asize) {
+			errno = EOVERFLOW;
+			return MDR_FAIL;
+		}
+		m->pos += asize;
+		break;
 	case MDR_AM:
 		/* Size is item-specific, we handle it below. */
+		asize = be64toh(*(uint64_t *)m->pos);
+		m->pos += sizeof(uint64_t);
+		if (mdr_size(m) - mdr_tell(m) < asize * mdr_hdr_size(0)) {
+			errno = EOVERFLOW;
+			return MDR_FAIL;
+		}
+		m->pos += asize;
 		break;
 	default:
 		errno = EAGAIN;
 		return MDR_FAIL;
 	}
-
-	asize = be64toh(*(uint64_t *)m->pos);
-	m->pos += asize + sizeof(uint64_t);
 
 	return mdr_tell(m);
 }
