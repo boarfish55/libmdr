@@ -56,6 +56,7 @@ libmdr.so.0 libmdr0 #MINVER#
  mdrd_beout_ok@Base 0.7.0
  mdrd_besession_set_data@Base 0.7.0
  mdrd_purge_sessions@Base 0.7.0
+ mdrd_purge_sessions_cb@Base 0.8.0
  mdrd_recv@Base 0.7.0
  mdrd_unpack_beclose@Base 0.7.0
  mdrd_unpack_bein@Base 0.7.0
@@ -166,5 +167,6 @@ libmdr.so.0 libmdr0 #MINVER#
  xerrz@Base 0.7.0
  xlog@Base 0.7.0
  xlog_dbg@Base 0.7.0
+ xlog_init2@Base 0.8.0
  xlog_init@Base 0.7.0
  xlog_strerror@Base 0.7.0
