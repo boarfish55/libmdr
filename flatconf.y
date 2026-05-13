@@ -115,6 +115,10 @@ yylex()
 	int   c;
 	char *endptr;
 read:
+	if (bufp - buf >= sizeof(buf)) {
+		yyerror("token too long");
+		return ERROR;
+	}
 	if ((c = getc(cfg)) == EOF)
 		return (ferror(cfg)) ? ERROR : 0;
 

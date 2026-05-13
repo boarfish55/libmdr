@@ -390,6 +390,7 @@ pack_bein(struct pmdr *m, uint64_t id, int fd, struct sockaddr_in6 *peer,
 	if (cert_len > mdrd_conf.max_cert_size) {
 		xlog(LOG_ERR, NULL, "%s: X509 length above limit: "
 		    "%d > %lu", __func__, cert_len, mdrd_conf.max_cert_size);
+		return -1;
 	}
 
 	pv[0].type = MDR_U64;
@@ -661,7 +662,12 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 			break;
 	}
 
-	if (mdrd_conf.allowed_mdr_domains[i] == NULL) {
+	/*
+	 * Not having configured allowed_mdr_domains means we allow
+	 * everything.
+	 */
+	if (mdrd_conf.allowed_mdr_domains &&
+	    mdrd_conf.allowed_mdr_domains[i] == NULL) {
 		if (error_reply(t, MDR_ERR_NOTSUPP, "unsupported domain") == -1)
 			return -1;
 		listener_counters.messages_in_rejected++;
@@ -1286,7 +1292,7 @@ get_listen_socket(int domain, int backlog, unsigned short port,
 		return -1;
 	}
 	if (flags & O_NONBLOCK &&
-	    fcntl(fd, F_SETFD, O_NONBLOCK) == -1) {
+	    fcntl(fd, F_SETFL, O_NONBLOCK) == -1) {
 		xlog_strerror(LOG_ERR, errno, "fcntl");
 		goto fail;
 	}
