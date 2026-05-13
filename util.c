@@ -56,7 +56,7 @@ daemonize(const char *program, const char *pid_path, int nochdir, int noclose,
 		exit(1);
 	}
 
-	xlog_init(program, NULL, NULL, 1);
+	xlog_init2(program, LOG_DAEMON, NULL, NULL, 1);
 
 	if (!nochdir && chdir("/") == -1) {
 		xlog_strerror(LOG_ERR, errno, "chdir");

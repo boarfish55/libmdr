@@ -42,6 +42,13 @@ session_free(struct mdrd_besession *s)
 int
 mdrd_purge_sessions(struct mdrd_recvhdl *mrh, time_t age_seconds)
 {
+	return mdrd_purge_sessions_cb(mrh, age_seconds, NULL, NULL);
+}
+
+int
+mdrd_purge_sessions_cb(struct mdrd_recvhdl *mrh, time_t age_seconds,
+    void(*cb)(struct mdrd_besession *, void *), void *cbargs)
+{
 	struct timespec        now;
 	struct mdrd_besession *s, *next;
 	int                    purged = 0;
@@ -57,6 +64,8 @@ mdrd_purge_sessions(struct mdrd_recvhdl *mrh, time_t age_seconds)
 		 */
 		if ((mrh == NULL || s != mrh->session) &&
 		    now.tv_sec - s->last_seen.tv_sec >= age_seconds) {
+			if (cb != NULL)
+				cb(s, cbargs);
 			session_free(s);
 			purged++;
 		}

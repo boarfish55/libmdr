@@ -1669,7 +1669,7 @@ parent_loop()
 
 	while ((dead_pid = waitpid(-1, &wstatus, WNOHANG)) > 0) {
 		if (WIFEXITED(wstatus))
-			xlog(LOG_WARNING, NULL,
+			xlog(LOG_DEBUG, NULL,
 			    "child %d exited with status %d",
 			    dead_pid, WEXITSTATUS(wstatus));
 		else
@@ -1867,7 +1867,8 @@ main(int argc, char **argv)
 			exit(1);
 		}
 	} else {
-		xlog_init(program, (debug) ? "all" : NULL, NULL, 1);
+		xlog_init2(program, LOG_DAEMON, (debug) ? "all" : NULL,
+		    NULL, 1);
 	}
 
 	if (spawnproc_init(&sproc, mdrd_conf.enable_coredumps,

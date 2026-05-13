@@ -189,7 +189,7 @@ main(int argc, char **argv)
 	    sigaction(SIGTERM, &act, NULL) == -1)
 		return -1;
 
-	xlog_init("mdrd_backend_echo", NULL, NULL, 1);
+	xlog_init2("mdrd_backend_echo", LOG_USER, NULL, NULL, 1);
 
 	if (mdr_register_builtin_specs() == MDR_FAIL)
                 err(1, "mdr_register_builtin_specs");

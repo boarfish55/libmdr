@@ -62,6 +62,8 @@ ptrdiff_t mdrd_recv(struct mdrd_recvhdl *, int);
 void      mdrd_besession_set_data(struct mdrd_besession *, void *,
               void(*)(void *));
 int       mdrd_purge_sessions(struct mdrd_recvhdl *, time_t);
+int       mdrd_purge_sessions_cb(struct mdrd_recvhdl *, time_t,
+              void(*)(struct mdrd_besession *, void *), void *);
 
 int mdrd_unpack_beclose(struct umdr *, uint64_t *);
 int mdrd_unpack_bein(struct umdr *, uint64_t *, int *, struct sockaddr *,
