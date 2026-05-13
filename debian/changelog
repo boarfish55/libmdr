@@ -1,3 +1,16 @@
+libmdr (0.8.1-1) unstable; urgency=medium
+
+  * Fix a remote crash when sending zero-byte strings to mdrd
+  * Make sure we actually reject sessions with certs over the allowed limit
+  * Fix null deref when we don't define allowed domains in the config
+  * Fix non-blocking behavior on the control socket
+  * Fix stack overflow in flatconf.y
+  * Fix drop_privileges invocation where uid/gid were swapped
+  * Though unlikely, don't abort on BIO_get_mem_data() failures (BIO_mem)
+  * Fix EINTR condition in sendmsg()
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Tue, 12 May 2026 23:27:16 -0400
+
 libmdr (0.8.0-2) unstable; urgency=medium
 
   * refresh symbols
