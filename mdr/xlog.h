@@ -18,7 +18,12 @@ enum xerr_space {
 	XLOG_ERRNO,    /* Standard errno code used internally only */
 	XLOG_SSL,      /* SSL error codes */
 	XLOG_EAI,      /* getaddrinfo() error codes */
-	XLOG_DB        /* DB error */
+	XLOG_DB,       /* DB error (generic, can be used for any integer-based
+	                  error codes from databases, such as SQLite; messge
+                          substitution occurs */
+
+	XLOG_SP_USER_DEFINED = 65536 /* Users can define their own error space
+	                                from this point */
 };
 
 enum {
@@ -39,11 +44,11 @@ enum {
 	XLOG_TIMEOUT,      /* Operation timed out */
 	XLOG_WOULDBLOCK,   /* Operation would block but is set non-blocking */
 	XLOG_CALLBACK_ERR, /* A callback encountered an error the current
-			      context is unaware of (look for callback's own
-			      error handling) */
+	                      context is unaware of (look for callback's own
+	                      error handling) */
 
 	XLOG_USER_DEFINED = 65536 /* Users can define their own errors
-				     from this pointCallback error */
+	                             from this point */
 };
 
 #define XLOG_ALL     0xFFFF
@@ -98,6 +103,7 @@ int  xerr_fail(const struct xerr *);
 int  xerr_is(const struct xerr *, int, int);
 
 int  xlog_init(const char *, const char *, const char *, int);
+int  xlog_init2(const char *, int, const char *, const char *, int);
 
 void xlog_dbg(xlog_mask_t, const char *, ...);
 void xlog(int, const struct xerr *, const char *, ...);

@@ -27,6 +27,52 @@ static xlog_mask_t  debug_mask = 0;
 FILE               *log_file = NULL;
 static int          log_level = LOG_INFO;
 
+static const char *
+priostr(int prio)
+{
+	switch (prio) {
+	case LOG_EMERG:
+		return "G";
+	case LOG_ALERT:
+		return "A";
+	case LOG_CRIT:
+		return "C";
+	case LOG_ERR:
+		return "E";
+	case LOG_WARNING:
+		return "W";
+	case LOG_NOTICE:
+		return "N";
+	case LOG_INFO:
+		return "I";
+	case LOG_DEBUG:
+		return "D";
+	default:
+		return "U";
+	}
+}
+
+static const char *
+spacestr(int sp)
+{
+	switch (sp) {
+	case XLOG_NONE:
+		return "NONE";
+	case XLOG_APP:
+		return "APP";
+	case XLOG_ERRNO:
+		return "ERRNO";
+	case XLOG_SSL:
+		return "SSL";
+	case XLOG_EAI:
+		return "EAI";
+	case XLOG_DB:
+		return "DB";
+	default:
+		return "?";
+	}
+}
+
 struct xerr *
 xerrz(struct xerr *e)
 {
@@ -148,6 +194,13 @@ int
 xlog_init(const char *progname, const char *dbg_spec, const char *logf,
     int perror)
 {
+	return xlog_init2(progname, LOG_USER, dbg_spec, logf, perror);
+}
+
+int
+xlog_init2(const char *progname, int facility, const char *dbg_spec,
+    const char *logf, int perror)
+{
 	char                              *dbg, *module, *save;
 	const struct module_dbg_map_entry *map;
 	int                                opt = LOG_PID;
@@ -159,7 +212,7 @@ xlog_init(const char *progname, const char *dbg_spec, const char *logf,
 		if ((log_file = fopen(logf, "a")) == NULL)
 			warn("fopen");
 
-	openlog(progname, opt, LOG_USER);
+	openlog(progname, opt, facility);
 	if (dbg_spec == NULL || *dbg_spec == '\0') {
 		setlogmask(LOG_UPTO(LOG_INFO));
 		return 0;
@@ -201,8 +254,8 @@ xlog_dbg(xlog_mask_t module, const char *fmt, ...)
 	vsnprintf(msg, sizeof(msg), fmt, ap);
 	va_end(ap);
 
-	syslog(LOG_DEBUG, "%s", msg);
-	xlog_fprintf("%s", msg);
+	syslog(LOG_DEBUG, "{%s} %s", priostr(LOG_DEBUG), msg);
+	xlog_fprintf("{%s} %s", priostr(LOG_DEBUG), msg);
 }
 
 void
@@ -221,8 +274,8 @@ xlog(int priority, const struct xerr *e, const char *fmt, ...)
 			va_start(ap, fmt);
 			vsnprintf(msg, sizeof(msg), fmt, ap);
 			va_end(ap);
-			syslog(priority, "%s", msg);
-			xlog_fprintf("%s", msg);
+			syslog(priority, "{%s} %s", priostr(priority), msg);
+			xlog_fprintf("{%s} %s", priostr(priority), msg);
 		}
 		return;
 	}
@@ -239,52 +292,68 @@ xlog(int priority, const struct xerr *e, const char *fmt, ...)
 	if (e->sp == XLOG_ERRNO && e->code != 0) {
 		strerror_r(e->code, errmsg, sizeof(errmsg));
 		if (fmt) {
-			syslog(priority, "[sp=%d, code=%lld]: %s: %s: %s",
-			    e->sp, e->code, msg, e->msg, errmsg);
-			xlog_fprintf("[sp=%d, code=%lld]: %s: %s: %s",
-			    e->sp, e->code, msg, e->msg, errmsg);
+			syslog(priority, "{%s:%s:%lld} %s: %s: %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    msg, e->msg, errmsg);
+			xlog_fprintf("{%s:%s:%lld} %s: %s: %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    msg, e->msg, errmsg);
 		} else {
-			syslog(priority, "[sp=%d, code=%lld]: %s: %s",
-			    e->sp, e->code, e->msg, errmsg);
-			xlog_fprintf("[sp=%d, code=%lld]: %s: %s",
-			    e->sp, e->code, e->msg, errmsg);
+			syslog(priority, "{%s:%s:%lld} %s: %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    e->msg, errmsg);
+			xlog_fprintf("{%s:%s:%lld} %s: %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    e->msg, errmsg);
 		}
 	} else if (e->sp == XLOG_EAI && e->code != 0) {
 		if (fmt) {
-			syslog(priority, "[sp=%d, code=%lld]: %s: %s: %s",
-			    e->sp, e->code, msg, e->msg, gai_strerror(e->code));
-			xlog_fprintf("[sp=%d, code=%lld]: %s: %s: %s",
-			    e->sp, e->code, msg, e->msg, gai_strerror(e->code));
+			syslog(priority, "{%s:%s:%lld} %s: %s: %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    msg, e->msg, gai_strerror(e->code));
+			xlog_fprintf("{%s:%s:%lld} %s: %s: %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    msg, e->msg, gai_strerror(e->code));
 		} else {
-			syslog(priority, "[sp=%d, code=%lld]: %s: %s",
-			    e->sp, e->code, e->msg, gai_strerror(e->code));
-			xlog_fprintf("[sp=%d, code=%lld]: %s: %s",
-			    e->sp, e->code, e->msg, gai_strerror(e->code));
+			syslog(priority, "{%s:%s:%lld} %s: %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    e->msg, gai_strerror(e->code));
+			xlog_fprintf("{%s:%s:%lld} %s: %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    e->msg, gai_strerror(e->code));
 		}
 	} else if (e->sp == XLOG_SSL && e->code != 0) {
 		ERR_error_string_n(e->code, errmsg, sizeof(errmsg));
 		if (fmt) {
-			syslog(priority, "[sp=%d, code=%lld]: %s: %s: %s",
-			    e->sp, e->code, msg, e->msg, errmsg);
-			xlog_fprintf("[sp=%d, code=%lld]: %s: %s: %s",
-			    e->sp, e->code, msg, e->msg, errmsg);
+			syslog(priority, "{%s:%s:%lld} %s: %s: %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    msg, e->msg, errmsg);
+			xlog_fprintf("{%s:%s:%lld} %s: %s: %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    msg, e->msg, errmsg);
 		} else {
-			syslog(priority, "[sp=%d, code=%lld]: %s: %s",
-			    e->sp, e->code, e->msg, errmsg);
-			xlog_fprintf("[sp=%d, code=%lld]: %s: %s",
-			    e->sp, e->code, e->msg, errmsg);
+			syslog(priority, "{%s:%s:%lld} %s: %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    e->msg, errmsg);
+			xlog_fprintf("{%s:%s:%lld} %s: %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    e->msg, errmsg);
 		}
 	} else {
 		if (fmt) {
-			syslog(priority, "[sp=%d, code=%lld]: %s: %s",
-			    e->sp, e->code, msg, e->msg);
-			xlog_fprintf("[sp=%d, code=%lld]: %s: %s",
-			    e->sp, e->code, msg, e->msg);
+			syslog(priority, "{%s:%s:%lld} %s: %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    msg, e->msg);
+			xlog_fprintf("{%s:%s:%lld} %s: %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    msg, e->msg);
 		} else {
-			syslog(priority, "[sp=%d, code=%lld]: %s",
-			    e->sp, e->code, e->msg);
-			xlog_fprintf("[sp=%d, code=%lld]: %s",
-			    e->sp, e->code, e->msg);
+			syslog(priority, "{%s:%s:%lld} %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    e->msg);
+			xlog_fprintf("{%s:%s:%lld} %s",
+			    priostr(priority), spacestr(e->sp), e->code,
+			    e->msg);
 		}
 	}
 }
@@ -306,8 +375,10 @@ xlog_strerror(int priority, int err, const char *fmt, ...)
 	va_end(ap);
 
 	strerror_r(err, errmsg, sizeof(errmsg));
-	syslog(priority, "%s: %s", msg, errmsg);
-	xlog_fprintf("%s: %s", msg, errmsg);
+	syslog(priority, "{%s:%s:%d} %s: %s",
+	    priostr(priority), spacestr(XLOG_ERRNO), err, msg, errmsg);
+	xlog_fprintf("{%s:%s:%d} %s: %s",
+	    priostr(priority), spacestr(XLOG_ERRNO), err, msg, errmsg);
 }
 
 void
@@ -320,17 +391,17 @@ xerr_print(const struct xerr *e)
 
 	if (e->sp == XLOG_ERRNO && e->code != 0) {
 		strerror_r(e->code, errmsg, sizeof(errmsg));
-		warnx("[sp=%d, code=%lld]: %s: %s",
-		    e->sp, e->code, e->msg, errmsg);
+		warnx("{%s:%lld} %s: %s", spacestr(e->sp), e->code,
+		    e->msg, errmsg);
 	} else if (e->sp == XLOG_EAI && e->code != 0) {
-		warnx("[sp=%d, code=%lld]: %s: %s",
-		    e->sp, e->code, e->msg, gai_strerror(e->code));
+		warnx("{%s:%lld} %s: %s", spacestr(e->sp), e->code,
+		    e->msg, gai_strerror(e->code));
 	} else if (e->sp == XLOG_SSL && e->code != 0) {
 		ERR_error_string_n(e->code, errmsg, sizeof(errmsg));
-		warnx("[sp=%d, code=%lld]: %s: %s",
-		    e->sp, e->code, e->msg, errmsg);
+		warnx("{%s:%lld} %s: %s",
+		    spacestr(e->sp), e->code, e->msg, errmsg);
 	} else
-		warnx("[sp=%d, code=%lld]: %s", e->sp, e->code, e->msg);
+		warnx("{%s:%lld} %s", spacestr(e->sp), e->code, e->msg);
 }
 
 int
