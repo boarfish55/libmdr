@@ -759,7 +759,8 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 	 * and store in our retry_buf.
 	 */
 	if ((pending = BIO_get_mem_data(t->w, &bio_data)) <= 0)
-		abort();
+		return XERRF(e, XLOG_APP, XLOG_FAIL,
+		    "BIO_get_mem_data() unexpectedly returned %d", pending);
 	r = write(t->fd, bio_data, pending);
 	if (r == -1)
 		return XERRF(e, XLOG_ERRNO, errno, "write");

@@ -410,11 +410,20 @@ mdr_unpack_str_nochk(struct mdr *m, const char **ref, uint64_t *len)
 	    == MDR_FAIL)
 		return MDR_FAIL;
 
+	/*
+	 * A packed string can never be zero bytes; it should always
+	 * at least pack a \0.
+	 */
+	if (bytes_sz == 0) {
+		errno = EBADMSG;
+		return MDR_FAIL;
+	}
+
 	if (len != NULL)
 		*len = bytes_sz - 1;
 
 	if ((*ref)[bytes_sz - 1] != '\0') {
-		errno = EOVERFLOW;
+		errno = EBADMSG;
 		return MDR_FAIL;
 	}
 

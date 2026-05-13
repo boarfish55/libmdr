@@ -377,7 +377,7 @@ spawnproc_init(struct spawnproc *sp, int nochdir, const char *execpromises,
 		memcpy(CMSG_DATA(cmsg), fds, sizeof(fds));
 again:
 		if (sendmsg(sv[1], &msg, 0) == -1) {
-			if (errno == -1)
+			if (errno == EINTR)
 				goto again;
 			xlog_strerror(LOG_ERR, errno, "%s: sendmsg (%d)",
 			    __func__, errno);
