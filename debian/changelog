@@ -1,3 +1,9 @@
+libmdr (0.8.0-2) unstable; urgency=medium
+
+  * refresh symbols
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Tue, 12 May 2026 21:24:04 -0400
+
 libmdr (0.8.0-1) unstable; urgency=medium
 
   * Add xlog_init2() which lets specify the syslog facility
