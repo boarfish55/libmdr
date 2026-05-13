@@ -1,3 +1,12 @@
+libmdr (0.8.0-1) unstable; urgency=medium
+
+  * Add xlog_init2() which lets specify the syslog facility
+  * Change how we display context info on xlog lines and add priority
+  * Add mdrd_purge_sessions_cb() which can invoke a callback on the purged
+    sessions
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Tue, 12 May 2026 21:21:35 -0400
+
 libmdr (0.7.0-2) unstable; urgency=medium
 
   * Refresh symbols and add a helper script
