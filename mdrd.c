@@ -1821,12 +1821,6 @@ main(int argc, char **argv)
 			 * Block most common signals to avoid exiting while
 			 * holding the counter read lock.
 			 */
-			if (sigaction(SIGINT, &act, NULL) == -1 ||
-			    sigaction(SIGHUP, &act, NULL) == -1 ||
-			    sigaction(SIGQUIT, &act, NULL) == -1 ||
-			    sigaction(SIGTERM, &act, NULL) == -1) {
-				err(1, "sigaction");
-			}
 			read_counters();
 			exit(0);
 		}
