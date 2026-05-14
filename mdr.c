@@ -152,6 +152,7 @@ RB_GENERATE(mdr_registry_tree, mdr_spec, entry, speccmp);
 static uint64_t
 mdr_size(const struct mdr *m)
 {
+	// TODO: unaligned read?
 	return be64toh(*m->size);
 }
 
@@ -164,6 +165,7 @@ mdr_tell(const struct mdr *m)
 static uint32_t
 mdr_features(const struct mdr *m)
 {
+	// TODO: unaligned read?
 	return be32toh(*m->features);
 }
 
@@ -224,6 +226,7 @@ mdr_can_fit(struct mdr *m, size_t n)
 static ptrdiff_t
 mdr_update_size(struct mdr *m)
 {
+	// TODO: unaligned write?
 	*m->size = htobe64(mdr_tell(m));
 	/*
 	 * We return the size without trailing bytes to make
@@ -244,6 +247,7 @@ mdr_pack_num_nochk(struct mdr *m, uint8_t type, union mdr_num_v v)
 		break;
 	case MDR_U16:
 	case MDR_I16:
+		// TODO: unaligned write?
 		*(uint16_t *)m->pos = htobe16(v.u16);
 		m->pos += sizeof(uint16_t);
 		break;
