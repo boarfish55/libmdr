@@ -441,8 +441,10 @@ do_tls(struct pmdr *m, const char *target, const char *key_path,
 		ssl_err();
 
 	strlcpy(host, target, sizeof(host));
-	if ((p = strstr(host, ":")) != NULL)
+	if ((p = strrchr(host, ':')) != NULL)
 		*p = '\0';
+	// TODO: eventually add X509_VERIFY_PARAM_set1_ip_asc for IP-literal
+	// targets
 	if (!SSL_set1_host(ssl, host))
 		ssl_err();
 	if (!SSL_set_tlsext_host_name(ssl, host))
