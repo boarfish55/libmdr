@@ -730,17 +730,19 @@ mdr_unpack_array(struct mdr *m, uint8_t type, struct umdr_vec_ah *ah)
 
 		/*
 		 * We can at most return as many arrays as we can fit
-		 * single-byte strings so bound how many items we report so
-		 * the caller doesn't have to.
+		 * single-byte (empty) strings, so do a sanity check on
+		 * the array size so the caller doesn't have to worry about
+		 * ah->size being stupidly large.
 		 *
 		 * For MDRs, size is message-specific, but we should ensure
 		 * we have enough bytes to at least fit as many MDR headers.
 		 */
-		if (mdr_size(m) - mdr_tell(m) <
-		    ((type == MDR_AS) ?
-		     ah->size :
-		     ah->size * mdr_hdr_size(0))) {
-			errno = EOVERFLOW;
+		if ((type == MDR_AS && (mdr_size(m) - mdr_tell(m) < ah->size))
+		    ||
+		    (type == MDR_AM &&
+		     ((mdr_size(m) - mdr_tell(m)) / mdr_hdr_size(0)
+		      < ah->size))) {
+			errno = EBADMSG;
 			return MDR_FAIL;
 		}
 		m->pos += ah->size;
