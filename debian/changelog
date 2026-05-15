@@ -1,3 +1,25 @@
+libmdr (0.8.2-1) unstable; urgency=medium
+
+  * Don't let decoding be fooled by a massive array size for strings/mdrs that
+    would never be able to fit in a message of a given size. This reduces the
+    burden on users when allocating an array; if they bound their message
+    sizes, the allocated array will also be bounded.
+  * Fix possible stall in client session if multiple SSL records are read
+    from the socket in one call. SSL_read() will read at most 1 processed
+    record so we have to loop on SSL_read() to make sure to drain our
+    BIO_s_mem.
+  * Fix rcvlowat in situations where we could clamp the value to 2^14
+  * Tweak README
+  * eliminate unaligned reads/writes
+  * Remove sigaction from 'stat' command. First off it was not properly
+    uninitialized and generally not useful for a short interactive command.
+  * Fix dirent underflow
+  * Fix possible out of bounds reads for string/mdr arrays
+  * Fix another integer overflow which could allow out-of-bounds array access
+  * Make sure to enable host validation during SSL verification
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Thu, 14 May 2026 22:40:46 -0400
+
 libmdr (0.8.1-1) unstable; urgency=medium
 
   * Fix a remote crash when sending zero-byte strings to mdrd
