@@ -1,6 +1,6 @@
 CC = cc
 EXTRA_CFLAGS =
-VERSION = 0.8.1
+VERSION = 0.8.2
 VERSION_MAJOR != echo ${VERSION} | cut -d. -f 1
 CFLAGS = -Wall -g ${EXTRA_CFLAGS}
 INCLUDES = -I.
