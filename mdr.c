@@ -569,7 +569,7 @@ umdr_vec_asm(struct umdr_vec_ah *h, uint8_t type, void *dst, int32_t maxlen)
 	int          i;
 	uint64_t     sz;
 	uint32_t     features;
-	const void  *pos;
+	const void  *pos, *end;
 
 	if (h == NULL || dst == NULL || maxlen < 1) {
 		errno = EINVAL;
@@ -577,22 +577,42 @@ umdr_vec_asm(struct umdr_vec_ah *h, uint8_t type, void *dst, int32_t maxlen)
 	}
 
 	pos = h->p;
-	/* We can skip the packed size, we don't need it here. */
-	pos += sizeof(uint64_t);
+	end = pos + h->size;
 
 	for (i = 0; i < MIN(maxlen, h->length); i++) {
 		if (type == MDR_S) {
+			if (end - pos < sizeof(uint8_t)) {
+				errno = EBADMSG;
+				return MDR_FAIL;
+			}
 			sz = *(uint8_t *)pos;
 			if (sz & 0x80) {
+				if (end - pos < sizeof(uint64_t)) {
+					errno = EBADMSG;
+					return MDR_FAIL;
+				}
 				sz = be64buftoh(pos) & 0x7fffffffffffffff;
 				pos += sizeof(uint64_t);
 			} else
 				pos += sizeof(uint8_t);
 
+			if (end - pos < sz) {
+				errno = EBADMSG;
+				return MDR_FAIL;
+			}
 			((const char **)dst)[i] = (const char *)pos;
 			pos += sz;
 		} else if (type == MDR_M) {
+			if (end - pos < sizeof(uint64_t)) {
+				errno = EBADMSG;
+				return MDR_FAIL;
+			}
 			sz = be64buftoh(pos);
+			if (end - pos < sz) {
+				errno = EBADMSG;
+				return MDR_FAIL;
+			}
+
 			features = be32buftoh(pos + sizeof(uint64_t));
 			if (umdr_init(((struct umdr *)dst) + i,
 			    pos, sz, features) == MDR_FAIL)
@@ -641,7 +661,6 @@ static ptrdiff_t
 mdr_unpack_array(struct mdr *m, uint8_t type, struct umdr_vec_ah *ah)
 {
 	uint32_t packed_n;
-	uint64_t asize;
 
 	if (!mdr_check_next_type(m, type))
 		return MDR_FAIL;
@@ -661,6 +680,8 @@ mdr_unpack_array(struct mdr *m, uint8_t type, struct umdr_vec_ah *ah)
 	ah->type = type;
 	ah->length = packed_n;
 	ah->p = m->pos;
+	/* Only relevant for string and mdr arrays */
+	ah->size = 0;
 
 	switch (type) {
 	case MDR_AU8:
@@ -698,28 +719,31 @@ mdr_unpack_array(struct mdr *m, uint8_t type, struct umdr_vec_ah *ah)
 		m->pos += sizeof(uint64_t) * packed_n;
 		return mdr_tell(m);
 	case MDR_AS:
+	case MDR_AM:
+		if (mdr_size(m) - mdr_tell(m) < sizeof(uint64_t)) {
+			errno = EAGAIN;
+			return MDR_FAIL;
+		}
+		ah->size = be64buftoh(m->pos);
+		m->pos += sizeof(uint64_t);
+		ah->p = m->pos;
+
 		/*
 		 * We can at most return as many arrays as we can fit
 		 * single-byte strings so bound how many items we report so
 		 * the caller doesn't have to.
+		 *
+		 * For MDRs, size is message-specific, but we should ensure
+		 * we have enough bytes to at least fit as many MDR headers.
 		 */
-		asize = be64buftoh(m->pos);
-		m->pos += sizeof(uint64_t);
-		if (mdr_size(m) - mdr_tell(m) < asize) {
+		if (mdr_size(m) - mdr_tell(m) <
+		    ((type == MDR_AS) ?
+		     ah->size :
+		     ah->size * mdr_hdr_size(0))) {
 			errno = EOVERFLOW;
 			return MDR_FAIL;
 		}
-		m->pos += asize;
-		break;
-	case MDR_AM:
-		/* Size is item-specific, we handle it below. */
-		asize = be64buftoh(m->pos);
-		m->pos += sizeof(uint64_t);
-		if (mdr_size(m) - mdr_tell(m) < asize * mdr_hdr_size(0)) {
-			errno = EOVERFLOW;
-			return MDR_FAIL;
-		}
-		m->pos += asize;
+		m->pos += ah->size;
 		break;
 	default:
 		errno = EAGAIN;
