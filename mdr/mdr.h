@@ -249,6 +249,7 @@ struct umdr_vec_ah
 	uint8_t     type;
 	uint32_t    length;
 	const void *p;
+	uint64_t    size;
 };
 
 /* Unpacking MDR vector */

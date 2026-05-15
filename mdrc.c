@@ -394,17 +394,18 @@ ssl_err()
 
 void
 do_tls(struct pmdr *m, const char *target, const char *key_path,
-    const char *crt_path)
+    const char *crt_path, const char *ca_path)
 {
 	SSL_CTX         *ctx;
 	BIO             *b;
 	SSL             *ssl;
 	int              i, j, r, len;
 	int              fd;
-	char            *buf;
+	char            *buf, *p;
 	size_t           buf_sz;
 	struct umdr      reply;
 	struct timespec  delay_ns;
+	char             host[256];
 
 	if (pmdr_size(m) >= INT_MAX)
 		errx(1, "payload too large for sending");
@@ -417,7 +418,10 @@ do_tls(struct pmdr *m, const char *target, const char *key_path,
 	else
 		SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
 
-	if (!SSL_CTX_set_default_verify_paths(ctx))
+	if (ca_path == NULL && !SSL_CTX_set_default_verify_paths(ctx))
+		ssl_err();
+	else if (ca_path != NULL &&
+	    !SSL_CTX_load_verify_locations(ctx, ca_path, NULL))
 		ssl_err();
 
 	if (key_path != NULL && crt_path != NULL) {
@@ -434,6 +438,16 @@ do_tls(struct pmdr *m, const char *target, const char *key_path,
 
 	BIO_get_ssl(b, &ssl);
 	if (ssl == NULL)
+		ssl_err();
+
+	strlcpy(host, target, sizeof(host));
+	if ((p = strrchr(host, ':')) != NULL)
+		*p = '\0';
+	// TODO: eventually add X509_VERIFY_PARAM_set1_ip_asc for IP-literal
+	// targets
+	if (!SSL_set1_host(ssl, host))
+		ssl_err();
+	if (!SSL_set_tlsext_host_name(ssl, host))
 		ssl_err();
 
 	SSL_set_mode(ssl, SSL_MODE_AUTO_RETRY);
@@ -598,9 +612,10 @@ main(int argc, char **argv)
 	const char    *target = NULL;
 	const char    *key_path = NULL;
 	const char    *crt_path = NULL;
+	const char    *ca_path = NULL;
 	struct pmdr    m;
 
-	while ((opt = getopt(argc, argv, "hdit:k:c:n:D:B:")) != -1) {
+	while ((opt = getopt(argc, argv, "hdit:k:c:C:n:D:B:")) != -1) {
 		switch (opt) {
 		case 'h':
 			usage();
@@ -619,6 +634,9 @@ main(int argc, char **argv)
 			break;
 		case 'c':
 			crt_path = optarg;
+			break;
+		case 'C':
+			ca_path = optarg;
 			break;
 		case 'B':
 			rcvbuf = atoi(optarg);
@@ -725,7 +743,7 @@ main(int argc, char **argv)
 		return 0;
 	}
 
-	do_tls(&m, target, key_path, crt_path);
+	do_tls(&m, target, key_path, crt_path, ca_path);
 	mdr_registry_clear();
 	return 0;
 }

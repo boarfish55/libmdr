@@ -16,7 +16,8 @@ openssl req -x509 -nodes -config mdrd_ssl.cnf -newkey ec \
 	-keyout ca/key.pem \
 	-out ca/root.pem -outform PEM -days 3650 \
 	-extensions root_ext \
-	-subj "/emailAddress=cert@$DOMAIN/O=$ORG/CN=$ORG CA"
+	-subj "/emailAddress=cert@$DOMAIN/O=$ORG/CN=$ORG CA" \
+	-addext "subjectAltName = DNS:localhost"
 
 # Create a "client1" cert request
 rm -f client1/*

@@ -681,24 +681,26 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 	 * large enough to drain the underlying BIO_s_mem, since we
 	 * don't have the TLS overhead.
 	 */
-	if ((r = SSL_read(t->ssl, buf, sizeof(buf))) <= 0) {
-		r = SSL_get_error(t->ssl, r);
-		switch (r) {
-		case SSL_ERROR_WANT_READ:
-		case SSL_ERROR_WANT_WRITE:
-		case SSL_ERROR_ZERO_RETURN:
-			return 0;
-		default:
-			return XERRF(e, XLOG_SSL, r, "SSL_read");
+	do {
+		if ((r = SSL_read(t->ssl, buf, sizeof(buf))) <= 0) {
+			r = SSL_get_error(t->ssl, r);
+			switch (r) {
+			case SSL_ERROR_WANT_READ:
+			case SSL_ERROR_WANT_WRITE:
+				// TODO: do we need to make sure writes are
+				// enabled here?
+			case SSL_ERROR_ZERO_RETURN:
+				return 0;
+			default:
+				return XERRF(e, XLOG_SSL, r, "SSL_read");
+			}
 		}
-	}
-
-	l->counters.ssl_bytes_in += r;
-
-	if (l->client_msg_in_cb(t, buf, r, &t->client_cb_data) == -1) {
-		return XERRF(e, XLOG_APP, XLOG_CALLBACK_ERR,
-		    "t->client_cb_data failed");
-	}
+		l->counters.ssl_bytes_in += r;
+		if (l->client_msg_in_cb(t, buf, r, &t->client_cb_data) == -1) {
+			return XERRF(e, XLOG_APP, XLOG_CALLBACK_ERR,
+			    "t->client_cb_data failed");
+		}
+	} while (SSL_pending(t->ssl) > 0);
 
 	return 0;
 }
@@ -975,7 +977,7 @@ tlsev_ev_read(struct tlsev_listener *l, struct tlsev *t)
 		xlog(LOG_DEBUG, NULL, "%s: updating SO_RCVLOWAT to %d on fd %d",
 		    __func__, t->rcvlowat, t->fd);
 		if (setsockopt(t->fd, SOL_SOCKET, SO_RCVLOWAT,
-		    &t->tlswant, sizeof(t->tlswant)) == -1)
+		    &t->rcvlowat, sizeof(t->rcvlowat)) == -1)
 			xlog_strerror(LOG_ERR, errno, "setsockopt: %d", t->fd);
 	}
 

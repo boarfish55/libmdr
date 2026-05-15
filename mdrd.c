@@ -937,7 +937,8 @@ scan_crls(struct crl_stat *dst, size_t dst_sz, X509_STORE *store,
 			if (de->d_type != DT_REG)
 				continue;
 			de_len = strlen(de->d_name);
-			if (strcmp(de->d_name + (de_len - 4), ".crl") != 0)
+			if (de_len < 4 ||
+			    strcmp(de->d_name + (de_len - 4), ".crl") != 0)
 				continue;
 
 			snprintf(crl_path, sizeof(crl_path), "%s/%s",
@@ -1821,12 +1822,6 @@ main(int argc, char **argv)
 			 * Block most common signals to avoid exiting while
 			 * holding the counter read lock.
 			 */
-			if (sigaction(SIGINT, &act, NULL) == -1 ||
-			    sigaction(SIGHUP, &act, NULL) == -1 ||
-			    sigaction(SIGQUIT, &act, NULL) == -1 ||
-			    sigaction(SIGTERM, &act, NULL) == -1) {
-				err(1, "sigaction");
-			}
 			read_counters();
 			exit(0);
 		}
