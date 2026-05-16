@@ -303,9 +303,11 @@ fail:
 			free(p);
 		}
 	}
-	if (t->ssl != NULL)
-		SSL_free(t->ssl);
-	free(t);
+	if (t != NULL) {
+		if (t->ssl != NULL)
+			SSL_free(t->ssl);
+		free(t);
+	}
 	return NULL;
 }
 
@@ -644,7 +646,7 @@ fail:
 			free(p);
 		}
 	}
-	free(t->ssl);
+	SSL_free(t->ssl);
 	free(t);
 	return -1;
 }
@@ -876,8 +878,7 @@ tlsev_init(struct tlsev_listener *l, int *lsock, size_t lsock_len,
 
 	if (idxheap_init(&l->tlsev_store,
 	    (l->max_clients / 2 < 1) ? 2 : l->max_clients / 2,
-	    &tlsev_timeout_cmp, &tlsev_match,
-	    (void(*)(void *))&tlsev_close, &tlsev_hash))
+	    &tlsev_timeout_cmp, &tlsev_match, NULL, &tlsev_hash))
 		return -1;
 
 	RB_INIT(&l->peer_tree);
@@ -1067,7 +1068,12 @@ tlsev_add_fd_cb(struct tlsev_listener *l, struct tlsev_fd_cb *fd_cb)
 void
 tlsev_destroy(struct tlsev_listener *l)
 {
+	struct tlsev *t;
+
+	while ((t = idxheap_top(&l->tlsev_store)) != NULL)
+		tlsev_close(t);
 	idxheap_free(&l->tlsev_store);
+
 	if (l->fd_callbacks)
 		free(l->fd_callbacks);
 	if (l->events)

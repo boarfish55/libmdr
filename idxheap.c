@@ -141,11 +141,9 @@ idxheap_free(struct idxheap *ih)
 {
 	int i;
 
-	if (ih->destroy == NULL)
-		return;
-
 	for (i = 0; i < ih->n; i++) {
-		ih->destroy(ih->h[i]->data);
+		if (ih->destroy != NULL)
+			ih->destroy(ih->h[i]->data);
 		free(ih->h[i]);
 	}
 	free(ih->h);
