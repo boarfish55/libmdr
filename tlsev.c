@@ -780,7 +780,7 @@ tlsev_ev_write(struct tlsev_listener *l, struct tlsev *t)
 				    EV_ADD) == -1) {
 					xlog_strerror(LOG_ERR, errno,
 					    "kq_ev_set");
-					tlsev_close(l, t);
+					tlsev_close(t);
 					return -1;
 				}
 				xlog(LOG_DEBUG, NULL,
