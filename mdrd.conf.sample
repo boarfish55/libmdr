@@ -9,7 +9,20 @@ monitor_ssl_files = true
 crl_scan_interval_sec = 10
 port = 9790
 listen_backlog = 1024
+
+# Number of listener processes. Each prefork is an independent accept loop with
+# its own client table and event buffers; see the heap notes on max_clients
+# below to size total memory.
+#
+# For maximum throughput, set this to the number of cores on the host: each
+# prefork pairs a listener (TLS, I/O) with a backend (app logic), and the two
+# trade off the core well in practice; the listener is usually busy on a
+# handshake or syscall while the backend is computing a response, and
+# vice-versa. With short-lived TLS connections (where handshakes dominate CPU),
+# prefork = nproc is hard to beat; with mostly idle long-lived connections you
+# can get away with fewer.
 prefork = 2
+
 pid_file = "/tmp/mdrd.pid"
 counters_sock = "/tmp/mdrd_counters.sock"
 dbg_delay_to_backend_seconds = 0
@@ -19,7 +32,23 @@ dbg_delay_to_backend_seconds = 0
 # certificate verification before granting the request any privilege.
 require_client_cert = false
 
-# Maximum number of concurrent client connections per fork
+# Maximum number of concurrent client connections per fork.
+#
+# Approximate per-client heap during active I/O:
+#   ~300 B           tlsev bookkeeping
+#   ~10-20 KiB       OpenSSL session state
+#   up to ~32 KiB    TLS record BIOs (read + write)
+#   up to ~16 KiB    retry_buf when the TCP send buffer is full
+#   max_payload_size client message reassembly buffer
+#   ~2x max_cert_size  peer certificate (encoded + parsed)
+#
+# Rule of thumb: ~60 KiB + max_payload_size + 2 * max_cert_size per
+# active connection. With the defaults below and max_clients = 10000,
+# expect each prefork to hold on the order of 850 MiB resident at peak,
+# before counting per-socket kernel buffers (see rcvbuf / sndbuf).
+#
+# Static per-prefork overhead is small (events buffer + idxheap, < 1 MiB
+# for max_clients = 10000 on Linux).
 max_clients = 10000
 
 # Maximum number of concurrent client connections some the same IP address,
@@ -52,7 +81,20 @@ socket_timeout_max = 300
 # message so the backend can receive message over this size.
 max_payload_size = 16384
 
-# Put an upper bound to avoid clients sending absurd certs.
+# Put an upper bound to avoid clients sending absurd certs. Only the
+# peer's leaf cert is forwarded to the backend, not the chain, so this
+# only needs to fit a single cert.
+#
+# Approximate leaf cert sizes:
+#   RSA-2048                            ~1.2 KiB
+#   ECDSA-P256 / P384                   ~0.7 - 0.8 KiB
+#   ML-DSA-44  (NIST level 2)           ~2.5 - 3 KiB
+#   ML-DSA-65  (level 3)                ~4 - 5 KiB
+#   ML-DSA-87  (level 5)                ~7 - 8 KiB
+#   hybrid ECDSA-P384 + ML-DSA-65       ~6 KiB
+#
+# 4 KiB is comfortable for classical certs but will reject most ML-DSA
+# leaves; bump to 8192 or 16384 for post-quantum deployments.
 max_cert_size = 4096
 
 allowed_mdr_domains = [ 0x00000000 ]

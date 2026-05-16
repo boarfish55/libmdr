@@ -170,6 +170,12 @@ writeall(int fd, const void *buf, size_t count)
 static void
 spawnproc_reap(int sig)
 {
+	/*
+	 * We don't shutdown on anything for TERM/HUP; this is intentional.
+	 * When the parent exits, the socketpair will be closed and we'll
+	 * exit cleanly. A shutdown signal directly to the executor would
+	 * make the parent broken.
+	 */
 	while (waitpid(-1, NULL, WNOHANG) > 0);
 }
 
@@ -519,8 +525,8 @@ spawnproc_exec(struct spawnproc *sp, char *const argv[], pid_t *cpid,
 			memcpy(fds, CMSG_DATA(cmsg), sizeof(fds));
 			*in = fds[0];
 			*out = fds[1];
+			break;
 		}
-		break;
 	}
 
 	return smsg.status;
@@ -624,6 +630,7 @@ strarray_add(char **a, const char *str)
 	size_t   sz;
 	size_t   len = strlen(str) + 1;
 	char    *p, *start;
+	char   **tmp;
 
 	if (a == NULL) {
 		if ((a = malloc((sizeof(char *) * 2) + len)) == NULL)
@@ -637,8 +644,9 @@ strarray_add(char **a, const char *str)
 	for (sz = sizeof(char *), i = 0; a[i] != NULL; i++)
 		sz += sizeof(char *) + strlen(a[i]) + 1;
 
-	if ((a = realloc(a, sz + sizeof(char *) + len)) == NULL)
+	if ((tmp = realloc(a, sz + sizeof(char *) + len)) == NULL)
 		return NULL;
+	a = tmp;
 
 	memmove(((char *)a) + (sizeof(char *) * (i + 2)),
 	    ((char *)a) + (sizeof(char *) * (i + 1)),

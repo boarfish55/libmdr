@@ -377,14 +377,16 @@ static int
 pack_bein(struct pmdr *m, uint64_t id, int fd, struct sockaddr_in6 *peer,
     struct umdr *msg, X509 *peer_cert)
 {
-	int              cert_len;
+	int              cert_len = 0;
 	unsigned char   *cert_buf;
 	struct pmdr_vec  pv[6];
 
-	cert_len = i2d_X509(peer_cert, NULL);
-	if (cert_len < 0) {
-		xlog(LOG_ERR, NULL, "%s: i2d_X509() < 0", __func__);
-		return -1;
+	if (peer_cert != NULL) {
+		cert_len = i2d_X509(peer_cert, NULL);
+		if (cert_len < 0) {
+			xlog(LOG_ERR, NULL, "%s: i2d_X509() < 0", __func__);
+			return -1;
+		}
 	}
 
 	if (cert_len > mdrd_conf.max_cert_size) {
@@ -415,7 +417,8 @@ pack_bein(struct pmdr *m, uint64_t id, int fd, struct sockaddr_in6 *peer,
 		xlog_strerror(LOG_ERR, errno, "%s: mdr_pack", __func__);
 		return -1;
 	}
-	i2d_X509(peer_cert, &cert_buf);
+	if (peer_cert != NULL)
+		i2d_X509(peer_cert, &cert_buf);
 
 	return 0;
 }
