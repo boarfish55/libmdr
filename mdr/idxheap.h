@@ -41,6 +41,7 @@ void *idxheap_lookup(struct idxheap *, const void *);
 void *idxheap_update(struct idxheap *, const void *);
 void *idxheap_removei(struct idxheap *, int);
 void *idxheap_top(struct idxheap *);
+void *idxheap_pop(struct idxheap *);
 void *idxheap_removek(struct idxheap *, void *);
 
 __END_DECLS

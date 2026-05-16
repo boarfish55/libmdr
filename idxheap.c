@@ -246,6 +246,12 @@ idxheap_removei(struct idxheap *ih, int i)
 void *
 idxheap_top(struct idxheap *ih)
 {
+	return idxheap_peek(ih, 0);
+}
+
+void *
+idxheap_pop(struct idxheap *ih)
+{
 	return idxheap_removei(ih, 0);
 }
 
