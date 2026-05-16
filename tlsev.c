@@ -639,9 +639,12 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 		xlog(LOG_ERR, NULL, "%s: idxheap_update: returned NULL "
 		    "for fd %d", __func__, t->fd);
 
-	if ((r = read(t->fd, buf, sizeof(buf))) == -1)
+again:
+	if ((r = read(t->fd, buf, sizeof(buf))) == -1) {
+		if (errno == EINTR)
+			goto again;
 		return XERRF(e, XLOG_ERRNO, errno, "read");
-	else if (r == 0)
+	} else if (r == 0)
 		return XERRF(e, XLOG_APP, XLOG_EOF, "read EOF");
 
 	l->counters.raw_bytes_in += r;
@@ -667,7 +670,8 @@ tlsev_in(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 				return XERRF(e, XLOG_ERRNO,
 				    errno, "SSL_accept");
 			case SSL_ERROR_SSL:
-				return XERRF(e, XLOG_SSL, r, "SSL_accept");
+				return XERRF(e, XLOG_SSL, ERR_get_error(),
+				    "SSL_accept");
 			default:
 				return XERRF(e, XLOG_APP, XLOG_FAIL,
 				    "SSL_accept unhandled error");
@@ -725,9 +729,15 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 	 * send them now before we pull more from our read BIO.
 	 */
 	if (t->retry_buf != NULL) {
+again:
 		r = write(t->fd, t->retry_buf_pos, t->retry_len);
-		if (r == -1)
+		if (r == -1) {
+			if (errno == EAGAIN)
+				return 0;
+			if (errno == EINTR)
+				goto again;
 			return XERRF(e, XLOG_ERRNO, errno, "write");
+		}
 
 		xlog(LOG_DEBUG, NULL, "%s: wrote %ld bytes on fd %d",
 		    __func__, r, t->fd);
@@ -760,12 +770,24 @@ tlsev_out(struct tlsev_listener *l, struct tlsev *t, struct xerr *e)
 	 * send as much as we can. Any remaining data we'll read out
 	 * and store in our retry_buf.
 	 */
-	if ((pending = BIO_get_mem_data(t->w, &bio_data)) <= 0)
+	if ((pending = BIO_get_mem_data(t->w, &bio_data)) < 0)
 		return XERRF(e, XLOG_APP, XLOG_FAIL,
 		    "BIO_get_mem_data() unexpectedly returned %d", pending);
+
+	/*
+	 * Both t->w and retry_buf have been drained.
+	 */
+	if (pending == 0)
+		return 0;
+again2:
 	r = write(t->fd, bio_data, pending);
-	if (r == -1)
+	if (r == -1) {
+		if (errno == EAGAIN)
+			return 0;
+		if (errno == EINTR)
+			goto again2;
 		return XERRF(e, XLOG_ERRNO, errno, "write");
+	}
 
 	xlog(LOG_DEBUG, NULL, "%s: wrote %ld bytes on fd %d",
 	    __func__, r, t->fd);

@@ -600,6 +600,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		if (cb_data->buf == NULL) {
 			free(cb_data);
 			cb_data = NULL;
+			*data = NULL;
 			xlog_strerror(LOG_ERR, errno, "%s: malloc", __func__);
 			return -1;
 		}
