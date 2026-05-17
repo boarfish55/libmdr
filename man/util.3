@@ -1,0 +1,495 @@
+.\"
+.\" Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+.\"
+.\" SPDX-License-Identifier: ISC
+.\"
+.Dd $Mdocdate$
+.Dt UTIL 3
+.Os
+.Sh NAME
+.Nm daemonize ,
+.Nm drop_privileges ,
+.Nm readall ,
+.Nm writeall ,
+.Nm close_x ,
+.Nm spawn ,
+.Nm spawnproc_init ,
+.Nm spawnproc_exec ,
+.Nm spawnproc_close ,
+.Nm strarray_alloc ,
+.Nm strarray_add
+.Nd assorted process, I/O, and string-array helpers used by mdr
+.Sh SYNOPSIS
+.In mdr/util.h
+.Ft int
+.Fn daemonize "const char *program" "const char *pid_path" "int nochdir" "int noclose" "struct xerr *e"
+.Ft int
+.Fn drop_privileges "const char *user" "const char *group" "struct xerr *e"
+.Ft ssize_t
+.Fn readall "int fd" "void *buf" "size_t count"
+.Ft ssize_t
+.Fn writeall "int fd" "const void *buf" "size_t count"
+.Fn CLOSE_X "fd"
+.Ft void
+.Fn close_x "int fd" "const char *fd_name" "const char *fn" "int line"
+.Ft int
+.Fo spawn
+.Fa "char *const argv[]"
+.Fa "pid_t *pid"
+.Fa "int *in"
+.Fa "int *out"
+.Fa "const char *user"
+.Fa "const char *group"
+.Fa "struct xerr *e"
+.Fc
+.Ft int
+.Fn spawnproc_init "struct spawnproc *sp" "int nochdir" "const char *execpromises" "char **perms"
+.Ft int
+.Fo spawnproc_exec
+.Fa "struct spawnproc *sp"
+.Fa "char *const argv[]"
+.Fa "pid_t *cpid"
+.Fa "int *in"
+.Fa "int *out"
+.Fa "const char *user"
+.Fa "const char *group"
+.Fa "struct xerr *e"
+.Fc
+.Ft int
+.Fn spawnproc_close "struct spawnproc *sp"
+.Ft "char **"
+.Fn strarray_alloc "size_t n" "size_t len"
+.Ft "char **"
+.Fn strarray_add "char **a" "const char *str"
+.Sh DESCRIPTION
+.Nm util
+collects small routines that
+.Sy mdr
+needs in more than one component but that are not specific to any one
+of them: daemonisation, privilege drop, robust read/write loops, a
+small process-spawning helper, and a string-array container suitable
+for building
+.Xr execv 3
+argument lists.
+.Sh DAEMONIZATION
+.Fn daemonize
+turns the caller into a conventional Unix daemon.
+It opens
+.Fa pid_path
+exclusively, locks it with
+.Xr flock 2 ,
+.Xr fork 2 Ns s
+once and exits the parent, then
+.Xr setsid 2 Ns s ,
+re-arms
+.Xr xlog 3
+with the
+.Dv LOG_DAEMON
+facility and the program name
+.Fa program ,
+optionally
+.Xr chdir 2 Ns s
+to
+.Sy /
+and redirects the standard descriptors to
+.Pa /dev/null ,
+and finally writes the daemon's pid to the locked pid file and
+.Xr fsync 2 Ns s
+it.
+.Pp
+.Fa nochdir
+suppresses the
+.Xr chdir 2
+step; useful for daemons that must keep a specific working directory.
+.Fa noclose
+suppresses the redirection of
+.Dv stdin , stdout , stderr ;
+useful when running under a supervisor that has already arranged the
+descriptors as desired, or during foreground debug runs.
+.Pp
+The pid file descriptor is intentionally never closed in the running
+daemon: keeping its
+.Xr flock 2
+held is what prevents a second instance from starting against the same
+pid file.
+.Pp
+.Fn daemonize
+covers the same ground as the BSD
+.Xr daemon 3
+library function but bundles in the work most callers of
+.Xr daemon 3
+end up writing by hand:
+.Bl -bullet -compact
+.It
+A locked pid file is created at
+.Fa pid_path
+and the daemon's pid is written into it.
+A second invocation against the same path fails immediately on the
+.Xr flock 2 ,
+giving single-instance enforcement without a separate watchdog.
+.It
+.Xr xlog 3
+is re-armed under the
+.Dv LOG_DAEMON
+facility with
+.Fa program
+as the syslog identifier, so log lines after the fork carry the
+expected program tag instead of whatever the parent had open.
+.It
+Errors before the
+.Xr fork 2
+are reported through
+.Fa e
+in the usual
+.Vt "struct xerr"
+style rather than through
+.Va errno
+on a \-1 return; errors after the fork
+.Pq Xr setsid 2 , Xr chdir 2 , Xr open 2 No of Pa /dev/null , pid-file write
+are logged via
+.Xr xlog 3
+and cause the child to
+.Xr exit 3
+with status 1, since the parent that would have observed a return
+value has already exited.
+.El
+.Pp
+A caller that does not want the pid-file or syslog behaviour should
+keep using
+.Xr daemon 3 ;
+.Fn daemonize
+is the right choice when those concerns belong to the daemon itself.
+.Pp
+.Fn drop_privileges
+calls
+.Xr getgrnam 3
+and
+.Xr setgid 2
+.No / Xr setegid 2 ,
+then
+.Xr getpwnam 3
+and
+.Xr setuid 2
+.No / Xr seteuid 2 ,
+to switch the process to the named user and group.
+Either name may be
+.Dv NULL
+to skip its half of the change.
+The function does not perform any of the additional hardening one
+might expect (initgroups, supplementary group cleanup) and is meant to
+be called by short-lived child processes immediately before
+.Xr execv 3 .
+.Sh BLOCKING I/O LOOPS
+.Fn readall
+loops over
+.Xr read 2
+until
+.Fa count
+bytes have been read or end-of-file is reached.
+.Xr read 2 No returns interrupted by Er EINTR
+are retried automatically.
+On end-of-file before
+.Fa count
+bytes have been read, the partial count is returned;
+.Fn readall
+itself never returns a short count without explanation.
+.Pp
+.Fn writeall
+is the mirror image for
+.Xr write 2 .
+It loops until all
+.Fa count
+bytes have been written, retrying on
+.Er EINTR .
+Short writes never escape the function.
+.Pp
+Both are intended for use on blocking file descriptors, typically the
+control pipes between forked components of a service.
+They make no provision for non-blocking sockets and should not be used
+where the descriptor may return
+.Er EAGAIN .
+.Pp
+.Fn close_x
+is a wrapper around
+.Xr close 2
+that logs at
+.Dv LOG_ERR
+when the underlying
+.Xr close 2
+fails, including the source-level name of the descriptor, the
+enclosing function, and the line number passed in.
+The
+.Dv CLOSE_X
+macro captures
+.Va __func__
+and
+.Va __LINE__
+and the stringified argument automatically, so callers ordinarily
+write only
+.Fn CLOSE_X fd .
+The intent is to make accidentally-ignored close errors easy to find
+in logs.
+.Sh SPAWNING CHILD PROCESSES
+.Fn spawn
+forks a child that executes
+.Fa argv[0]
+with arguments
+.Fa argv .
+The child's
+.Dv stdin
+is connected to the pipe end returned in
+.Fa *in
+and its
+.Dv stdout
+to the pipe end returned in
+.Fa *out ,
+both from the parent's perspective.
+The child's
+.Dv stderr
+is redirected to
+.Pa /dev/null .
+If the calling process is running as
+.Sy root
+and either
+.Fa user
+or
+.Fa group
+is non-NULL,
+.Fn drop_privileges
+is invoked in the child between
+.Xr fork 2
+and
+.Xr execv 3 .
+The child's pid is returned in
+.Fa *pid .
+.Pp
+On any failure
+.Fa e
+is filled in and the function returns \-1; any pipes already opened
+are torn down so the caller never receives a half-initialized state.
+.Sh PRIVILEGED EXEC PROCESS
+For services that need to repeatedly spawn helper executables long
+after dropping privileges,
+.Fn spawnproc_init
+sets up a dedicated executor child that retains the privileges
+required to do so.
+The pair communicates over a
+.Xr socketpair 2 .
+.Pp
+.Fn spawnproc_init
+takes ownership of the executor:
+.Bl -tag -width "execpromises"
+.It Fa nochdir
+If zero, the executor
+.Xr chdir 2 Ns s
+to
+.Sy / .
+.It Fa execpromises
+On
+.Ox ,
+passed verbatim as the second argument to
+.Xr pledge 2
+so the spawned children inherit a constrained promise set.
+Ignored on other platforms.
+.It Fa perms
+On
+.Ox ,
+a NULL-terminated array of
+.Sq permissions=path
+strings handed to
+.Xr unveil 2
+inside the executor before its
+.Xr pledge 2
+call.
+A small default set covering
+.Pa /etc/passwd ,
+.Pa /etc/group ,
+the dynamic linker, and the system library paths is always unveiled
+first.
+Ignored on other platforms.
+.El
+.Pp
+Once
+.Fn spawnproc_init
+returns the executor is running and waiting for requests.
+.Pp
+.Fn spawnproc_exec
+asks the executor to run
+.Fa argv
+under the named
+.Fa user
+and
+.Fa group ,
+and returns the resulting pipes
+.Po
+.Fa *in
+for the child's
+.Dv stdin ,
+.Fa *out
+for its
+.Dv stdout
+.Pc
+together with the child's pid in
+.Fa *cpid .
+The pipes travel back from the executor through
+.Xr sendmsg 2
+.Pq Dv SCM_RIGHTS .
+The implementation is built on top of
+.Fn spawn ;
+the per-request semantics described in
+.Sx SPAWNING CHILD PROCESSES
+apply.
+The combined length of
+.Fa user ,
+.Fa group ,
+and
+.Fa argv ,
+each NUL-separated, must not exceed roughly twice
+.Dv ARG_MAX .
+.Pp
+The executor is a single-threaded request/response loop; concurrent
+calls to
+.Fn spawnproc_exec
+on the same
+.Vt "struct spawnproc"
+are not safe.
+.Pp
+.Fn spawnproc_close
+closes the socket end held by the parent.
+The executor observes the EOF, drains, and exits; pending children it
+has already spawned continue running.
+.Sh STRING ARRAYS
+.Fn strarray_alloc
+allocates a NULL-terminated
+.Vt "char **"
+array of
+.Fa n
+entries where every entry points into the same backing allocation and
+has room for
+.Fa len
+bytes of NUL-terminated content.
+The pointer-and-bytes layout means the entire array can be freed with
+a single
+.Xr free 3 .
+.Pp
+.Fn strarray_add
+returns a NULL-terminated
+.Vt "char **"
+array with the contents of
+.Fa a
+plus
+.Fa str
+appended at the end.
+The function may return a pointer different from
+.Fa a ,
+since the backing buffer is grown with
+.Xr realloc 3 ;
+the caller must replace its handle:
+.Bd -literal -offset indent
+char **argv = NULL;
+argv = strarray_add(argv, "ls");
+argv = strarray_add(argv, "-l");
+argv = strarray_add(argv, "/etc");
+.Ed
+.Pp
+.Fa a
+may be
+.Dv NULL ,
+in which case a fresh single-element array is allocated.
+On success the returned array is again freeable with a single
+.Xr free 3 .
+On failure
+.Fa a
+is left untouched and
+.Dv NULL
+is returned, with
+.Va errno
+set by the underlying allocator.
+.Sh RETURN VALUES
+.Fn daemonize ,
+.Fn drop_privileges ,
+.Fn spawn ,
+.Fn spawnproc_init ,
+and
+.Fn spawnproc_exec
+return 0 on success and \-1 on failure, with
+.Fa e
+filled in to describe the cause; see
+.Xr xlog 3 .
+.Fn spawnproc_init
+also returns \-1 if any pre-fork allocation or socket setup fails;
+errors that occur inside the executor child are logged through
+.Xr xlog 3
+and cause that child to exit with status 1.
+.Pp
+.Fn readall
+and
+.Fn writeall
+return the number of bytes transferred on success, or \-1 on failure
+with
+.Va errno
+set.
+.Fn readall
+may return less than
+.Fa count
+if it encountered end-of-file before all bytes were read.
+.Pp
+.Fn spawnproc_close
+returns the status of the underlying
+.Xr close 2 .
+.Pp
+.Fn close_x
+returns no value.
+.Pp
+.Fn strarray_alloc
+and
+.Fn strarray_add
+return a pointer to the resulting array, or
+.Dv NULL
+on allocation failure with
+.Va errno
+set.
+.Sh THREAD SAFETY
+None of these functions are reentrant against shared state of their
+own, but several touch process-global state in ways that constrain
+concurrent use:
+.Bl -bullet -compact
+.It
+.Fn daemonize
+must be called from a single-threaded program; it
+.Xr fork 2 Ns s
+and changes session leadership.
+.It
+.Fn drop_privileges
+mutates the process's uid and gid and must not race with anything
+that depends on those credentials.
+.It
+A single
+.Vt "struct spawnproc"
+is a single-threaded channel; callers that need concurrency must
+serialise around it or create one executor per worker.
+.El
+.Pp
+The remaining helpers
+.Po
+.Fn readall ,
+.Fn writeall ,
+.Fn close_x ,
+.Fn strarray_alloc ,
+.Fn strarray_add
+.Pc
+operate only on their arguments and may be called from any thread.
+.Sh SEE ALSO
+.Xr close 2 ,
+.Xr fork 2 ,
+.Xr pledge 2 ,
+.Xr unveil 2 ,
+.Xr execv 3 ,
+.Xr xlog 3
+.Sh HISTORY
+.Nm util
+first appeared in
+.Sy mdr
+0.8.0 .
+.Sh AUTHORS
+.An Pascal Lalonde Aq Mt plalonde@overnet.ca

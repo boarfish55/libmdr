@@ -1,0 +1,283 @@
+.\"
+.\" Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+.\"
+.\" SPDX-License-Identifier: ISC
+.\"
+.Dd $Mdocdate$
+.Dt IDXHEAP 3
+.Os
+.Sh NAME
+.Nm idxheap_init ,
+.Nm idxheap_free ,
+.Nm idxheap_insert ,
+.Nm idxheap_peek ,
+.Nm idxheap_top ,
+.Nm idxheap_pop ,
+.Nm idxheap_lookup ,
+.Nm idxheap_update ,
+.Nm idxheap_removei ,
+.Nm idxheap_removek
+.Nd indexed binary heap with hash lookup
+.Sh SYNOPSIS
+.In mdr/idxheap.h
+.Ft int
+.Fo idxheap_init
+.Fa "struct idxheap *ih"
+.Fa "size_t sz"
+.Fa "int (*cmp)(const void *, const void *)"
+.Fa "int (*match)(const void *, const void *)"
+.Fa "void (*destroy)(void *)"
+.Fa "uint32_t (*hash)(const void *)"
+.Fc
+.Ft void
+.Fn idxheap_free "struct idxheap *ih"
+.Ft int
+.Fn idxheap_insert "struct idxheap *ih" "void *data"
+.Ft void *
+.Fn idxheap_peek "struct idxheap *ih" "int i"
+.Ft void *
+.Fn idxheap_top "struct idxheap *ih"
+.Ft void *
+.Fn idxheap_pop "struct idxheap *ih"
+.Ft void *
+.Fn idxheap_lookup "struct idxheap *ih" "const void *key"
+.Ft void *
+.Fn idxheap_update "struct idxheap *ih" "const void *key"
+.Ft void *
+.Fn idxheap_removei "struct idxheap *ih" "int i"
+.Ft void *
+.Fn idxheap_removek "struct idxheap *ih" "void *key"
+.Sh DESCRIPTION
+The
+.Nm idxheap
+data structure is a binary heap whose elements are also indexed by a
+hash table, so that an item can be reached either by heap priority or
+by an external key without a linear scan.
+The heap is ordered as a max-heap with respect to the user-supplied
+.Fa cmp
+function: at any point the element at index 0 is the one for which
+.Fa cmp
+returns a non-positive value against every other element.
+The hash side of the structure uses chaining; its bucket count is the
+initial heap capacity passed to
+.Fn idxheap_init .
+.Pp
+The heap stores opaque
+.Vt "void *"
+payloads.
+Each payload is held in exactly one slot; the heap does not duplicate
+or refcount it.
+.Pp
+.Fn idxheap_init
+initializes
+.Fa ih
+in place.
+Its arguments are:
+.Bl -tag -width "destroy"
+.It Fa sz
+Initial heap capacity.
+The heap grows automatically as needed
+.Pq see Sx GROWTH ,
+but the hash bucket count stays at the value given here.
+.It Fa cmp
+Comparator over two payloads, with the same return-value convention as
+.Xr qsort 3 .
+The slot for which
+.Fa cmp
+returns the greatest value bubbles up to the top.
+.It Fa match
+Equality predicate over a payload and a lookup key.
+.Fn match data key
+returns non-zero when
+.Fa data
+is the entry the caller meant to address with
+.Fa key .
+The key need not be the payload itself; it can be any value the
+.Fa hash
+and
+.Fa match
+functions agree on.
+.It Fa destroy
+Optional finalizer called by
+.Fn idxheap_free
+on every remaining payload.
+Pass
+.Dv NULL
+when the caller manages payload lifetime separately.
+The heap never invokes
+.Fa destroy
+from any other entry point.
+.It Fa hash
+Hash function over a key.
+Used to pick the bucket for both insertion and lookup, so the same
+function must be used for keys and for the payloads they correspond to.
+.El
+.Pp
+.Fn idxheap_free
+releases the storage owned by the heap.
+If a
+.Fa destroy
+callback was supplied to
+.Fn idxheap_init ,
+it is invoked once on each remaining payload before its slot is
+released.
+The
+.Vt "struct idxheap"
+itself is not freed; only its internal arrays are.
+.Pp
+.Fn idxheap_insert
+inserts
+.Fa data
+into the heap and the hash table, then sifts the new entry up to its
+ordered position.
+The heap grows its internal array when the current capacity is
+exhausted; see
+.Sx GROWTH .
+The caller retains ownership of the bytes
+.Fa data
+points to; the heap only retains the pointer.
+.Pp
+.Fn idxheap_peek
+returns the payload stored at heap slot
+.Fa i
+without removing it.
+Index 0 is the top of the heap.
+The heap is not a sorted array: only the parent/child invariants are
+guaranteed, so any index other than 0 is suitable for inspection but
+not for iteration in priority order.
+.Pp
+.Fn idxheap_top
+is a convenience wrapper for
+.Fn idxheap_peek ih 0 .
+.Pp
+.Fn idxheap_pop
+removes and returns the top of the heap, restoring the heap invariant.
+.Fn idxheap_removei
+is the same but removes an arbitrary slot by index, sifting whichever
+element backfills it into place.
+.Fn idxheap_removek
+removes the slot identified by
+.Fa key
+through the
+.Fa hash
+and
+.Fa match
+callbacks.
+In all three cases the returned pointer is the payload that was
+removed; the caller becomes responsible for freeing it.
+.Pp
+.Fn idxheap_lookup
+returns the payload that
+.Fa key
+matches under
+.Fa hash
+and
+.Fa match ,
+or
+.Dv NULL
+if no such entry is present.
+The heap is not modified.
+.Pp
+.Fn idxheap_update
+is identical to
+.Fn idxheap_lookup
+but, on a hit, also re-heapifies from the matched entry's current
+position.
+It is intended for the pattern where a caller mutates the payload's
+priority through its
+.Vt "void *"
+pointer (for example, advancing a timer's deadline) and then asks the
+heap to re-order itself accordingly.
+The cost is the usual sift, not a full rebuild.
+.Sh GROWTH
+The heap array doubles in capacity when
+.Fn idxheap_insert
+would otherwise overflow it.
+The hash bucket count, however, is fixed at construction time and is
+not resized.
+Callers that expect a wide ratio of inserts to the initial
+.Fa sz
+should pass a large enough
+.Fa sz
+upfront to keep hash chains short; otherwise lookup degrades toward
+linear in chain length.
+.Sh RETURN VALUES
+.Fn idxheap_init
+returns 0 on success and \-1 on failure with
+.Va errno
+set.
+.Pp
+.Fn idxheap_insert
+returns the final heap index at which the new entry came to rest, or
+\-1 on failure with
+.Va errno
+set.
+.Pp
+.Fn idxheap_peek ,
+.Fn idxheap_top ,
+.Fn idxheap_pop ,
+.Fn idxheap_lookup ,
+.Fn idxheap_update ,
+.Fn idxheap_removei ,
+and
+.Fn idxheap_removek
+return the matching payload, or
+.Dv NULL
+if no such entry exists.
+The index-based variants set
+.Va errno
+to
+.Er ERANGE
+when called with an out-of-range
+.Fa i ;
+the key-based variants do not set
+.Va errno .
+.Pp
+.Fn idxheap_free
+returns no value.
+.Sh ERRORS
+.Fn idxheap_init
+fails with:
+.Bl -tag -width Er
+.It Bq Er EINVAL
+.Fa cmp ,
+.Fa match ,
+or
+.Fa hash
+is
+.Dv NULL .
+.It Bq Er ENOMEM
+The heap or bucket arrays could not be allocated.
+.El
+.Pp
+.Fn idxheap_insert
+fails with:
+.Bl -tag -width Er
+.It Bq Er ENOMEM
+The heap array could not be grown to accommodate the new entry.
+.El
+.Pp
+.Fn idxheap_peek
+and
+.Fn idxheap_removei
+fail with:
+.Bl -tag -width Er
+.It Bq Er ERANGE
+.Fa i
+is greater than or equal to the current number of entries in the heap.
+.El
+.Sh THREAD SAFETY
+.Nm
+provides no internal locking.
+A single
+.Vt "struct idxheap"
+must not be used concurrently from multiple threads without external
+synchronisation.
+Independent heaps may be used from independent threads.
+.Sh HISTORY
+.Nm
+first appeared in
+.Sy mdr
+0.8.0 .
+.Sh AUTHORS
+.An Pascal Lalonde Aq Mt plalonde@overnet.ca

@@ -1,0 +1,344 @@
+.\"
+.\" Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+.\"
+.\" SPDX-License-Identifier: ISC
+.\"
+.Dd $Mdocdate$
+.Dt FLATCONF 3
+.Os
+.Sh NAME
+.Nm flatconf_read ,
+.Nm flatconf_free
+.Nd parse a flat key=value configuration file into typed variables
+.Sh SYNOPSIS
+.In mdr/flatconf.h
+.Ft int
+.Fn flatconf_read "const char *path" "struct flatconf *vars" "void (*errfn)(const char *)"
+.Ft void
+.Fn flatconf_free "struct flatconf *vars"
+.Sh DESCRIPTION
+.Nm flatconf
+parses a flat
+.Sy key Ns = Ns Sy value
+configuration file and stores each value into a caller-provided
+destination, with type conversion driven by a table of variable
+descriptors.
+There is no section nesting, no expression language, and no include
+mechanism; it is a deliberately small, predictable substrate on top of
+which an application builds its own validation.
+.Sh FILE SYNTAX
+A configuration file is a sequence of statements separated by
+newlines.
+Each statement is either empty or has the form:
+.Bd -literal -offset indent
+name = value
+name = [ value value ... ]
+.Ed
+.Pp
+Comments start with
+.Sq #
+and run to end of line.
+A
+.Sy name
+is a word of alphanumeric and underscore characters and may be up to
+.Dv FLATCONF_VAR_MAX_LEN
+bytes long.
+A
+.Sy value
+is one of:
+.Bl -tag -width "string"
+.It word
+A bare identifier matching the same character set as a name.
+Recognised by the
+.Dv FLATCONF_BOOLINT
+type for the literals
+.Sy yes ,
+.Sy no ,
+.Sy true ,
+and
+.Sy false ,
+and accepted in string contexts as a shorthand for an unquoted
+.Sy string .
+.It string
+A sequence of arbitrary bytes enclosed in double quotes.
+Inside the quotes a backslash escapes the next byte: that byte is
+taken literally and no further translation is applied.
+The two characters that need escaping to appear inside a string are
+.Sq \&"
+.Pq written Sq \e\&"
+and
+.Sq \e
+.Pq written Sq \e\e .
+Other backslash sequences yield the byte that follows the backslash
+verbatim, so
+.Sq \en
+in the source produces a literal
+.Sq n ,
+not a newline.
+.It positive integer
+A non-negative decimal integer, or a hexadecimal integer prefixed with
+.Sy 0x .
+Parsed as
+.Vt uint64_t
+through
+.Xr strtoul 3 .
+.It negative integer
+A decimal integer starting with
+.Sq - .
+Parsed as
+.Vt int64_t
+through
+.Xr strtol 3 .
+.El
+.Pp
+List values are written between square brackets and may span multiple
+lines; the elements must all share a type compatible with the
+destination's
+.Vt enum flatconf_var_type .
+.Sh VARIABLE TABLE
+The caller declares the set of accepted variables as an array of
+.Vt struct flatconf
+entries, terminated by the
+.Dv FLATCONF_LAST
+sentinel:
+.Bd -literal -offset indent
+struct flatconf {
+        char                    name[FLATCONF_VAR_MAX_LEN + 1];
+        enum flatconf_var_type  t;
+        void                   *dst;
+        size_t                  dst_sz;
+};
+.Ed
+.Pp
+.Va name
+is the name as it appears on the left-hand side of an assignment.
+.Va t
+selects the type-driven conversion that
+.Fn flatconf_read
+will apply to the value.
+.Va dst
+points at the caller-owned storage that receives the value.
+.Va dst_sz
+is either the size of that storage
+.Pq for fixed-size types
+or is written by
+.Fn flatconf_read
+.Pq for allocated types ,
+to record the allocation's size.
+.Pp
+The supported variable types are:
+.Bl -tag -width "FLATCONF_ALLOCULONGLIST"
+.It Dv FLATCONF_STRING
+Copy a string or word value into the fixed-size buffer at
+.Va dst ,
+which must be
+.Va dst_sz
+bytes.
+Parsing fails if the value would overflow the buffer.
+.It Dv FLATCONF_ALLOCSTRING
+Duplicate a string or word value with
+.Xr strdup 3
+and store the resulting pointer at
+.Va *(char **)dst .
+.Va dst_sz
+is set to the length of the duplicate, excluding the NUL.
+.It Dv FLATCONF_ALLOCSTRINGLIST
+Store an allocated, NULL-terminated
+.Vt "char **"
+array at
+.Va *(char ***)dst ,
+backed by a single allocation that contains both the pointer array
+and the string bytes.
+.Va dst_sz
+is set to the total allocation size.
+An empty list is permitted; in that case the destination is left
+untouched and
+.Va dst_sz
+remains zero.
+.It Dv FLATCONF_ALLOCULONGLIST
+Store an allocated, NULL-terminated array of
+.Vt "uint64_t *"
+pointers at
+.Va *(uint64_t ***)dst ,
+backed by a single allocation that contains both the pointer array
+and the integer storage.
+.Va dst_sz
+is set to the total allocation size.
+.It Dv FLATCONF_BOOLINT
+Store
+.Li 1
+or
+.Li 0
+into the
+.Vt int
+at
+.Va dst
+when the value is
+.Sy yes Ns / Ns Sy true
+or
+.Sy no Ns / Ns Sy false
+respectively.
+.Va dst_sz
+must be at least
+.Li sizeof(int) .
+.It Dv FLATCONF_LONG
+Store an
+.Vt int64_t
+at
+.Va dst .
+A positive value is accepted only if it fits in
+.Vt int64_t .
+.Va dst_sz
+must be at least
+.Li sizeof(int64_t) .
+.It Dv FLATCONF_ULONG
+Store a
+.Vt uint64_t
+at
+.Va dst .
+The value must be a non-negative integer.
+.Va dst_sz
+must be at least
+.Li sizeof(uint64_t) .
+.El
+.Pp
+A given variable name may appear at most once in the table; multiple
+assignments to the same name in the file simply overwrite the
+destination.
+.Sh API
+.Fn flatconf_read
+opens
+.Fa path
+and parses it against the variable table
+.Fa vars .
+For each successful assignment, the corresponding destination is
+populated as described above.
+Variables not present in the file are left untouched: it is the
+caller's responsibility to initialise defaults before calling
+.Fn flatconf_read .
+A name in the file that is not in the table, or a value that does not
+satisfy its destination's type, is treated as a parse error.
+.Pp
+.Fa errfn
+is an optional sink for human-readable error messages.
+If
+.Dv NULL ,
+errors are written to
+.Dv stderr .
+A typical use is to route errors to
+.Xr xlog 3 :
+.Bd -literal -offset indent
+static void
+cfg_err(const char *msg)
+{
+        xlog(LOG_ERR, NULL, "config: %s", msg);
+}
+
+flatconf_read("/etc/myd.conf", vars, cfg_err);
+.Ed
+.Pp
+.Fn flatconf_free
+walks the same variable table and frees the storage that
+.Fn flatconf_read
+allocated for
+.Dv FLATCONF_ALLOCSTRING ,
+.Dv FLATCONF_ALLOCSTRINGLIST ,
+and
+.Dv FLATCONF_ALLOCULONGLIST
+entries.
+Entries of any other type are skipped.
+Entries whose
+.Va dst_sz
+is zero are treated as never having been assigned and are left alone,
+so it is safe to call
+.Fn flatconf_free
+on a table that
+.Fn flatconf_read
+populated only partially before failing.
+.Sh RETURN VALUES
+.Fn flatconf_read
+returns 0 on success and non-zero on failure
+.Pq either Fa path No could not be opened or parsing failed .
+On failure
+.Va errno
+is set when the failure came from
+.Xr fopen 3 ;
+otherwise the
+.Fa errfn
+callback is the canonical source of diagnostic information.
+.Pp
+.Fn flatconf_free
+returns no value.
+.Sh EXAMPLES
+A program that accepts a listen address, a port, and a list of allowed
+client common names:
+.Bd -literal -offset indent
+struct {
+        char       address[256];
+        uint64_t   port;
+        char     **allowed_cns;
+} conf = {
+        "127.0.0.1",
+        9000,
+        NULL,
+};
+
+struct flatconf vars[] = {
+        { "address",     FLATCONF_STRING,           conf.address,
+            sizeof(conf.address) },
+        { "port",        FLATCONF_ULONG,            &conf.port,
+            sizeof(conf.port) },
+        { "allowed_cns", FLATCONF_ALLOCSTRINGLIST,  &conf.allowed_cns,
+            0 },
+        FLATCONF_LAST
+};
+
+static void
+cfg_err(const char *msg)
+{
+        warnx("%s", msg);
+}
+
+if (flatconf_read(path, vars, cfg_err) != 0)
+        errx(1, "bad config");
+
+\&...
+
+flatconf_free(vars);
+.Ed
+.Pp
+With a configuration file such as:
+.Bd -literal -offset indent
+address = "10.0.0.1"
+port = 9100
+allowed_cns = [
+    "alice.example"
+    "bob.example"
+]
+.Ed
+.Sh LIMITATIONS
+.Bl -bullet -compact
+.It
+A token cannot exceed
+.Dv PATH_MAX
+bytes; this applies to words, strings, and integer literals alike.
+.It
+The string escape syntax is intentionally minimal:
+.Sq \e
+only quotes the next byte and there are no C-style mnemonics for
+non-printable characters.
+A string containing a literal newline can be written by embedding the
+newline byte directly between the surrounding quotes.
+.It
+.Fn flatconf_read
+is not reentrant: it uses file-scope state during parsing and must not
+be called concurrently from multiple threads, even against different
+files.
+.El
+.Sh HISTORY
+.Nm flatconf
+first appeared in
+.Sy mdr
+0.8.0 .
+.Sh AUTHORS
+.An Pascal Lalonde Aq Mt plalonde@overnet.ca
