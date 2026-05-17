@@ -8,6 +8,7 @@
 #include <openssl/err.h>
 #include <err.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <netdb.h>
 #include <stdarg.h>

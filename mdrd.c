@@ -14,6 +14,7 @@
 #include <netinet/tcp.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <dirent.h>
 #include <err.h>
