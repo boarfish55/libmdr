@@ -1,3 +1,12 @@
+libmdr (0.8.4-1) unstable; urgency=medium
+
+  * Make conversions portable
+  * Support escape sequences in flatconf; bring in basic tests
+  * Fix conversions
+  * add missing manpages
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Sun, 17 May 2026 18:16:28 -0400
+
 libmdr (0.8.3-2) unstable; urgency=medium
 
   * refresh symbols
