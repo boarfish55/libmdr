@@ -14,6 +14,7 @@
 #include <netinet/tcp.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <dirent.h>
 #include <err.h>
@@ -391,7 +392,8 @@ pack_bein(struct pmdr *m, uint64_t id, int fd, struct sockaddr_in6 *peer,
 
 	if (cert_len > mdrd_conf.max_cert_size) {
 		xlog(LOG_ERR, NULL, "%s: X509 length above limit: "
-		    "%d > %lu", __func__, cert_len, mdrd_conf.max_cert_size);
+		    "%d > %" PRIu64, __func__, cert_len,
+		    mdrd_conf.max_cert_size);
 		return -1;
 	}
 
@@ -627,10 +629,14 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 		case EAGAIN:
 			return 0;
 		case ENOTSUP:
+			xlog_strerror(LOG_ERR, errno,
+			    "%s: umdr_init", __func__);
 			error_reply(t, MDR_ERR_NOTSUPP,
 			    "mdr extension not supported");
 			return -1;
 		case EOVERFLOW:
+			xlog_strerror(LOG_ERR, errno,
+			    "%s: umdr_init", __func__);
 			error_reply(t, MDR_ERR_BADMSG, "invalid payload size");
 			return -1;
 		default:
@@ -643,11 +649,11 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 
 	if (umdr_size(&cb_data->msg) > mdrd_conf.max_payload_size) {
 		xlog_strerror(LOG_ERR, errno, "%s: mdr size is above our "
-		    "configured maximum size of %lu bytes", __func__,
+		    "configured maximum size of %" PRIu64 " bytes", __func__,
 		    mdrd_conf.max_payload_size);
 		snprintf(errmsg, sizeof(errmsg),
-		    "payload size in excess of configured limit (%llu bytes)",
-		    mdrd_conf.max_payload_size);
+		    "payload size in excess of configured limit (%"
+		    PRIu64 " bytes)", mdrd_conf.max_payload_size);
 		error_reply(t, MDR_ERR_SZEX, errmsg);
 		return -1;
 	}
@@ -794,7 +800,7 @@ backend_msg_in_cb(int fd)
 		break;
 	default:
 		xlog(LOG_ERR, NULL,
-		    "%s: unknown message from backend: 0x%llx",
+		    "%s: unknown message from backend: 0x%" PRIx64,
 		    __func__, umdr_dcv(&beout));
 		goto fail;
 	}
@@ -945,8 +951,13 @@ scan_crls(struct crl_stat *dst, size_t dst_sz, X509_STORE *store,
 			    strcmp(de->d_name + (de_len - 4), ".crl") != 0)
 				continue;
 
-			snprintf(crl_path, sizeof(crl_path), "%s/%s",
-			    mdrd_conf.crl_path, de->d_name);
+			if (snprintf(crl_path, sizeof(crl_path), "%s/%s",
+			    mdrd_conf.crl_path, de->d_name)
+			    >= sizeof(crl_path)) {
+				closedir(d);
+				return XERRF(e, XLOG_APP, XLOG_OVERFLOW,
+				    "crl_path too long");
+			}
 			if (stat(crl_path, &st) == -1) {
 				closedir(d);
 				return XERRF(e, XLOG_ERRNO, errno,
@@ -1451,25 +1462,31 @@ read_counters()
 			break;
 
 		printf("backend %d:\n", i);
-		printf("  messages_in: %llu\n", c.messages_in);
-		printf("  messages_in_rejected: %llu\n",
+		printf("  messages_in: %" PRIu64 "\n", c.messages_in);
+		printf("  messages_in_rejected: %" PRIu64 "\n",
 		    c.messages_in_rejected);
-		printf("  messages_out: %llu\n", c.messages_out);
-		printf("  raw_bytes_in: %llu\n", c.tlsev.raw_bytes_in);
-		printf("  raw_bytes_out: %llu\n", c.tlsev.raw_bytes_out);
-		printf("  ssl_bytes_in: %llu\n", c.tlsev.ssl_bytes_in);
-		printf("  ssl_bytes_out: %llu\n", c.tlsev.ssl_bytes_out);
-		printf("  client_accepts: %llu\n", c.tlsev.client_accepts);
-		printf("  read_pauses: %llu\n", c.tlsev.read_pauses);
-		printf("  wasted_accepts: %llu\n", c.tlsev.wasted_accepts);
-		printf("  accept_conn_aborted: %llu\n",
+		printf("  messages_out: %" PRIu64 "\n", c.messages_out);
+		printf("  raw_bytes_in: %" PRIu64 "\n", c.tlsev.raw_bytes_in);
+		printf("  raw_bytes_out: %" PRIu64 "\n", c.tlsev.raw_bytes_out);
+		printf("  ssl_bytes_in: %" PRIu64 "\n", c.tlsev.ssl_bytes_in);
+		printf("  ssl_bytes_out: %" PRIu64 "\n", c.tlsev.ssl_bytes_out);
+		printf("  client_accepts: %" PRIu64 "\n",
+		    c.tlsev.client_accepts);
+		printf("  read_pauses: %" PRIu64 "\n", c.tlsev.read_pauses);
+		printf("  wasted_accepts: %" PRIu64 "\n",
+		    c.tlsev.wasted_accepts);
+		printf("  accept_conn_aborted: %" PRIu64 "\n",
 		    c.tlsev.accept_conn_aborted);
-		printf("  file_ulimit_hits: %llu\n", c.tlsev.file_ulimit_hits);
-		printf("  sys_ulimit_hits: %llu\n", c.tlsev.sys_ulimit_hits);
-		printf("  active_clients: %llu\n", c.tlsev.active_clients);
-		printf("  max_clients_reached: %llu\n",
+		printf("  file_ulimit_hits: %" PRIu64 "\n",
+		    c.tlsev.file_ulimit_hits);
+		printf("  sys_ulimit_hits: %" PRIu64 "\n",
+		    c.tlsev.sys_ulimit_hits);
+		printf("  active_clients: %" PRIu64 "\n",
+		    c.tlsev.active_clients);
+		printf("  max_clients_reached: %" PRIu64 "\n",
 		    c.tlsev.max_clients_reached);
-		printf("  session_timeouts: %llu\n", c.tlsev.session_timeouts);
+		printf("  session_timeouts: %" PRIu64 "\n",
+		    c.tlsev.session_timeouts);
 
 		global.tlsev.raw_bytes_in += c.tlsev.raw_bytes_in;
 		global.tlsev.raw_bytes_out += c.tlsev.raw_bytes_out;
@@ -1493,25 +1510,29 @@ read_counters()
 	close(fd);
 
 	printf("global:\n");
-	printf("  restarts: %llu\n", restarts);
-	printf("  messages_in: %llu\n", global.messages_in);
-	printf("  messages_in_rejected: %llu\n", global.messages_in_rejected);
-	printf("  messages_out: %llu\n", global.messages_out);
-	printf("  raw_bytes_in: %llu\n", global.tlsev.raw_bytes_in);
-	printf("  raw_bytes_out: %llu\n", global.tlsev.raw_bytes_out);
-	printf("  ssl_bytes_in: %llu\n", global.tlsev.ssl_bytes_in);
-	printf("  ssl_bytes_out: %llu\n", global.tlsev.ssl_bytes_out);
-	printf("  client_accepts: %llu\n", global.tlsev.client_accepts);
-	printf("  read_pauses: %llu\n", global.tlsev.read_pauses);
-	printf("  wasted_accepts: %llu\n", global.tlsev.wasted_accepts);
-	printf("  accept_conn_aborted: %llu\n",
+	printf("  restarts: %" PRIu64 "\n", restarts);
+	printf("  messages_in: %" PRIu64 "\n", global.messages_in);
+	printf("  messages_in_rejected: %" PRIu64 "\n",
+	    global.messages_in_rejected);
+	printf("  messages_out: %" PRIu64 "\n", global.messages_out);
+	printf("  raw_bytes_in: %" PRIu64 "\n", global.tlsev.raw_bytes_in);
+	printf("  raw_bytes_out: %" PRIu64 "\n", global.tlsev.raw_bytes_out);
+	printf("  ssl_bytes_in: %" PRIu64 "\n", global.tlsev.ssl_bytes_in);
+	printf("  ssl_bytes_out: %" PRIu64 "\n", global.tlsev.ssl_bytes_out);
+	printf("  client_accepts: %" PRIu64 "\n", global.tlsev.client_accepts);
+	printf("  read_pauses: %" PRIu64 "\n", global.tlsev.read_pauses);
+	printf("  wasted_accepts: %" PRIu64 "\n", global.tlsev.wasted_accepts);
+	printf("  accept_conn_aborted: %" PRIu64 "\n",
 	    global.tlsev.accept_conn_aborted);
-	printf("  file_ulimit_hits: %llu\n", global.tlsev.file_ulimit_hits);
-	printf("  sys_ulimit_hits: %llu\n", global.tlsev.sys_ulimit_hits);
-	printf("  active_clients: %llu\n", global.tlsev.active_clients);
-	printf("  max_clients_reached: %llu\n",
+	printf("  file_ulimit_hits: %" PRIu64 "\n",
+	    global.tlsev.file_ulimit_hits);
+	printf("  sys_ulimit_hits: %" PRIu64 "\n",
+	    global.tlsev.sys_ulimit_hits);
+	printf("  active_clients: %" PRIu64 "\n", global.tlsev.active_clients);
+	printf("  max_clients_reached: %" PRIu64 "\n",
 	    global.tlsev.max_clients_reached);
-	printf("  session_timeouts: %llu\n", global.tlsev.session_timeouts);
+	printf("  session_timeouts: %" PRIu64 "\n",
+	    global.tlsev.session_timeouts);
 }
 
 int

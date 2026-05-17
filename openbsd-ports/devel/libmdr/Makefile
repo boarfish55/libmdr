@@ -1,6 +1,6 @@
 COMMENT =	Minimal Data Representation, a data serialization library
 CATEGORIES =	devel
-VERSION =	0.8.2
+VERSION =	0.8.3
 DISTNAME =	libmdr-${VERSION}
 HOMEPAGE =	https://www.overnet.ca
 MAINTAINER =	Pascal Lalonde <plalonde@overnet.ca>
@@ -39,6 +39,13 @@ do-install:
 	${INSTALL_DATA} ${WRKBUILD}/README.md ${PREFIX}/share/doc/libmdr/
 	${INSTALL_DATA} ${WRKBUILD}/LICENSE ${PREFIX}/share/doc/libmdr/
 	${INSTALL_DATA} ${WRKBUILD}/mdrd.conf.sample ${PREFIX}/share/doc/libmdr/
+
+	${INSTALL_DATA_DIR} ${PREFIX}/man/man3
+	${INSTALL_DATA} ${WRKBUILD}/man/*.3 ${PREFIX}/man/man3/
+	${INSTALL_DATA_DIR} ${PREFIX}/man/man5
+	${INSTALL_DATA} ${WRKBUILD}/man/*.5 ${PREFIX}/man/man5/
+	${INSTALL_DATA_DIR} ${PREFIX}/man/man8
+	${INSTALL_DATA} ${WRKBUILD}/man/*.8 ${PREFIX}/man/man8/
 
 	VERSION=${VERSION} PC_PREFIX=/usr/local LIBDIRSUFFIX=lib \
 		${WRKBUILD}/mdr.pc.sh > ${PREFIX}/lib/pkgconfig/mdr.pc

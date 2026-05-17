@@ -177,7 +177,7 @@ tlsev_bio_read_cb(BIO *b, int oper, const char *data, size_t len, int argi,
 
 	if (t != NULL) {
 		xlog(LOG_DEBUG, NULL,
-		    "%s: %lu/%lu bytes read/requested on fd %d",
+		    "%s: %zu/%zu bytes read/requested on fd %d",
 		    __func__, *read_bytes, len, t->fd);
 
 		t->tlswant = (len - *read_bytes < 1)
@@ -477,7 +477,7 @@ again:
 			return XERRF(e, XLOG_ERRNO, errno, "write");
 		}
 
-		xlog(LOG_DEBUG, NULL, "%s: wrote %ld bytes on fd %d",
+		xlog(LOG_DEBUG, NULL, "%s: wrote %zd bytes on fd %d",
 		    __func__, r, t->fd);
 
 		l->counters.raw_bytes_out += r;
@@ -527,7 +527,7 @@ again2:
 		return XERRF(e, XLOG_ERRNO, errno, "write");
 	}
 
-	xlog(LOG_DEBUG, NULL, "%s: wrote %ld bytes on fd %d",
+	xlog(LOG_DEBUG, NULL, "%s: wrote %zd bytes on fd %d",
 	    __func__, r, t->fd);
 
 	l->counters.raw_bytes_out += r;
@@ -719,7 +719,7 @@ tlsev_ev_read(struct tlsev_listener *l, struct tlsev *t)
 	if (r == -1) {
 		if (tlsev_outbufsz(t) > 0) {
 			xlog(LOG_DEBUG, NULL, "%s: remote is shutting down "
-			    "but we have %ld bytes to send on fd %d",
+			    "but we have %zu bytes to send on fd %d",
 			    __func__, tlsev_outbufsz(t), t->fd);
 			tlsev_drain(t);
 		} else
@@ -741,7 +741,7 @@ tlsev_ev_write(struct tlsev_listener *l, struct tlsev *t)
 		return -1;
 	}
 
-	xlog(LOG_DEBUG, NULL, "outbufsz=%ld on fd %d",
+	xlog(LOG_DEBUG, NULL, "outbufsz=%zu on fd %d",
 	    tlsev_outbufsz(t), t->fd);
 
 	/*
@@ -1183,7 +1183,7 @@ tlsev_reply(struct tlsev *t, const unsigned char *buf, int len)
 	/*
 	 * Then update wpending with the new amount of raw bytes pending.
 	 */
-	xlog(LOG_DEBUG, NULL, "%s: fd %d outbufsz=%ld", __func__,
+	xlog(LOG_DEBUG, NULL, "%s: fd %d outbufsz=%zu", __func__,
 	    t->fd, tlsev_outbufsz(t));
 	return tlsev_outbufsz(t);
 }

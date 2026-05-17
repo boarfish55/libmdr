@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <err.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <netdb.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -110,12 +111,12 @@ process_messages()
 		    sizeof(sbuf), NI_NUMERICHOST | NI_NUMERICSERV)) != 0)
 			xlog(LOG_ERR, NULL, "getnameinfo: %s", gai_strerror(r));
 
-		xlog(LOG_NOTICE, NULL, "received message for id %lu, size=%lu, "
-		    "from %s:%s", mrh.session->id, umdr_size(mrh.msg),
-		    hbuf, sbuf);
+		xlog(LOG_NOTICE, NULL, "received message for id %" PRIu64
+		    ", size=%" PRIu64 ", from %s:%s",
+		    mrh.session->id, umdr_size(mrh.msg), hbuf, sbuf);
 
 		if (mrh.session->is_new) {
-			xlog(LOG_NOTICE, NULL, "new session for id %lu",
+			xlog(LOG_NOTICE, NULL, "new session for id %" PRIu64,
 			    mrh.session->id);
 			if (mrh.session->cert == NULL) {
 				if (mdrd_beout_error(mrh.session,

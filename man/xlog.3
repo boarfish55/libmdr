@@ -1,0 +1,428 @@
+.\"
+.\" Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+.\"
+.\" SPDX-License-Identifier: ISC
+.\"
+.Dd $Mdocdate$
+.Dt XLOG 3
+.Os
+.Sh NAME
+.Nm xlog ,
+.Nm xlog_init ,
+.Nm xlog_init2 ,
+.Nm xlog_dbg ,
+.Nm xlog_strerror ,
+.Nm xerrz ,
+.Nm xerrf ,
+.Nm xerrfn ,
+.Nm xerr_fail ,
+.Nm xerr_is ,
+.Nm xerr_prepend ,
+.Nm xerr_print
+.Nd structured error propagation and syslog-based logging
+.Sh SYNOPSIS
+.In mdr/xlog.h
+.Ft int
+.Fn xlog_init "const char *progname" "const char *dbg_spec" "const char *logf" "int perror"
+.Ft int
+.Fn xlog_init2 "const char *progname" "int facility" "const char *dbg_spec" "const char *logf" "int perror"
+.Ft void
+.Fn xlog "int priority" "const struct xerr *e" "const char *fmt" "..."
+.Ft void
+.Fn xlog_dbg "xlog_mask_t module" "const char *fmt" "..."
+.Ft void
+.Fn xlog_strerror "int priority" "int err" "const char *fmt" "..."
+.Ft "struct xerr *"
+.Fn xerrz "struct xerr *e"
+.Ft int
+.Fn xerrf "struct xerr *e" "int space" "int code" "const char *fmt" "..."
+.Ft int
+.Fn xerrfn "struct xerr *e" "int space" "int code" "const char *fn" "const char *fmt" "..."
+.Fn XERRF "e" "space" "code" "fmt" "..."
+.Ft int
+.Fn xerr_fail "const struct xerr *e"
+.Ft int
+.Fn xerr_is "const struct xerr *e" "int space" "int code"
+.Ft int
+.Fn xerr_prepend "struct xerr *e" "const char *prefix"
+.Fn XERR_PREPENDFN "e"
+.Ft void
+.Fn xerr_print "const struct xerr *e"
+.Sh DESCRIPTION
+.Nm
+provides two complementary facilities:
+a
+.Vt struct xerr
+type that carries a structured, context-rich error description from
+the failure site up the call stack, and a thin
+.Xr syslog 3
+wrapper that knows how to render a
+.Vt struct xerr
+into a single readable log line.
+The two are usable independently, but most callers in
+.Sy mdr
+use them together.
+.Sh THE XERR STRUCTURE
+.Bd -literal -offset indent
+struct xerr {
+        char            msg[LINE_MAX];
+        enum xerr_space sp;
+        int64_t         code;
+};
+.Ed
+.Pp
+.Va sp
+selects the
+.Em error space
+that
+.Va code
+is interpreted in, so that the same numeric value can mean different
+things in different contexts.
+The library knows about the following spaces:
+.Bl -tag -width "XLOG_ERRNO"
+.It Dv XLOG_NONE
+No error;
+.Va code
+is also zero.
+.It Dv XLOG_APP
+An application-defined condition.
+.Va code
+is one of the
+.Dv XLOG_*
+constants
+.Po
+.Dv XLOG_FAIL ,
+.Dv XLOG_EOF ,
+.Dv XLOG_DENIED ,
+.Dv XLOG_LIMITED ,
+.Dv XLOG_INVALID ,
+.Dv XLOG_BADMSG ,
+.Dv XLOG_NOTFOUND ,
+.Dv XLOG_IO ,
+.Dv XLOG_OVERFLOW ,
+.Dv XLOG_RANGE ,
+.Dv XLOG_SHORTIO ,
+.Dv XLOG_BUSY ,
+.Dv XLOG_NOTSUP ,
+.Dv XLOG_TIMEOUT ,
+.Dv XLOG_WOULDBLOCK ,
+.Dv XLOG_CALLBACK_ERR
+.Pc
+or a caller-defined value at or above
+.Dv XLOG_USER_DEFINED .
+.It Dv XLOG_ERRNO
+.Va code
+is a POSIX
+.Va errno
+value.
+.Fn xlog
+and
+.Fn xerr_print
+look up the corresponding string with
+.Xr strerror_r 3 .
+.It Dv XLOG_SSL
+.Va code
+is an OpenSSL or LibreSSL error code.
+The rendered string comes from
+.Xr ERR_error_string_n 3 .
+.It Dv XLOG_EAI
+.Va code
+is a
+.Xr getaddrinfo 3
+return value, rendered through
+.Xr gai_strerror 3 .
+.It Dv XLOG_DB
+.Va code
+is a database driver error
+.Pq for example, an SQLite result code .
+The driver-specific string is left for the caller to embed in
+.Va msg .
+.El
+.Pp
+An application that needs its own error spaces may use values at or
+above
+.Dv XLOG_SP_USER_DEFINED .
+.Pp
+.Va msg
+is a free-form context string filled in at the failure site, typically
+naming the operation that failed and the salient inputs.
+It is sized to
+.Dv LINE_MAX
+so the entire error fits in a single log line; longer messages are
+truncated with a trailing
+.Sq *
+sentinel.
+.Sh BUILDING AND PROPAGATING ERRORS
+The recommended pattern is for every function that may fail to take a
+.Vt "struct xerr *"
+out-parameter and to return
+.Li -1
+on failure, with
+.Fn xerrf
+or the
+.Dv XERRF
+macro filling the xerr in place:
+.Bd -literal -offset indent
+int
+do_thing(struct xerr *e)
+{
+        if (open(...) == -1)
+                return XERRF(e, XLOG_ERRNO, errno, "open foo");
+        ...
+        return 0;
+}
+.Ed
+.Pp
+.Fn xerrf
+writes
+.Fa space
+and
+.Fa code
+into
+.Fa e ,
+formats
+.Fa fmt
+and the trailing arguments into
+.Va e->msg ,
+and returns
+.Li -1
+when either
+.Fa space
+or
+.Fa code
+is non-zero, or
+.Li 0
+when both are zero.
+The return value is meant to be used directly as the caller's return
+status.
+A
+.Dv NULL
+.Fa e
+is permitted; the function still returns the same value.
+.Pp
+.Fn xerrfn
+is identical except that it prefixes
+.Va msg
+with
+.Fa fn ,
+allowing callers to record the current function name.
+The
+.Dv XERRF
+macro is a thin wrapper that calls
+.Fn xerrfn
+with
+.Va __func__
+automatically.
+.Pp
+.Fn xerrz
+zeroes an xerr.
+The library uses it as a parameter wrapper at call sites:
+.Bd -literal -offset indent
+some_function(xerrz(&e));
+.Ed
+.Pp
+so that the xerr is always cleared before being filled, regardless of
+what state it carried before.
+.Pp
+.Fn xerr_prepend
+prepends
+.Fa prefix
+and
+.Li ": "
+to the existing
+.Va msg ,
+which lets a caller layer its own context on top of a failure surfaced
+from a lower-level function:
+.Bd -literal -offset indent
+if (do_thing(xerrz(e)) == -1)
+        return XERR_PREPENDFN(e);
+.Ed
+.Pp
+The
+.Dv XERR_PREPENDFN
+macro uses
+.Va __func__
+as the prefix; it returns whatever
+.Fn xerr_fail
+would return for the resulting
+.Fa e ,
+so it is suitable for use directly in a
+.Sy return
+statement.
+.Pp
+.Fn xerr_fail
+returns non-zero if
+.Fa e
+holds an error, and zero otherwise.
+A
+.Dv NULL
+.Fa e
+counts as no error.
+.Pp
+.Fn xerr_is
+tests whether
+.Fa e
+is exactly the
+.Pq Fa space , code
+pair given; it returns
+.Fa code
+on match
+.Pq always non-zero
+and zero otherwise.
+This is the canonical way to recognise a specific failure mode
+.Po for example, distinguishing Dv XLOG_NOTFOUND No from any other Dv XLOG_APP No error Pc .
+.Sh REPORTING ERRORS
+.Fn xerr_print
+renders an xerr through
+.Xr warnx 3 ,
+producing a single line on
+.Dv stderr .
+It is the lightweight counterpart of
+.Fn xlog
+for utilities that have no syslog identity.
+.Pp
+.Fn xlog
+is the primary reporting entry point.
+It writes a single line at
+.Fa priority
+to both
+.Xr syslog 3
+and, if a log file was configured at init time, that log file.
+The exact format depends on
+.Fa e :
+.Bl -bullet -compact
+.It
+If
+.Fa e
+is
+.Dv NULL ,
+the line is
+.Fa fmt
+formatted with the trailing arguments, tagged with the priority.
+.It
+If
+.Fa e
+is non-NULL and carries an
+.Va errno ,
+.Va EAI ,
+or
+.Va SSL
+code, the rendered string from the corresponding system function is
+appended after
+.Va e->msg .
+.It
+.Va fmt
+is optional: if
+.Dv NULL ,
+the line is the context already in
+.Va e->msg .
+.El
+.Pp
+Lines never exceed
+.Dv LINE_MAX
+bytes; oversize content is truncated with a trailing
+.Sq * .
+.Pp
+.Fn xlog_strerror
+is a convenience that renders an
+.Va errno
+value
+.Pq Fa err
+together with a
+.Xr printf 3 Ns -style
+context message.
+It avoids the verbosity of constructing an xerr just to report a
+straightforward
+.Xr open 2
+or
+.Xr read 2
+failure.
+.Pp
+.Fn xlog_dbg
+emits a debug-priority line only if its
+.Fa module
+flag is included in the debug mask configured at
+.Fn xlog_init
+time.
+The mask is built from the comma-separated module list in
+.Fa dbg_spec ,
+matched against the application-supplied
+.Va module_dbg_map
+table.
+This allows fine-grained debug logging to be toggled per module at
+runtime without recompiling.
+.Pp
+The default
+.Va module_dbg_map
+in the library defines a single module name
+.Sq all
+that enables every bit
+.Po Dv XLOG_ALL Pc .
+Applications normally override the symbol with their own table.
+.Sh INITIALIZATION
+.Fn xlog_init
+calls
+.Xr openlog 3
+with
+.Fa progname
+as the identifier and
+.Dv LOG_USER
+as the facility, then arms the debug subsystem from
+.Fa dbg_spec
+and, if
+.Fa logf
+is non-empty, opens that path in append mode for an auxiliary plain-text
+copy of every line written by
+.Fn xlog ,
+.Fn xlog_dbg ,
+and
+.Fn xlog_strerror .
+If
+.Fa perror
+is non-zero,
+.Dv LOG_PERROR
+is added to the
+.Xr openlog 3
+options so that every line is also written to
+.Dv stderr .
+.Pp
+.Fn xlog_init2
+is the same but lets the caller pick the syslog
+.Fa facility .
+Daemons that run multiple services from a single binary use it to
+route their messages through, for example,
+.Dv LOG_DAEMON .
+.Pp
+The optional log file is opened once; calling
+.Fn xlog_init
+again with a different path has no effect on the previously opened
+file.
+.Sh THREAD SAFETY
+A single set of debug flags, syslog identity, and optional log file is
+shared process-wide.
+.Fn xlog_init
+should be called once at startup before any concurrent threads start
+logging.
+After initialization the logging entry points are safe to call from
+multiple threads; the underlying
+.Xr syslog 3
+and
+.Xr fprintf 3
+are thread-safe on supported platforms.
+.Pp
+Individual
+.Vt struct xerr
+instances are caller-owned, single-threaded values; they carry no
+locks of their own.
+.Sh SEE ALSO
+.Xr ERR_error_string_n 3 ,
+.Xr gai_strerror 3 ,
+.Xr strerror_r 3 ,
+.Xr syslog 3
+.Sh HISTORY
+.Nm
+first appeared in
+.Sy mdr
+0.8.0 .
+.Sh AUTHORS
+.An Pascal Lalonde Aq Mt plalonde@overnet.ca

@@ -28,6 +28,7 @@ static enum {
 	ST_WORD,
 	ST_NUMBER,
 	ST_STRING,
+	ST_STRING_ESCAPE,
 	ST_COMMENT
 } state = ST_NONE;
 
@@ -153,11 +154,20 @@ read:
 
 		*bufp++ = c;
 		goto read;
+	case ST_STRING_ESCAPE:
+		state = ST_STRING;
+		*bufp++ = c;
+		goto read;
 	case ST_STRING:
 		if (c != '"') {
+			if (c == '\\') {
+				state = ST_STRING_ESCAPE;
+				goto read;
+			}
 			*bufp++ = c;
 			goto read;
 		}
+
 		*bufp = '\0';
 		if (strlcpy(yylval.string, buf, sizeof(yylval.string)) >=
 		    sizeof(yylval.string)) {

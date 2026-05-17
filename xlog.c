@@ -8,6 +8,7 @@
 #include <openssl/err.h>
 #include <err.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <netdb.h>
 #include <stdarg.h>
@@ -292,66 +293,66 @@ xlog(int priority, const struct xerr *e, const char *fmt, ...)
 	if (e->sp == XLOG_ERRNO && e->code != 0) {
 		strerror_r(e->code, errmsg, sizeof(errmsg));
 		if (fmt) {
-			syslog(priority, "{%s:%s:%lld} %s: %s: %s",
+			syslog(priority, "{%s:%s:%" PRIi64 "} %s: %s: %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    msg, e->msg, errmsg);
-			xlog_fprintf("{%s:%s:%lld} %s: %s: %s",
+			xlog_fprintf("{%s:%s:%" PRIi64 "} %s: %s: %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    msg, e->msg, errmsg);
 		} else {
-			syslog(priority, "{%s:%s:%lld} %s: %s",
+			syslog(priority, "{%s:%s:%" PRIi64 "} %s: %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    e->msg, errmsg);
-			xlog_fprintf("{%s:%s:%lld} %s: %s",
+			xlog_fprintf("{%s:%s:%" PRIi64 "} %s: %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    e->msg, errmsg);
 		}
 	} else if (e->sp == XLOG_EAI && e->code != 0) {
 		if (fmt) {
-			syslog(priority, "{%s:%s:%lld} %s: %s: %s",
+			syslog(priority, "{%s:%s:%" PRIi64 "} %s: %s: %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    msg, e->msg, gai_strerror(e->code));
-			xlog_fprintf("{%s:%s:%lld} %s: %s: %s",
+			xlog_fprintf("{%s:%s:%" PRIi64 "} %s: %s: %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    msg, e->msg, gai_strerror(e->code));
 		} else {
-			syslog(priority, "{%s:%s:%lld} %s: %s",
+			syslog(priority, "{%s:%s:%" PRIi64 "} %s: %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    e->msg, gai_strerror(e->code));
-			xlog_fprintf("{%s:%s:%lld} %s: %s",
+			xlog_fprintf("{%s:%s:%" PRIi64 "} %s: %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    e->msg, gai_strerror(e->code));
 		}
 	} else if (e->sp == XLOG_SSL && e->code != 0) {
 		ERR_error_string_n(e->code, errmsg, sizeof(errmsg));
 		if (fmt) {
-			syslog(priority, "{%s:%s:%lld} %s: %s: %s",
+			syslog(priority, "{%s:%s:%" PRIi64 "} %s: %s: %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    msg, e->msg, errmsg);
-			xlog_fprintf("{%s:%s:%lld} %s: %s: %s",
+			xlog_fprintf("{%s:%s:%" PRIi64 "} %s: %s: %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    msg, e->msg, errmsg);
 		} else {
-			syslog(priority, "{%s:%s:%lld} %s: %s",
+			syslog(priority, "{%s:%s:%" PRIi64 "} %s: %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    e->msg, errmsg);
-			xlog_fprintf("{%s:%s:%lld} %s: %s",
+			xlog_fprintf("{%s:%s:%" PRIi64 "} %s: %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    e->msg, errmsg);
 		}
 	} else {
 		if (fmt) {
-			syslog(priority, "{%s:%s:%lld} %s: %s",
+			syslog(priority, "{%s:%s:%" PRIi64 "} %s: %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    msg, e->msg);
-			xlog_fprintf("{%s:%s:%lld} %s: %s",
+			xlog_fprintf("{%s:%s:%" PRIi64 "} %s: %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    msg, e->msg);
 		} else {
-			syslog(priority, "{%s:%s:%lld} %s",
+			syslog(priority, "{%s:%s:%" PRIi64 "} %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    e->msg);
-			xlog_fprintf("{%s:%s:%lld} %s",
+			xlog_fprintf("{%s:%s:%" PRIi64 "} %s",
 			    priostr(priority), spacestr(e->sp), e->code,
 			    e->msg);
 		}
@@ -391,17 +392,17 @@ xerr_print(const struct xerr *e)
 
 	if (e->sp == XLOG_ERRNO && e->code != 0) {
 		strerror_r(e->code, errmsg, sizeof(errmsg));
-		warnx("{%s:%lld} %s: %s", spacestr(e->sp), e->code,
+		warnx("{%s:%" PRIi64 "} %s: %s", spacestr(e->sp), e->code,
 		    e->msg, errmsg);
 	} else if (e->sp == XLOG_EAI && e->code != 0) {
-		warnx("{%s:%lld} %s: %s", spacestr(e->sp), e->code,
+		warnx("{%s:%" PRIi64 "} %s: %s", spacestr(e->sp), e->code,
 		    e->msg, gai_strerror(e->code));
 	} else if (e->sp == XLOG_SSL && e->code != 0) {
 		ERR_error_string_n(e->code, errmsg, sizeof(errmsg));
-		warnx("{%s:%lld} %s: %s",
+		warnx("{%s:%" PRIi64 "} %s: %s",
 		    spacestr(e->sp), e->code, e->msg, errmsg);
 	} else
-		warnx("{%s:%lld} %s", spacestr(e->sp), e->code, e->msg);
+		warnx("{%s:%" PRIi64 "} %s", spacestr(e->sp), e->code, e->msg);
 }
 
 int

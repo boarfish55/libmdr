@@ -1,10 +1,10 @@
 CC = cc
 EXTRA_CFLAGS =
-VERSION = 0.8.3
+VERSION = 0.8.4
 VERSION_MAJOR = $(shell echo ${VERSION} | cut -d. -f 1)
 DEPDIR = .deps
 CFLAGS = -Wall -g -I. -pie -fstack-protector-strong -fstack-clash-protection \
-	 -DYY_NO_LEAKS=1 -Wformat=0 -fcf-protection \
+	 -DYY_NO_LEAKS=1 -fcf-protection \
 	 $(shell pkg-config --cflags libbsd-overlay libbsd-ctor \
 	 libssl libcrypto)
 LDFLAGS = $(shell pkg-config --libs libbsd-overlay libbsd-ctor \
@@ -22,7 +22,8 @@ MDRC_OBJS = mdrc.o mdr.o
 BE_ECHO_OBJS = mdrd_backend_echo.o mdr.o mdr_mdrd.o xlog.o util.o
 MDR_TESTS_OBJS = mdr_tests.o mdr.o util.o xlog.o
 
-all: mdrc mdr_tests mdrd mdrd_backend_echo libmdr.a libflatconf.a \
+all: mdrc mdr_tests flatconf_tests mdrd mdrd_backend_echo libmdr.a \
+	libflatconf.a \
 	libmdr.so libmdr.so.${VERSION} libmdr.so.${VERSION_MAJOR} \
 	libflatconf.so libflatconf.so.${VERSION} libflatconf.so.${VERSION_MAJOR}
 
@@ -64,6 +65,10 @@ libmdr.so: libmdr.so.${VERSION}
 
 flatconf.c: flatconf.y mdr/flatconf.h
 	${YACC} -o flatconf.c flatconf.y
+
+flatconf_tests: flatconf_tests.c flatconf.o
+	$(CC) $(CFLAGS) flatconf_tests.c -o flatconf_tests \
+		flatconf.o $(LDFLAGS)
 
 mdr_tests: ${MDR_TESTS_OBJS}
 	${CC} ${CFLAGS} ${MDR_TESTS_OBJS} ${LDFLAGS} -o $@
@@ -107,6 +112,7 @@ install: all
 
 clean:
 	rm -f $(DEPDIR)/* *.o mdr_tests mdrc mdrd mdrd_backend_echo \
-		flatconf.c *.core core .depend *.so *.so.[0-9]* *.a *.tmp
+		flatconf.c flatconf_tests *.core core .depend \
+		*.so *.so.[0-9]* *.a *.tmp
 
 -include $(DEPDIR)/*
