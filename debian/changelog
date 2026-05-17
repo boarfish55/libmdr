@@ -1,3 +1,10 @@
+libmdr (0.8.3-2) unstable; urgency=medium
+
+  * refresh symbols
+  * Be more specific in libmdr0 usr/share
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Sat, 16 May 2026 22:36:23 -0400
+
 libmdr (0.8.3-1) unstable; urgency=medium
 
   * Fixed double-free
