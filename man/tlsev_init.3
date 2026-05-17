@@ -1,0 +1,196 @@
+.\"
+.\" Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+.\"
+.\" SPDX-License-Identifier: ISC
+.\"
+.Dd $Mdocdate$
+.Dt TLSEV_INIT 3
+.Os
+.Sh NAME
+.Nm tlsev_init ,
+.Nm tlsev_destroy ,
+.Nm tlsev_run ,
+.Nm tlsev_shutdown
+.Nd lifecycle of a tlsev TLS event-loop listener
+.Sh SYNOPSIS
+.In mdr/tlsev.h
+.Ft int
+.Fo tlsev_init
+.Fa "struct tlsev_listener *l"
+.Fa "int *lsock"
+.Fa "size_t lsock_len"
+.Fa "uint32_t max_clients"
+.Fa "SSL_CTX *ctx"
+.Fa "int (*in_cb)(struct tlsev *, const char *, size_t, void **)"
+.Fa "void (*in_cb_data_free)(struct tlsev *, void *)"
+.Fc
+.Ft void
+.Fn tlsev_destroy "struct tlsev_listener *l"
+.Ft int
+.Fo tlsev_run
+.Fa "struct tlsev_listener *l"
+.Fa "int (*tasks)(struct tlsev_listener *, void *)"
+.Fa "void *task_args"
+.Fc
+.Ft void
+.Fn tlsev_shutdown "struct tlsev_listener *l"
+.Sh DESCRIPTION
+The
+.Nm tlsev
+library implements a single-threaded, level-triggered event loop that
+terminates TLS connections from many concurrent clients and dispatches
+their application-layer messages to a user-provided callback.
+.Pp
+.Fn tlsev_init
+initializes the listener
+.Fa l
+in place.
+Its remaining arguments are:
+.Bl -tag -width "in_cb_data_free"
+.It Fa lsock , lsock_len
+An array of
+.Fa lsock_len
+already-bound, already-listening TCP socket descriptors.
+The listener takes ownership and switches them to non-blocking mode.
+.It Fa max_clients
+Cap on the number of concurrent TLS sessions accepted on this listener.
+When the cap is reached, the listening sockets are disarmed until enough
+clients disconnect.
+The value is clamped to
+.Dv TLSEV_MAX_CLIENTS .
+.It Fa ctx
+The SSL context used for every accepted connection.
+The listener does not take ownership.
+.It Fa in_cb
+Invoked whenever bytes from a TLS-decrypted client message become
+available.
+It receives the calling
+.Vt "struct tlsev *" ,
+a pointer to a buffer and its length, and a
+.Vt "void **"
+slot owned by the listener that the callback may use to attach
+per-connection state across calls.
+Returning
+.Dv -1
+causes the connection to be closed.
+.It Fa in_cb_data_free
+If not
+.Dv NULL ,
+invoked at connection close time with the value the callback last stored
+in the
+.Vt "void **"
+slot, allowing the user to release per-connection state.
+.El
+.Pp
+.Fn tlsev_run
+enters the event loop on listener
+.Fa l .
+The function returns only after
+.Fn tlsev_shutdown
+has been called
+.Em and
+all active clients have drained.
+Its remaining arguments are:
+.Bl -tag -width "task_args"
+.It Fa tasks
+If not
+.Dv NULL ,
+called once per iteration after polling and dispatching events.
+Returning zero terminates the loop with a failure status; returning
+non-zero continues normally.
+.It Fa task_args
+Opaque pointer forwarded to
+.Fa tasks
+on every invocation.
+.El
+.Pp
+.Fn tlsev_shutdown
+requests an orderly shutdown.
+It is async-signal-safe and may be called from a signal handler.
+The listening sockets stop accepting new connections; existing
+connections are allowed to finish draining their write buffers before
+being closed.
+.Fn tlsev_run
+returns once the last active client has been closed.
+.Pp
+.Fn tlsev_destroy
+releases all resources held by the listener:
+remaining client sessions are forcibly closed (without draining),
+their per-connection state freed via
+.Fa in_cb_data_free ,
+the underlying kqueue or epoll instance is closed, and the listening
+sockets associated with the listener are freed.
+The
+.Fa SSL_CTX
+passed to
+.Fn tlsev_init
+is
+.Em not
+freed.
+.Sh RETURN VALUES
+.Fn tlsev_init
+returns 0 on success and \-1 on failure with
+.Va errno
+set to indicate the error.
+.Pp
+.Fn tlsev_run
+returns 0 if the loop exited because
+.Fn tlsev_shutdown
+was called and all clients drained, and \-1 if polling failed or a
+.Fa tasks
+callback returned zero.
+.Pp
+.Fn tlsev_destroy
+and
+.Fn tlsev_shutdown
+return no value.
+.Sh ERRORS
+.Fn tlsev_init
+fails with the following errno values:
+.Bl -tag -width Er
+.It Bq Er EINVAL
+.Fa l
+or
+.Fa ctx
+is
+.Dv NULL ,
+or
+.Fa in_cb
+is
+.Dv NULL .
+.It Bq Er ENOMEM
+Memory allocation failed while constructing internal state.
+.El
+.Pp
+.Fn tlsev_init
+may also fail with any
+.Va errno
+returned by
+.Xr fcntl 2 ,
+.Xr kqueue 2 ,
+.Xr kevent 2 ,
+.Xr epoll_create1 2 ,
+or
+.Xr epoll_ctl 2 .
+.Pp
+.Fn tlsev_run
+sets
+.Va errno
+to whatever
+.Xr kevent 2
+or
+.Xr epoll_wait 2
+returned when polling failed.
+.Sh SEE ALSO
+.Xr tlsev_reply 3 ,
+.Xr tlsev_set_socket_timeouts 3 ,
+.Xr tlsev_peer 3 ,
+.Xr SSL_CTX_new 3
+.Sh HISTORY
+The
+.Nm tlsev
+library first appeared in
+.Sy mdr
+0.8.0 .
+.Sh AUTHORS
+.An Pascal Lalonde Aq Mt plalonde@overnet.ca

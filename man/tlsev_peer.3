@@ -1,0 +1,135 @@
+.\"
+.\" Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+.\"
+.\" SPDX-License-Identifier: ISC
+.\"
+.Dd $Mdocdate$
+.Dt TLSEV_PEER 3
+.Os
+.Sh NAME
+.Nm tlsev_id ,
+.Nm tlsev_fd ,
+.Nm tlsev_peer ,
+.Nm tlsev_peer_cert ,
+.Nm tlsev_get ,
+.Nm tlsev_get_by_ctx
+.Nd inspect and look up tlsev client sessions
+.Sh SYNOPSIS
+.In mdr/tlsev.h
+.Ft uint64_t
+.Fn tlsev_id "struct tlsev *t"
+.Ft int
+.Fn tlsev_fd "struct tlsev *t"
+.Ft struct sockaddr_in6 *
+.Fn tlsev_peer "struct tlsev *t"
+.Ft X509 *
+.Fn tlsev_peer_cert "struct tlsev *t"
+.Ft struct tlsev *
+.Fn tlsev_get "struct tlsev_listener *l" "int fd"
+.Ft struct tlsev *
+.Fn tlsev_get_by_ctx "X509_STORE_CTX *ctx"
+.Sh DESCRIPTION
+These accessors return information about a single client session
+.Vt "struct tlsev *"
+or look one up by external identifiers.
+None of them allocate or modify state; the returned pointers are owned
+by the listener and remain valid only as long as the corresponding
+client session does.
+.Pp
+.Fn tlsev_id
+returns a monotonically increasing unsigned 64-bit identifier assigned
+to
+.Fa t
+when its TCP connection was accepted.
+Identifiers are unique within the lifetime of a listener and never
+recycled, making them safe to embed in messages forwarded to a backend
+that may later reply asynchronously.
+.Pp
+.Fn tlsev_fd
+returns the kernel file descriptor backing the client's TCP socket.
+The descriptor is owned by the listener; callers must not
+.Xr close 2
+it.
+.Pp
+.Fn tlsev_peer
+returns a pointer to the
+.Vt "struct sockaddr_in6"
+recorded at accept time.
+For IPv4 peers the storage is reinterpreted as a
+.Vt "struct sockaddr_in"
+in the conventional way; callers should consult
+.Fa sin6_family
+to discriminate.
+.Pp
+.Fn tlsev_peer_cert
+returns the peer's leaf certificate as an
+.Vt "X509 *" ,
+or
+.Dv NULL
+if the peer did not present one.
+The returned reference is owned by the listener and freed when
+.Fa t
+is closed; callers that need to outlive the session must take their
+own reference via
+.Xr X509_up_ref 3 .
+.Pp
+.Fn tlsev_get
+returns the
+.Vt "struct tlsev *"
+associated with file descriptor
+.Fa fd
+on listener
+.Fa l ,
+or
+.Dv NULL
+if no such session exists.
+This is the inverse of
+.Fn tlsev_fd
+and is useful when a callback receives only a file descriptor (for
+example, in
+.Fn tlsev_add_fd_cb )
+and needs to resolve it to a session.
+.Pp
+.Fn tlsev_get_by_ctx
+returns the
+.Vt "struct tlsev *"
+associated with an
+.Xr SSL_CTX 3
+certificate-verification context, by extracting the
+.Vt "SSL *"
+from
+.Fa ctx
+and consulting per-session external data set by the listener.
+This is the canonical way to recover the session pointer from inside a
+.Xr SSL_CTX_set_verify 3
+callback.
+.Sh RETURN VALUES
+.Fn tlsev_id
+and
+.Fn tlsev_fd
+return the values described above.
+.Pp
+.Fn tlsev_peer ,
+.Fn tlsev_peer_cert ,
+.Fn tlsev_get ,
+and
+.Fn tlsev_get_by_ctx
+return a pointer on success, or
+.Dv NULL
+when the requested information is not available.
+None of these functions set
+.Va errno .
+.Sh SEE ALSO
+.Xr tlsev_init 3 ,
+.Xr tlsev_reply 3 ,
+.Xr tlsev_set_socket_timeouts 3 ,
+.Xr SSL_CTX_set_verify 3 ,
+.Xr X509_up_ref 3
+.Sh HISTORY
+The
+.Nm tlsev
+library first appeared in
+.Sy mdr
+0.8.0 .
+.Sh AUTHORS
+.An Pascal Lalonde Aq Mt plalonde@overnet.ca

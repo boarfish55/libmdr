@@ -1,0 +1,101 @@
+.\"
+.\" Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+.\"
+.\" SPDX-License-Identifier: ISC
+.\"
+.Dd $Mdocdate$
+.Dt TLSEV_DUMP_COUNTERS 3
+.Os
+.Sh NAME
+.Nm tlsev_dump_counters
+.Nd snapshot and reset a tlsev listener's counters
+.Sh SYNOPSIS
+.In mdr/tlsev.h
+.Ft void
+.Fn tlsev_dump_counters "struct tlsev_listener *l" "struct tlsev_counters *c"
+.Sh DESCRIPTION
+.Fn tlsev_dump_counters
+copies the current counter values of listener
+.Fa l
+into the caller-provided
+.Fa c ,
+then resets the listener's accumulating counters to zero.
+The
+.Va active_clients
+field is treated as a gauge: it is overwritten to the listener's current
+client count immediately after the reset, so its reported value reflects
+the instant of the snapshot rather than a delta.
+All other fields are deltas accumulated since the previous call to
+.Fn tlsev_dump_counters .
+.Pp
+The fields of
+.Vt struct tlsev_counters
+are:
+.Bl -tag -width "accept_conn_aborted"
+.It Va raw_bytes_in
+Encrypted bytes read from client sockets.
+.It Va raw_bytes_out
+Encrypted bytes written to client sockets.
+.It Va ssl_bytes_in
+Decrypted application bytes delivered to the
+.Fa in_cb
+callback.
+.It Va ssl_bytes_out
+Application bytes accepted by
+.Xr tlsev_reply 3
+(before encryption).
+.It Va client_accepts
+Connections successfully accepted and added to the listener.
+.It Va read_pauses
+Connections whose reads were paused because their outgoing buffer was
+non-empty, applying back-pressure to the peer.
+.It Va wasted_accepts
+Event-loop wakeups for accept readiness that yielded
+.Er EWOULDBLOCK ,
+typically caused by another listener in the prefork group winning the
+accept.
+.It Va accept_conn_aborted
+Accepts that failed with
+.Er ECONNABORTED
+because the peer closed the connection between the TCP handshake and
+the accept.
+.It Va file_ulimit_hits
+Accepts that failed with
+.Er EMFILE
+.Pq per-process file descriptor limit reached .
+When this fires the listener also lowers
+.Va max_clients
+to the current
+.Va active_clients .
+.It Va sys_ulimit_hits
+Accepts that failed with
+.Er ENFILE
+.Pq system-wide file descriptor limit reached .
+.It Va active_clients
+Gauge: number of TLS clients currently connected at the moment of the
+snapshot.
+.It Va max_clients_reached
+Number of times the listener stopped accepting new connections because
+.Va active_clients
+reached
+.Va max_clients .
+.It Va session_timeouts
+Connections closed because they exceeded the inactivity timeout
+configured via
+.Xr tlsev_set_socket_timeouts 3 .
+.El
+.Sh RETURN VALUES
+.Fn tlsev_dump_counters
+returns no value.
+It does not fail.
+.Sh SEE ALSO
+.Xr tlsev_init 3 ,
+.Xr tlsev_set_socket_timeouts 3
+.Sh HISTORY
+The
+.Nm tlsev
+library first appeared in
+.Sy mdr
+0.8.0 .
+.Sh AUTHORS
+.An Pascal Lalonde Aq Mt plalonde@overnet.ca

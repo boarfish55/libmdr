@@ -1,0 +1,246 @@
+.\"
+.\" Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+.\"
+.\" SPDX-License-Identifier: ISC
+.\"
+.Dd $Mdocdate$
+.Dt MDRD_RECV 3
+.Os
+.Sh NAME
+.Nm mdrd_recv ,
+.Nm mdrd_beout ,
+.Nm mdrd_beout_ok ,
+.Nm mdrd_beout_error ,
+.Nm mdrd_besession_set_data ,
+.Nm mdrd_purge_sessions ,
+.Nm mdrd_purge_sessions_cb
+.Nd backend-side API for an mdrd-spawned service
+.Sh SYNOPSIS
+.In mdr/mdrd.h
+.Ft ptrdiff_t
+.Fn mdrd_recv "struct mdrd_recvhdl *mrh" "int timeout_ms"
+.Ft int
+.Fn mdrd_beout "const struct mdrd_besession *sess" "uint32_t flags" "const struct pmdr *msg"
+.Ft int
+.Fn mdrd_beout_ok "const struct mdrd_besession *sess" "uint32_t flags"
+.Ft int
+.Fo mdrd_beout_error
+.Fa "const struct mdrd_besession *sess"
+.Fa "uint32_t flags"
+.Fa "uint32_t errcode"
+.Fa "const char *errdesc"
+.Fc
+.Ft void
+.Fo mdrd_besession_set_data
+.Fa "struct mdrd_besession *sess"
+.Fa "void *data"
+.Fa "void (*free_data)(void *)"
+.Fc
+.Ft int
+.Fn mdrd_purge_sessions "struct mdrd_recvhdl *mrh" "time_t age_seconds"
+.Ft int
+.Fo mdrd_purge_sessions_cb
+.Fa "struct mdrd_recvhdl *mrh"
+.Fa "time_t age_seconds"
+.Fa "void (*cb)(struct mdrd_besession *, void *)"
+.Fa "void *cbargs"
+.Fc
+.Sh DESCRIPTION
+These functions implement the back-end half of the mdrd request/response
+protocol.
+A back-end process is spawned by
+.Xr mdrd 8 ,
+inherits its standard input from a pipe connected to mdrd, and uses
+.Fn mdrd_recv
+in a loop to receive client requests and the
+.Fn mdrd_beout
+family to send responses back.
+.Pp
+Per-client state is tracked in
+.Vt "struct mdrd_besession" ,
+keyed by the unique session identifier mdrd assigns at accept time.
+Sessions persist across requests from the same client and are torn down
+when mdrd reports the client has closed, when the back-end explicitly
+flags
+.Dv MDRD_BEOUT_FCLOSE
+on a response, or when
+.Fn mdrd_purge_sessions
+reaps them by age.
+.Pp
+.Fn mdrd_recv
+reads one message from mdrd into
+.Fa mrh\->buf
+.Pq sized by Fa mrh\->bufsz ,
+waiting up to
+.Fa timeout_ms
+milliseconds for input.
+On success, populates
+.Fa mrh\->msg
+with the decoded client message (if any) and
+.Fa mrh\->session
+with the session it belongs to.
+The function transparently handles the protocol's three message
+kinds:
+.Bl -tag -width "MDR_DCV_MDRD_BEIN"
+.It Dv MDR_DCV_MDRD_BEIN
+A request from a client.
+A new session is created on first contact;
+.Fa mrh\->session\->is_new
+is set to 1 the first time the back-end sees a given session.
+.Fa mrh\->msg
+points at the client's application-level message.
+.It Dv MDR_DCV_MDRD_BECLOSE
+mdrd reports the client has closed.
+The corresponding session is freed automatically before
+.Fn mdrd_recv
+returns; the back-end need not respond.
+The function loops internally and continues reading until a
+.Dv MDR_DCV_MDRD_BEIN
+arrives or the timeout expires.
+.It Dv MDR_DCV_MDRD_BESESSERR
+mdrd reports it could not deliver a previous back-end response
+.Pq client gone, fd mismatched, etc. .
+Treated identically to
+.Dv MDR_DCV_MDRD_BECLOSE :
+the session is freed and the loop continues.
+.El
+.Pp
+If the previous response flagged
+.Dv MDRD_BEOUT_FCLOSE ,
+the corresponding session is freed at the start of the next
+.Fn mdrd_recv
+call.
+This is why responses must always be sent via the
+.Fn mdrd_beout
+family, which sets the close flag on the session, and not by writing
+directly to standard output.
+.Pp
+.Fn mdrd_beout
+sends an application-level message
+.Fa msg
+to the client of session
+.Fa sess .
+.Fa flags
+is a bitwise-OR of
+.Dv MDRD_BEOUT_FNONE
+and
+.Dv MDRD_BEOUT_FCLOSE ;
+setting the latter requests mdrd to drain and close the client
+connection after delivering the response.
+.Pp
+.Fn mdrd_beout_ok
+is a convenience for sending a bare
+.Vt mdr_msg_ok
+acknowledgement when there is no payload to return.
+.Pp
+.Fn mdrd_beout_error
+sends an
+.Vt mdr_msg_error
+with the given numeric code and human-readable description.
+.Fa errcode
+is one of the
+.Vt enum mdr_err_code
+values.
+.Pp
+.Fn mdrd_besession_set_data
+attaches a per-session opaque value
+.Fa data
+to
+.Fa sess ,
+along with an optional destructor
+.Fa free_data
+invoked when the session is freed.
+This is the canonical place for back-ends to keep per-connection state
+(authenticated identity, prepared statement handles, etc.).
+.Pp
+.Fn mdrd_purge_sessions
+walks the session table and frees any session that has been idle for at
+least
+.Fa age_seconds .
+The session bound to
+.Fa mrh\->session
+.Pq if any
+is preserved.
+.Fn mdrd_purge_sessions_cb
+behaves identically but invokes
+.Fa cb
+on each session immediately before it is freed, with
+.Fa cbargs
+forwarded unchanged; useful for logging or for finalising any
+out-of-band state the back-end keeps separately from
+.Fa data .
+.Sh RETURN VALUES
+.Fn mdrd_recv
+returns:
+.Bl -tag -width "> 0"
+.It > 0
+The number of bytes consumed from mdrd to assemble the current message.
+.Fa mrh\->msg
+and
+.Fa mrh\->session
+are valid.
+.It 0
+End of stream from mdrd (the parent has closed the pipe); the back-end
+should exit.
+.It Dv MDR_FAIL
+Failure;
+.Va errno
+is set, with
+.Er ETIMEDOUT
+indicating that
+.Fa timeout_ms
+elapsed without a full message arriving.
+.El
+.Pp
+.Fn mdrd_beout ,
+.Fn mdrd_beout_ok ,
+and
+.Fn mdrd_beout_error
+return 0 on success and \-1 on failure with
+.Va errno
+set
+.Po typically from
+.Xr write 2
+or
+.Xr pmdr_pack 3
+.Pc .
+.Pp
+.Fn mdrd_purge_sessions
+and
+.Fn mdrd_purge_sessions_cb
+return the number of sessions freed.
+.Pp
+.Fn mdrd_besession_set_data
+returns no value.
+.Sh EXAMPLES
+A minimal echo back-end:
+.Bd -literal -offset indent
+struct mdrd_recvhdl mrh = { .buf = buf, .bufsz = sizeof(buf) };
+ptrdiff_t n;
+
+for (;;) {
+	n = mdrd_recv(&mrh, 1000);
+	if (n == 0)
+		exit(0);                /* parent closed */
+	if (n == MDR_FAIL) {
+		if (errno == ETIMEDOUT) {
+			mdrd_purge_sessions(&mrh, 300);
+			continue;
+		}
+		err(1, "mdrd_recv");
+	}
+	/* echo the client's payload back */
+	mdrd_beout(mrh.session, MDRD_BEOUT_FNONE, &reply);
+}
+.Ed
+.Sh SEE ALSO
+.Xr mdrd 8 ,
+.Xr mdr 3
+.Sh HISTORY
+The
+.Nm mdrd
+back-end interface first appeared in
+.Sy mdr
+0.8.0 .
+.Sh AUTHORS
+.An Pascal Lalonde Aq Mt plalonde@overnet.ca

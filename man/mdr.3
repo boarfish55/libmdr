@@ -1,0 +1,685 @@
+.\"
+.\" Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+.\"
+.\" SPDX-License-Identifier: ISC
+.\"
+.Dd $Mdocdate$
+.Dt MDR 3
+.Os
+.Sh NAME
+.Nm mdr
+.Nd minimal data representation message format
+.Sh SYNOPSIS
+.In mdr/mdr.h
+.Sh DESCRIPTION
+.Nm
+is a compact, self-framed binary message format used by the
+.Xr mdrd 8
+service and its back-ends to exchange typed application messages.
+It is designed to be cheap to encode and decode, to allow incremental
+parsing from a stream, and to evolve safely as messages gain new
+fields.
+.Sh MESSAGE HEADER
+A single
+.Nm
+message consists of:
+.Bl -bullet -compact
+.It
+a 64-bit big-endian size prefix,
+.It
+a 32-bit feature bitmap describing which optional fields follow,
+.It
+a 64-bit domain/code/variant
+.Pq Sy DCV
+identifier,
+.It
+optionally:
+.Sy tail_bytes ,
+.Sy stream_id ,
+.Sy acct_id ,
+.Sy trace_id
+(controlled by the feature bits),
+.It
+a typed structured payload, followed by optional unstructured tail
+bytes.
+.El
+.Pp
+The
+.Sy DCV
+triple lets a message identify itself globally:
+.Bl -tag -width "variant"
+.It Sy domain
+A namespace owner, typically a service or application.
+.It Sy code
+The message type within that domain (request, event, etc.).
+.It Sy variant
+A version of that code, allowing a single
+.Pq Sy domain , code
+pair to evolve through additive variants.
+.El
+.Pp
+A
+.Sy DCV
+is constructed with the
+.Fn MDR_DCV
+macro or with
+.Fn mdr_mkdcv .
+The masks
+.Dv MDR_MASK_D ,
+.Dv MDR_MASK_DC ,
+and
+.Dv MDR_MASK_DCV
+isolate the domain, the domain+code, or the full triple respectively.
+.Pp
+The feature bitmap is used to negotiate optional header fields without
+introducing new variants.
+A receiver that does not understand a feature bit must reject the
+message; this is what makes
+.Nm
+forward-compatible.
+The currently defined flags are
+.Dv MDR_FTAILBYTES ,
+.Dv MDR_FSTREAMID ,
+.Dv MDR_FACCTID ,
+and
+.Dv MDR_FTRACEID .
+The combined mask
+.Dv MDR_FALL
+covers all of them.
+.Sh FIELD TYPES
+The structured payload of a message is described by a
+.Vt struct mdr_spec
+that lists the type of each field in order.
+The
+.Vt enum mdr_type
+constants below are referenced in spec definitions and in the
+.Va type
+member of each
+.Vt struct pmdr_vec
+or
+.Vt struct umdr_vec
+entry.
+.Pp
+Both vectors carry the value in a tagged union accessed through their
+.Va v
+member.
+The union member that must be used for any given type is dictated by
+the type tag.
+.Bl -tag -width "MDR_AS / MDR_AM"
+.It Dv MDR_U8 , Dv MDR_U16 , Dv MDR_U32 , Dv MDR_U64
+Unsigned integers of the named bit width.
+Pack:
+.Va pv[i].v.u8 ,
+.Va .v.u16 ,
+.Va .v.u32 ,
+.Va .v.u64 .
+Unpack: same union members on
+.Vt struct umdr_vec .
+.It Dv MDR_I8 , Dv MDR_I16 , Dv MDR_I32 , Dv MDR_I64
+Signed integers of the named bit width.
+Pack and unpack via
+.Va .v.i8 ,
+.Va .v.i16 ,
+.Va .v.i32 ,
+.Va .v.i64 .
+.It Dv MDR_F32 , Dv MDR_F64
+IEEE 754 single- and double-precision floats.
+Pack and unpack via
+.Va .v.f32
+and
+.Va .v.f64 .
+.It Dv MDR_S
+Null-terminated byte string.
+The library does not enforce or interpret any character encoding;
+the bytes can be anything as long as the field ends in a NUL.
+Pack via
+.Va .v.s ,
+a null-terminated
+.Vt const char * ;
+the length is taken from
+.Xr strlen 3 .
+Unpack via
+.Va .v.s.bytes
+.Pq Vt const char *
+and
+.Va .v.s.sz
+.Pq Vt uint64_t .
+The unpacked pointer borrows into the message buffer and remains valid
+only as long as the parent
+.Vt umdr ;
+it is null-terminated, and
+.Va sz
+gives the string length excluding the trailing NUL, equivalent to
+.Xr strlen 3 .
+A message whose string field is missing its trailing NUL is rejected
+with
+.Er EBADMSG .
+.It Dv MDR_B
+Opaque byte blob.
+Pack via
+.Va .v.b.bytes
+.Pq Vt const void *
+and
+.Va .v.b.sz
+.Pq Vt uint64_t .
+Unpack mirrors that; the returned
+.Va bytes
+pointer borrows into the message buffer and remains valid only as long
+as the parent
+.Vt umdr .
+.It Dv MDR_M
+Nested
+.Nm
+message.
+Pack via
+.Va .v.pmdr
+.Pq Vt const struct pmdr *
+when embedding a message you have just built, or
+.Va .v.umdr
+.Pq Vt const struct umdr *
+when forwarding a message you received.
+Unpack via
+.Va .v.m ,
+which is a
+.Vt struct umdr
+borrowing into the parent buffer.
+.It Dv MDR_RSVB
+Reserved byte region: a placeholder of declared size that will be filled
+in by the caller after
+.Fn pmdr_pack
+returns.
+Pack via
+.Va .v.rsvb.dst
+.Pq Vt "void **" ,
+into which
+.Fn pmdr_pack
+writes a pointer to the reserved area, and
+.Va .v.rsvb.sz ,
+the number of bytes to reserve.
+After packing the caller writes exactly that many bytes through the
+returned pointer.
+Useful when the source data is in a foreign format (for example, an
+ASN.1
+.Vt X509 )
+that produces its output through a write-then-advance pointer; see
+.Xr mdrd 8 's
+internal
+.Fn pack_bein
+for a representative example.
+There is no
+.Dv MDR_RSVB
+counterpart in
+.Vt struct umdr_vec ;
+on receive, an
+.Dv MDR_RSVB
+field appears as a regular
+.Dv MDR_B .
+.It Dv MDR_AU8 ... Dv MDR_AU64 , Dv MDR_AI8 ... Dv MDR_AI64 , Dv MDR_AF32 , Dv MDR_AF64
+Arrays of the corresponding scalar type.
+Pack via
+.Va .v.au8.length
+.Pq Vt int32_t
+and
+.Va .v.au8.items
+.Pq pointer to caller-owned array ,
+and similarly for the other widths.
+Unpack returns an array handle described in the next section, not the
+elements themselves.
+.It Dv MDR_AS
+Array of strings.
+Pack via
+.Va .v.as.length
+and
+.Va .v.as.items
+.Pq Vt "const char **" ,
+an array of null-terminated strings.
+Unpack returns an array handle.
+.It Dv MDR_AM
+Array of nested messages.
+Pack via
+.Va .v.am.length
+and
+.Va .v.am.items
+.Pq Vt "const struct pmdr *" ,
+an array of already-built messages.
+Unpack returns an array handle whose elements can be materialised as
+.Vt struct mdr .
+.El
+.Sh ARRAY ACCESS
+For every array type, the corresponding
+.Vt struct umdr_vec
+union member is a
+.Vt struct umdr_vec_ah
+.Pq Em array handle
+rather than the elements themselves.
+This avoids copying the entire array into a per-vector buffer at unpack
+time.
+.Pp
+The handle exposes:
+.Bl -tag -width "umdr_vec_alen"
+.It Fn umdr_vec_atype ah
+Return the element type
+.Pq one of the Dv MDR_*
+of the array.
+.It Fn umdr_vec_alen ah
+Return the number of elements in the array.
+.El
+.Pp
+Elements are then materialised one or more at a time into a
+caller-owned buffer with a type-specific extractor:
+.Bl -tag -width "umdr_vec_af64"
+.It Fn umdr_vec_au8 ah dst n
+.It Fn umdr_vec_au16 ah dst n
+.It Fn umdr_vec_au32 ah dst n
+.It Fn umdr_vec_au64 ah dst n
+.It Fn umdr_vec_ai8 ah dst n
+.It Fn umdr_vec_ai16 ah dst n
+.It Fn umdr_vec_ai32 ah dst n
+.It Fn umdr_vec_ai64 ah dst n
+.It Fn umdr_vec_af32 ah dst n
+.It Fn umdr_vec_af64 ah dst n
+Copy up to
+.Fa n
+elements from
+.Fa ah
+into the caller buffer
+.Fa dst .
+.It Fn umdr_vec_as ah dst n
+Copy up to
+.Fa n
+elements from
+.Fa ah
+into the caller buffer
+.Fa dst ,
+a
+.Vt "const char **"
+array of length
+.Fa n .
+On return, each slot holds a pointer borrowed from the message buffer,
+whose lifetime is bound to the parent
+.Vt umdr .
+If the array has fewer than
+.Fa n
+elements, a trailing
+.Dv NULL
+pointer is written after the last element, so callers may loop until
+.Dv NULL
+instead of consulting the returned count:
+.Bd -literal -offset indent
+const char  *strs[64];
+const char **s;
+
+umdr_vec_as(&uv[i].v.as, strs, 64);
+for (s = strs; *s != NULL; s++)
+	printf("%s\en", *s);
+.Ed
+.It Fn umdr_vec_am ah dst n
+Copy up to
+.Fa n
+elements from
+.Fa ah
+into the caller buffer
+.Fa dst ,
+a buffer of
+.Vt struct mdr .
+Each populated entry borrows into the message buffer and is valid only
+for the lifetime of the parent
+.Vt umdr .
+.El
+.Pp
+Each extractor returns the number of elements copied, or
+.Dv MDR_FAIL
+on error.
+.Sh PACK AND UNPACK
+Two distinct handle types ensure pack and unpack code paths cannot be
+accidentally crossed:
+.Bl -tag -width "struct pmdr"
+.It Vt struct pmdr
+Pack handle, used for building outbound messages.
+.It Vt struct umdr
+Unpack handle, used for decoding inbound messages.
+.El
+.Pp
+.Fn pmdr_init
+binds a pmdr handle to a caller-owned buffer of
+.Fa size
+bytes with the requested feature flags.
+.Fn pmdr_free
+releases any resources the handle has allocated outside the buffer
+.Pq currently a no-op for fixed-size buffers .
+.Fn pmdr_pack
+serialises a vector of fields against a registered spec and returns
+the number of bytes written, or
+.Dv MDR_FAIL
+on error.
+A typical pack sequence:
+.Bd -literal -offset indent
+struct pmdr     m;
+struct pmdr_vec pv[2];
+char            buf[256];
+
+pmdr_init(&m, buf, sizeof(buf), MDR_FNONE);
+pv[0].type   = MDR_U32; pv[0].v.u32 = 42;
+pv[1].type   = MDR_S;   pv[1].v.s   = "hello";
+pmdr_pack(&m, my_spec, pv, PMDRVECLEN(pv));
+write(fd, pmdr_buf(&m), pmdr_size(&m));
+.Ed
+.Pp
+.Fn umdr_init
+binds an umdr handle to a buffer that contains a complete message
+.Pq see Sx READING FROM STREAMS .
+.Fn umdr_init0
+is the same but does not require the buffer to actually contain valid
+header bytes yet, useful for incremental fill;
+.Fa accept_features
+records which optional features the caller is prepared to handle.
+.Fn umdr_unpack
+walks the typed payload against a spec and populates the vector with
+either scalar values or array handles, returning the number of bytes
+consumed or
+.Dv MDR_FAIL
+on type mismatch or short input.
+A typical unpack sequence:
+.Bd -literal -offset indent
+struct umdr     m;
+struct umdr_vec uv[2];
+
+umdr_init(&m, buf, n, MDR_FNONE);
+if (umdr_unpack(&m, my_spec, uv, UMDRVECLEN(uv)) == MDR_FAIL)
+	/* handle decode error */;
+uint32_t    n   = uv[0].v.u32;
+const char *str = uv[1].v.s.bytes;
+.Ed
+.Pp
+.Fn umdr_copy
+duplicates an umdr handle into a fresh one, copying the underlying
+buffer contents as well.
+This is useful when an unpacked nested message
+.Pq Va uv[i].v.m
+must outlive its parent buffer.
+.Sh OPTIONAL FIELDS AND TAIL BYTES
+Some metadata is too situational to warrant a place in every message
+but too common to keep reinventing.
+Header-level features carry that data when their bit is set; readers
+that do not understand a bit reject the message.
+.Bl -tag -width "pmdr_add_tail_bytes"
+.It Fn pmdr_set_stream_id m sid
+Set
+.Dv MDR_FSTREAMID
+and write the 64-bit
+.Fa sid
+into the header.
+On the read side, retrieve with
+.Fn umdr_stream_id .
+.It Fn pmdr_set_acct_id m aid
+Set
+.Dv MDR_FACCTID
+and write the 64-bit accounting id; retrieve with
+.Fn umdr_acct_id .
+.It Fn pmdr_set_trace_id m tid
+Set
+.Dv MDR_FTRACEID
+and write the 128-bit trace id
+.Pq a Vt union mdr_trace_id ;
+retrieve with
+.Fn umdr_trace_id .
+.It Fn pmdr_add_tail_bytes m n
+Set
+.Dv MDR_FTAILBYTES
+and declare that
+.Fa n
+unstructured bytes follow the typed payload.
+The caller writes those bytes to the buffer at the position returned by
+.Fn pmdr_tell .
+On the read side,
+.Fn umdr_tail_bytes
+returns the number of trailing bytes and writes a pointer to them
+through its
+.Fa dst
+argument.
+Tail bytes are useful for forwarding large payloads (file contents,
+TLS certificate chains) that would inflate the structured part of a
+message.
+They are
+.Em not
+counted in
+.Fn umdr_size .
+.El
+.Sh INSPECTING MESSAGES
+The following accessors work on either pack or unpack handles, without
+touching the underlying buffer:
+.Bl -tag -width "umdr_acct_id"
+.It Fn pmdr_buf m
+.It Fn umdr_buf m
+Return a pointer to the start of the message buffer.
+The pmdr variant returns a writable pointer; the umdr variant returns
+a read-only pointer.
+.It Fn pmdr_size m
+.It Fn umdr_size m
+Return the on-wire size of the message in bytes, excluding any tail
+bytes.
+.It Fn pmdr_tell m
+.It Fn umdr_tell m
+Return the current cursor offset within the buffer, used during
+incremental fill.
+.It Fn umdr_pending m
+Return the number of bytes still expected to complete the message.
+A value of zero means the message is fully buffered and can be
+unpacked.
+.It Fn pmdr_features m
+.It Fn umdr_features m
+Return the feature bitmap.
+.It Fn pmdr_domain m , Fn pmdr_code m , Fn pmdr_variant m
+.It Fn umdr_domain m , Fn umdr_code m , Fn umdr_variant m
+Return the three components of the
+.Sy DCV
+triple.
+.It Fn pmdr_dcv m
+.It Fn umdr_dcv m
+Return the full 64-bit
+.Sy DCV .
+.It Fn umdr_dcv_match m dcv mask
+Convenience predicate: compare the message's
+.Sy DCV
+against
+.Fa dcv
+under
+.Fa mask
+.Pq one of Dv MDR_MASK_D , MDR_MASK_DC , MDR_MASK_DCV ,
+returning non-zero on match.
+Useful when routing messages by domain alone.
+.It Fn pmdr_tail_bytes m dst
+.It Fn umdr_tail_bytes m dst
+Return the number of trailing bytes and store a pointer to them in
+.Fa *dst .
+Returns zero if the
+.Dv MDR_FTAILBYTES
+feature is not set.
+.It Fn pmdr_print fp m
+.It Fn umdr_print fp m
+Pretty-print a message to the given
+.Vt FILE * .
+Intended for debugging.
+.El
+.Sh READING FROM STREAMS
+Messages on the wire may arrive in fragments.
+The library provides helpers that fill a caller-owned buffer one chunk
+at a time, returning a positive value only once an entire message has
+been assembled:
+.Bl -tag -width "mdr_buf_from_BIO"
+.It Fn mdr_fill
+The general form: a user-supplied callback supplies bytes.
+.It Fn mdr_buf_from_fd
+Convenience wrapper that reads from a file descriptor.
+.It Fn mdr_buf_from_BIO
+Convenience wrapper that reads from an OpenSSL or LibreSSL
+.Vt BIO ,
+suitable for use with the memory-backed BIOs maintained by
+.Xr tlsev 3 .
+.El
+.Pp
+Each of these returns a partial-progress sentinel
+.Pq Er EAGAIN
+when more input is needed, and the full byte count of an assembled
+message when one is ready to be passed to
+.Fn umdr_init .
+.Sh SPEC REGISTRY
+Messages are looked up by
+.Sy DCV
+through a process-global registry, so a receiver can dispatch incoming
+traffic without prior knowledge of the spec the sender used.
+.Bl -tag -width "mdr_register_builtin_specs"
+.It Fn mdr_register_spec def
+Register a
+.Vt struct mdr_def
+.Pq DCV, label, and a NUL-terminated array of Vt enum mdr_type
+in the registry, returning the resulting
+.Vt struct mdr_spec * .
+Registration is one-shot; calling twice with the same DCV is an error.
+.It Fn mdr_registry_get dcv
+Look up a previously registered spec by its
+.Sy DCV ,
+or return
+.Dv NULL .
+.It Fn mdr_register_builtin_specs
+Register the specs for the built-in messages
+.Po
+.Fn mdr_msg_ping ,
+.Fn mdr_msg_pong ,
+.Fn mdr_msg_ok ,
+.Fn mdr_msg_error ,
+.Fn mdr_msg_test ,
+plus the messages used between
+.Xr mdrd 8
+and its back-end
+.Pc .
+Idempotent.
+.It Fn mdr_registry_clear
+Tear down the registry.
+Called automatically by
+.Xr mdrd 8 's
+shutdown path; rarely needed elsewhere.
+.It Fn mdr_spec_base_sz spec extra_bytes
+Return the minimum number of bytes needed to pack a message of
+.Fa spec
+plus
+.Fa extra_bytes
+of variable-size payload
+.Pq strings, blobs, RSVB .
+Useful to size a stack buffer before
+.Fn pmdr_init .
+.It Fn mdr_spec_vlen spec
+Return the number of fields in
+.Fa spec ;
+that is, the size of the
+.Vt struct pmdr_vec
+or
+.Vt struct umdr_vec
+array required by
+.Fn pmdr_pack
+or
+.Fn umdr_unpack .
+.El
+.Pp
+A typical application defines its message specs as static
+.Vt struct mdr_def
+literals, declares a global pointer to receive each registered
+.Vt struct mdr_spec * ,
+and registers them at startup:
+.Bd -literal -offset indent
+#define MY_DOMAIN          0x12345678
+#define MY_DCV_LOGIN       MDR_DCV(MY_DOMAIN, 0x0001, 0x0000)
+#define MY_DCV_LOGIN_REPLY MDR_DCV(MY_DOMAIN, 0x0001, 0x0001)
+
+static struct mdr_def my_login_def = {
+	MY_DCV_LOGIN,
+	"my.login",
+	{
+		MDR_S,    /* username */
+		MDR_B,    /* auth token */
+		MDR_AU32, /* requested capability ids */
+		MDR_LAST
+	}
+};
+const struct mdr_spec *my_msg_login;
+
+static struct mdr_def my_login_reply_def = {
+	MY_DCV_LOGIN_REPLY,
+	"my.login.reply",
+	{
+		MDR_U64,  /* session id */
+		MDR_LAST
+	}
+};
+const struct mdr_spec *my_msg_login_reply;
+
+int
+my_register_specs(void)
+{
+	if (mdr_register_builtin_specs() == MDR_FAIL)
+		return -1;
+	if ((my_msg_login =
+	     mdr_register_spec(&my_login_def)) == NULL ||
+	    (my_msg_login_reply =
+	     mdr_register_spec(&my_login_reply_def)) == NULL)
+		return -1;
+	return 0;
+}
+.Ed
+.Pp
+The type list inside each
+.Vt struct mdr_def
+is terminated by
+.Dv MDR_LAST .
+Once registered, the resulting spec pointer is passed to
+.Fn pmdr_pack
+on the sender side and either looked up via
+.Fn mdr_registry_get
+.Pq for type-dispatched receivers
+or passed directly to
+.Fn umdr_unpack
+on the receiver side.
+.Sh ERRORS
+Functions in
+.Nm
+report failure by returning
+.Dv MDR_FAIL
+.Pq the constant Sy \-1
+with
+.Va errno
+set.
+Common values include:
+.Bl -tag -width Er
+.It Bq Er EINVAL
+Argument violates an invariant of the function.
+.It Bq Er EOVERFLOW
+A length field would exceed the size of the message or the buffer.
+.It Bq Er EAGAIN
+Returned by stream readers when more input is required.
+.It Bq Er ENOTSUP
+The message advertises a feature bit the implementation does not
+recognize, or a spec lookup failed.
+.It Bq Er EBADMSG
+A field could not be decoded against its declared type.
+.El
+.Sh THREAD SAFETY
+A single
+.Vt struct pmdr
+or
+.Vt struct umdr
+handle is not safe to use from multiple threads concurrently.
+Concurrent use of independent handles, including against different
+buffers, is safe.
+The spec registry is read-mostly and is safe to consult from multiple
+threads after all specs have been registered.
+.Sh SEE ALSO
+.Xr mdrd_recv 3 ,
+.Xr tlsev 3 ,
+.Xr mdrd 8
+.Sh HISTORY
+.Nm
+first appeared in
+.Sy mdr
+0.8.0 .
+.Sh AUTHORS
+.An Pascal Lalonde Aq Mt plalonde@overnet.ca
