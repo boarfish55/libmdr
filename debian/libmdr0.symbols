@@ -16,6 +16,7 @@ libmdr.so.0 libmdr0 #MINVER#
  idxheap_insert@Base 0.7.0
  idxheap_lookup@Base 0.7.0
  idxheap_peek@Base 0.7.0
+ idxheap_pop@Base 0.8.3
  idxheap_removei@Base 0.7.0
  idxheap_removek@Base 0.7.0
  idxheap_top@Base 0.7.0
