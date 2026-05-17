@@ -1033,7 +1033,7 @@ mdr_print(FILE *out, const struct mdr *m)
 		fprintf(out, "\n");
 	}
 	fprintf(out, "\n");
-	fprintf(out, "  payload (%" PRIu64 "bytes):\n",
+	fprintf(out, "  payload (%" PRIu64 " bytes):\n",
 	    mdr_size(m) - mdr_hdr_size(mdr_features(m)));
 
 	for (b = m->buf + mdr_hdr_size(mdr_features(m)), i = 0;

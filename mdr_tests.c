@@ -8,6 +8,7 @@
 #endif
 #include <err.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -568,15 +569,15 @@ test_mdr_spec_base_sz()
 	size_t sz = mdr_spec_base_sz(msg_test_4, 0);
 
 	if (sz != 115)
-		return ERR(0, "sz should be 115 but was %lu", sz);
+		return ERR(0, "sz should be 115 but was %zu", sz);
 
 	sz = mdr_spec_base_sz(mdr_msg_mdrd_bein, 0);
 	if (sz != 150)
-		return ERR(0, "sz should be 150 but was %lu", sz);
+		return ERR(0, "sz should be 150 but was %zu", sz);
 
 	sz = mdr_hdr_size(MDR_FALL);
 	if (sz != 60)
-		return ERR(0, "sz should be 60 but was %lu", sz);
+		return ERR(0, "sz should be 60 but was %zu", sz);
 
 	return success();
 }
@@ -675,7 +676,7 @@ test_encoding()
 		return ERR(errno, "mdr_pack");
 
 	if (pmdr_size(&pm) != encoded_length)
-		return ERR(0, "encoded length should be %lu but was %lu",
+		return ERR(0, "encoded length should be %zu but was %" PRIu64,
 		    encoded_length, pmdr_size(&pm));
 
 	if (memcmp(pmdr_buf(&pm), encoded, encoded_length) != 0)
@@ -688,7 +689,7 @@ test_encoding()
 		return ERR(errno, "umdr_unpack");
 
 	if (umdr_size(&um) != encoded_length)
-		return ERR(0, "encoded length should be %lu but was %lu",
+		return ERR(0, "encoded length should be %zu but was %" PRIu64,
 		    encoded_length, umdr_size(&um));
 
 	if (uv[0].v.u64 != 111)

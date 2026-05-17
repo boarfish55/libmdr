@@ -392,7 +392,8 @@ pack_bein(struct pmdr *m, uint64_t id, int fd, struct sockaddr_in6 *peer,
 
 	if (cert_len > mdrd_conf.max_cert_size) {
 		xlog(LOG_ERR, NULL, "%s: X509 length above limit: "
-		    "%d > %lu", __func__, cert_len, mdrd_conf.max_cert_size);
+		    "%d > %" PRIu64, __func__, cert_len,
+		    mdrd_conf.max_cert_size);
 		return -1;
 	}
 
@@ -648,11 +649,11 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 
 	if (umdr_size(&cb_data->msg) > mdrd_conf.max_payload_size) {
 		xlog_strerror(LOG_ERR, errno, "%s: mdr size is above our "
-		    "configured maximum size of %lu bytes", __func__,
+		    "configured maximum size of %" PRIu64 " bytes", __func__,
 		    mdrd_conf.max_payload_size);
 		snprintf(errmsg, sizeof(errmsg),
 		    "payload size in excess of configured limit (%"
-		    PRIu64 "bytes)", mdrd_conf.max_payload_size);
+		    PRIu64 " bytes)", mdrd_conf.max_payload_size);
 		error_reply(t, MDR_ERR_SZEX, errmsg);
 		return -1;
 	}
@@ -799,7 +800,7 @@ backend_msg_in_cb(int fd)
 		break;
 	default:
 		xlog(LOG_ERR, NULL,
-		    "%s: unknown message from backend: 0x%llx",
+		    "%s: unknown message from backend: 0x%" PRIx64,
 		    __func__, umdr_dcv(&beout));
 		goto fail;
 	}

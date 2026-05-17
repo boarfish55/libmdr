@@ -1,4 +1,5 @@
 #include <err.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
 #include <mdr/flatconf.h>
@@ -120,11 +121,11 @@ main()
 	printf("gid: %s\n", test_conf.gid);
 	printf("test_escape_quote: %s\n", test_conf.test_escape_quote);
 	printf("test_escape_backslash: %s\n", test_conf.test_escape_backslash);
-	printf("test_uint64: %lu\n", test_conf.test_uint64);
+	printf("test_uint64: %" PRIu64 "\n", test_conf.test_uint64);
 	printf("test_boolint: %d\n", test_conf.test_boolint);
-	printf("test_uint64: %lu\n", test_conf.test_uint64);
-	printf("test_hex: %lx\n", test_conf.test_hex);
-	printf("test_int64: %ld\n", test_conf.test_int64);
+	printf("test_uint64: %" PRIu64 "\n", test_conf.test_uint64);
+	printf("test_hex: %" PRIx64 "\n", test_conf.test_hex);
+	printf("test_int64: %" PRIi64 "\n", test_conf.test_int64);
 	printf("test_path: %s\n", test_conf.test_path);
 
 	printf("test_path_list:");
@@ -137,7 +138,7 @@ main()
 	printf("test_ulong_list:");
 	for (i = 0; test_conf.test_ulong_list &&
 	    test_conf.test_ulong_list[i] != NULL; i++) {
-		printf(" %lu", *test_conf.test_ulong_list[i]);
+		printf(" %" PRIu64, *test_conf.test_ulong_list[i]);
 	}
 	printf("\n");
 
