@@ -1,0 +1,123 @@
+.\"
+.\" Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+.\"
+.\" SPDX-License-Identifier: ISC
+.\"
+.Dd $Mdocdate$
+.Dt TLSEV_REPLY 3
+.Os
+.Sh NAME
+.Nm tlsev_reply ,
+.Nm tlsev_drain ,
+.Nm tlsev_outbufsz
+.Nd send bytes to a tlsev client and control the close-after-flush lifecycle
+.Sh SYNOPSIS
+.In mdr/tlsev.h
+.Ft int
+.Fn tlsev_reply "struct tlsev *t" "const unsigned char *buf" "int len"
+.Ft void
+.Fn tlsev_drain "struct tlsev *t"
+.Ft size_t
+.Fn tlsev_outbufsz "struct tlsev *t"
+.Sh DESCRIPTION
+.Fn tlsev_reply
+queues plaintext bytes for delivery to the TLS client associated with
+.Fa t .
+The buffer
+.Fa buf
+of
+.Fa len
+bytes is encrypted via
+.Xr SSL_write 3
+and either written to the socket immediately or buffered for later
+transmission.
+If the underlying TCP send buffer is full, the residual is retained
+inside the listener's per-connection state and drained on subsequent
+write-readiness events.
+While output is buffered, reads on the client are paused so that TCP
+back-pressure can propagate to the peer.
+.Pp
+.Fn tlsev_reply
+should be called from inside the
+.Fa in_cb
+callback registered at
+.Xr tlsev_init 3
+time, or from within the
+.Fa tasks
+hook of
+.Xr tlsev_run 3 .
+It is not safe to call from a signal handler.
+.Pp
+.Fn tlsev_drain
+marks
+.Fa t
+to be closed once its outgoing buffer is fully flushed to the peer.
+Any pending writes are sent, and the connection is closed after the last
+byte reaches the socket.
+Calling
+.Fn tlsev_drain
+on a connection with no buffered output causes it to be closed on the
+next event-loop iteration.
+This is the orderly counterpart to closing the connection from inside
+.Fa in_cb
+by returning
+.Dv -1 ,
+which closes immediately and discards any pending output.
+.Pp
+.Fn tlsev_outbufsz
+returns the number of raw bytes currently queued for delivery to
+.Fa t ,
+including both the bytes still inside the TLS write
+.Vt BIO
+and any residual stored after a short write to the socket.
+A return of zero indicates that the TLS layer has nothing pending for
+this client.
+.Sh RETURN VALUES
+.Fn tlsev_reply
+returns the number of raw bytes currently pending for the client (a
+non-negative value) on success, or
+.Dv -1
+on failure with
+.Va errno
+set to indicate the error.
+.Pp
+.Fn tlsev_outbufsz
+returns the byte count described above.
+.Pp
+.Fn tlsev_drain
+returns no value.
+.Sh ERRORS
+.Fn tlsev_reply
+fails with the following errno values:
+.Bl -tag -width Er
+.It Bq Er ENOMEM
+.Xr SSL_write 3
+could not allocate memory for the encrypted output.
+.It Bq Er EOVERFLOW
+The amount of buffered output would exceed
+.Dv INT_MAX
+bytes.
+.It Bq Er EIO
+Registering for write-readiness via
+.Xr kevent 2
+or
+.Xr epoll_ctl 2
+failed.
+The connection is closed before
+.Fn tlsev_reply
+returns; the caller must not use
+.Fa t
+afterward.
+.El
+.Sh SEE ALSO
+.Xr tlsev_init 3 ,
+.Xr tlsev_peer 3 ,
+.Xr SSL_write 3
+.Sh HISTORY
+The
+.Nm tlsev
+library first appeared in
+.Sy mdr
+0.8.0 .
+.Sh AUTHORS
+.An Pascal Lalonde Aq Mt plalonde@overnet.ca

@@ -89,6 +89,9 @@ install: all
 	mkdir -p ${DESTDIR}/lib
 	mkdir -p ${DESTDIR}/include/mdr
 	mkdir -p ${DESTDIR}/share/doc/libmdr/examples
+	mkdir -p ${DESTDIR}/share/man/man3
+	mkdir -p ${DESTDIR}/share/man/man5
+	mkdir -p ${DESTDIR}/share/man/man8
 
 	install -m 0755 mdrd ${DESTDIR}/sbin/
 	install -m 0755 mdrc ${DESTDIR}/bin/
@@ -98,6 +101,9 @@ install: all
 	install -m 0644 libflatconf.a ${DESTDIR}/lib/
 	install -m 0644 libflatconf.so ${DESTDIR}/lib/
 	install -m 0644 mdrd.conf.sample ${DESTDIR}/share/doc/libmdr/examples
+	install -m 0644 man/*.3 ${DESTDIR}/share/man/man3/
+	install -m 0644 man/*.5 ${DESTDIR}/share/man/man5/
+	install -m 0644 man/*.8 ${DESTDIR}/share/man/man8/
 
 clean:
 	rm -f $(DEPDIR)/* *.o mdr_tests mdrc mdrd mdrd_backend_echo \

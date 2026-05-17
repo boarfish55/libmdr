@@ -1,0 +1,107 @@
+.\"
+.\" Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+.\"
+.\" SPDX-License-Identifier: ISC
+.\"
+.Dd $Mdocdate$
+.Dt MDRD 8
+.Os
+.Sh NAME
+.Nm mdrd
+.Nd TLS-terminating message daemon
+.Sh SYNOPSIS
+.Nm mdrd
+.Op Fl df
+.Op Fl c Ar config
+.Op Cm shutdown | stat
+.Sh DESCRIPTION
+.Nm
+is a forking TLS-terminating front end that decrypts client traffic
+and forwards application-level
+.Xr mdr 3
+messages to a back-end process specified in its configuration file.
+Each
+.Sy prefork
+worker runs its own
+.Xr tlsev 3
+event loop and is paired with a single back-end instance, communicating
+with it through a pipe.
+.Pp
+A separate parent process supervises the workers, accepts counter
+queries on a
+.Ux Ns -domain
+socket, and respawns workers that exit.
+.Pp
+The options are:
+.Bl -tag -width "-c config"
+.It Fl c Ar config
+Read configuration from
+.Ar config
+instead of
+.Pa /etc/mdrd.conf .
+.It Fl d
+Debug mode: do not fork into the background, log everything to standard
+error.
+Implies
+.Fl f .
+.It Fl f
+Do not detach from the controlling terminal.
+.El
+.Pp
+The subcommands are:
+.Bl -tag -width "shutdown"
+.It Cm shutdown
+Send
+.Dv SIGTERM
+to the running daemon, read from
+.Sy pid_file
+in the configuration.
+.It Cm stat
+Connect to
+.Sy counters_sock
+and print accumulated per-worker counters.
+The set of counters is described in
+.Xr tlsev_dump_counters 3 .
+.El
+.Sh SIGNALS
+.Bl -tag -width "SIGTERM"
+.It Dv SIGTERM , Dv SIGINT
+Begin an orderly shutdown.
+The listening sockets are closed first; existing clients are allowed to
+drain in-flight requests before being closed.
+.Nm
+exits once all workers have exited.
+.It Dv SIGHUP
+Request a re-read of the server certificate, key, and CRLs at the next
+scan iteration.
+Configuration values other than the TLS material are
+.Em not
+reloaded; restart the daemon to change those.
+.It Dv SIGCHLD
+Workers that exit are reaped automatically and respawned (unless a
+shutdown is already in progress).
+.El
+.Sh FILES
+.Bl -tag -width Pa
+.It Pa /etc/mdrd.conf
+Default configuration.
+.It Pa /var/run/mdrd.pid
+Default pid file.
+.It Pa /var/run/mdrd_counters.sock
+Default counters socket.
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Xr mdr 3 ,
+.Xr mdrd_recv 3 ,
+.Xr tlsev 3 ,
+.Xr tlsev_dump_counters 3 ,
+.Xr mdrd.conf 5
+.Sh HISTORY
+.Nm
+first appeared in
+.Sy mdr
+0.8.0 .
+.Sh AUTHORS
+.An Pascal Lalonde Aq Mt plalonde@overnet.ca

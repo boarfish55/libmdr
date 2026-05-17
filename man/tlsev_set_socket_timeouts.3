@@ -1,0 +1,177 @@
+.\"
+.\" Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+.\"
+.\" SPDX-License-Identifier: ISC
+.\"
+.Dd $Mdocdate$
+.Dt TLSEV_SET_SOCKET_TIMEOUTS 3
+.Os
+.Sh NAME
+.Nm tlsev_set_socket_timeouts ,
+.Nm tlsev_set_max_conns_per_ip ,
+.Nm tlsev_auto_rcv_lowat ,
+.Nm tlsev_add_fd_cb
+.Nd tune a tlsev listener and extend its event loop
+.Sh SYNOPSIS
+.In mdr/tlsev.h
+.Ft int
+.Fn tlsev_set_socket_timeouts "struct tlsev_listener *l" "int min" "int max"
+.Ft int
+.Fn tlsev_set_max_conns_per_ip "struct tlsev_listener *l" "uint16_t n"
+.Ft int
+.Fn tlsev_auto_rcv_lowat "struct tlsev_listener *l" "int on"
+.Ft int
+.Fn tlsev_add_fd_cb "struct tlsev_listener *l" "struct tlsev_fd_cb *fd_cb"
+.Sh DESCRIPTION
+These functions configure runtime behavior of a listener after it has
+been initialized by
+.Xr tlsev_init 3
+and before
+.Xr tlsev_run 3
+is entered.
+With the exception of
+.Fn tlsev_add_fd_cb ,
+they may also be called from within the
+.Fa tasks
+hook of
+.Xr tlsev_run 3
+to adjust behavior at runtime.
+.Pp
+.Fn tlsev_set_socket_timeouts
+sets the inactivity window after which an idle TLS connection is closed.
+Its arguments are:
+.Bl -tag -width "max"
+.It Fa min
+Lower bound on the timeout in seconds, applied when the listener is at
+or near
+.Fa max_clients .
+.It Fa max
+Upper bound in seconds, applied when the listener is otherwise idle.
+The effective timeout for any given connection scales linearly between
+.Fa min
+and
+.Fa max
+based on
+.Fa active_clients
+versus
+.Fa max_clients ,
+shrinking idle tolerance under load.
+Both values must be non-negative and
+.Fa min
+must be less than or equal to
+.Fa max .
+.El
+.Pp
+.Fn tlsev_set_max_conns_per_ip
+caps the number of concurrent connections from a single peer address to
+.Fa n .
+A new accept that would exceed this cap is rejected immediately, before
+the TLS handshake begins.
+.Fa n
+must be at least 1.
+.Pp
+.Fn tlsev_auto_rcv_lowat
+toggles the listener's automatic management of the
+.Dv SO_RCVLOWAT
+socket option on TLS client sockets.
+When
+.Fa on
+is non-zero, the listener observes how many bytes
+.Xr SSL_read 3
+indicated it still needs to complete a record and sets the socket's low
+watermark accordingly, so the event loop is not woken on every fragment
+of a partially-arrived TLS record.
+The default, established by
+.Xr tlsev_init 3 ,
+is enabled.
+.Pp
+.Fn tlsev_add_fd_cb
+registers an additional file descriptor with the listener's event loop.
+.Fa fd_cb
+points to a caller-owned structure describing the file descriptor and a
+read-event callback; the listener copies the contents and may be called
+back any time the descriptor is readable.
+The callback should return a positive value to remain registered, or
+.Dv 0
+or negative to be removed from the listener at the end of the current
+event-loop iteration.
+This is typically used to integrate a non-TLS control socket or a pipe
+from a worker process with the same event loop that serves clients.
+.Pp
+The
+.Vt struct tlsev_fd_cb
+fields are:
+.Bl -tag -width "fd"
+.It Fa fd
+The file descriptor to monitor for readability.
+The listener does not change its blocking mode or take ownership;
+the caller remains responsible for closing it.
+.It Fa cb
+The callback function invoked when
+.Fa fd
+becomes readable, with
+.Fa fd
+as its only argument.
+.El
+.Sh RETURN VALUES
+All four functions return 0 on success and \-1 on failure with
+.Va errno
+set to indicate the error.
+.Sh ERRORS
+.Fn tlsev_set_socket_timeouts ,
+.Fn tlsev_set_max_conns_per_ip ,
+and
+.Fn tlsev_auto_rcv_lowat
+fail with:
+.Bl -tag -width Er
+.It Bq Er EINVAL
+.Fa l
+is
+.Dv NULL ,
+or the supplied value is out of range
+.Po
+.Fa min
+or
+.Fa max
+negative, or
+.Fa min No > Fa max ;
+.Fa n
+is zero
+.Pc .
+.El
+.Pp
+.Fn tlsev_add_fd_cb
+fails with:
+.Bl -tag -width Er
+.It Bq Er EINVAL
+.Fa l
+or
+.Fa fd_cb
+is
+.Dv NULL .
+.It Bq Er EOVERFLOW
+The maximum number of monitored descriptors would exceed
+.Dv INT_MAX .
+.It Bq Er ENOMEM
+Memory allocation failed while growing the callback array.
+.El
+.Pp
+.Fn tlsev_add_fd_cb
+may also fail with any
+.Va errno
+returned by
+.Xr kevent 2
+or
+.Xr epoll_ctl 2 .
+.Sh SEE ALSO
+.Xr tlsev_init 3 ,
+.Xr tlsev_reply 3 ,
+.Xr setsockopt 2
+.Sh HISTORY
+The
+.Nm tlsev
+library first appeared in
+.Sy mdr
+0.8.0 .
+.Sh AUTHORS
+.An Pascal Lalonde Aq Mt plalonde@overnet.ca

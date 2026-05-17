@@ -69,16 +69,28 @@ test: mdr_tests
 		|| ./mdr_tests
 
 install: all
-	install -d -o root -g bin -m 0555 mdrc ${PREFIX}/bin/
-	install -d -o root -g bin -m 0555 mdrd ${PREFIX}/sbin/
-	install -d -o root -g bin -m 0555 README.md ${PREFIX}/share/doc/libmdr/
-	install -d -o root -g bin -m 0555 LICENSE ${PREFIX}/share/doc/libmdr/
-	install -d -o root -g bin -m 0555 mdrd.conf.sample ${PREFIX}/share/doc/libmdr/
-	install -d -o root -g bin -m 0555 libmdr.a ${PREFIX}/lib/
-	install -d -o root -g bin -m 0555 libmdr.so.* ${PREFIX}/lib/
-	install -d -o root -g bin -m 0555 libflatconf.a ${PREFIX}/lib/
-	install -d -o root -g bin -m 0555 libflatconf.so.* ${PREFIX}/lib/
-	install -d -o root -g bin -m 0555 mdrd_backend_echo ${PREFIX}/libexec/libmdr/
+	install -d -o root -g bin -m 0755 ${PREFIX}/bin
+	install -d -o root -g bin -m 0755 ${PREFIX}/sbin
+	install -d -o root -g bin -m 0755 ${PREFIX}/lib
+	install -d -o root -g bin -m 0755 ${PREFIX}/libexec/libmdr
+	install -d -o root -g bin -m 0755 ${PREFIX}/share/doc/libmdr
+	install -d -o root -g bin -m 0755 ${PREFIX}/man/man3
+	install -d -o root -g bin -m 0755 ${PREFIX}/man/man5
+	install -d -o root -g bin -m 0755 ${PREFIX}/man/man8
+
+	install -o root -g bin -m 0555 mdrc ${PREFIX}/bin/
+	install -o root -g bin -m 0555 mdrd ${PREFIX}/sbin/
+	install -o root -g bin -m 0555 mdrd_backend_echo ${PREFIX}/libexec/libmdr/
+	install -o root -g bin -m 0444 libmdr.a ${PREFIX}/lib/
+	install -o root -g bin -m 0444 libmdr.so.* ${PREFIX}/lib/
+	install -o root -g bin -m 0444 libflatconf.a ${PREFIX}/lib/
+	install -o root -g bin -m 0444 libflatconf.so.* ${PREFIX}/lib/
+	install -o root -g bin -m 0444 README.md ${PREFIX}/share/doc/libmdr/
+	install -o root -g bin -m 0444 LICENSE ${PREFIX}/share/doc/libmdr/
+	install -o root -g bin -m 0444 mdrd.conf.sample ${PREFIX}/share/doc/libmdr/
+	install -o root -g bin -m 0444 man/*.3 ${PREFIX}/man/man3/
+	install -o root -g bin -m 0444 man/*.5 ${PREFIX}/man/man5/
+	install -o root -g bin -m 0444 man/*.8 ${PREFIX}/man/man8/
 
 clean:
 	rm -f *.o mdr_tests mdrc mdrd mdrd_backend_echo \

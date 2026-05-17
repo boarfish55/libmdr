@@ -1,0 +1,195 @@
+.\"
+.\" Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+.\"
+.\" SPDX-License-Identifier: ISC
+.\"
+.Dd $Mdocdate$
+.Dt MDRD.CONF 5
+.Os
+.Sh NAME
+.Nm mdrd.conf
+.Nd configuration file for the mdrd daemon
+.Sh DESCRIPTION
+.Nm
+configures the
+.Xr mdrd 8
+daemon.
+Each setting is a
+.Ar key Sy = Ar value
+assignment on its own line; comments begin with
+.Sq # .
+String values are enclosed in double quotes, lists in square brackets,
+and booleans accept
+.Sy true
+or
+.Sy false .
+The file is read once at startup; most settings cannot be changed
+without restarting the daemon
+.Po see Sx SIGNALS in Xr mdrd 8 Pc .
+The default path is
+.Pa /etc/mdrd.conf ;
+override with
+.Fl c
+on the
+.Xr mdrd 8
+command line.
+.Sh PROCESS
+.Bl -tag -width Ds
+.It Sy uid Ns , Sy gid
+User and group the daemon switches to after binding its listen sockets.
+.It Sy enable_coredumps
+Whether to permit core dumps after privilege drop.
+Defaults to disabled.
+.It Sy pid_file
+Path to the pid file.
+The file is opened, locked with
+.Xr flock 2 ,
+and never closed for the lifetime of the daemon, preventing concurrent
+instances.
+.It Sy counters_sock
+.Ux Ns -domain
+socket path on which the parent process accepts
+.Sy mdrd stat
+queries.
+.El
+.Sh TLS
+.Bl -tag -width Ds
+.It Sy ca_file
+Path to the PEM-encoded trust anchor used to verify client certificates.
+.It Sy cert_file
+Path to the PEM-encoded server certificate (chain).
+.It Sy key_file
+Path to the PEM-encoded private key.
+.It Sy crl_file
+Optional path to a single CRL in PEM format.
+.It Sy crl_path
+Optional directory of CRL files
+.Pq Pa *.crl ,
+loaded together with
+.Sy crl_file .
+.It Sy require_client_cert
+If true, clients must present a certificate verified by
+.Sy ca_file
+.Po and not revoked by any loaded CRL Pc
+to complete the handshake.
+If false, self-signed or unknown-issuer client certs are accepted; the
+back-end is then responsible for performing its own authorization.
+.It Sy monitor_ssl_files
+If true, the daemon periodically restats
+.Sy cert_file
+and the CRLs and reloads them when they change.
+The scan interval is controlled by
+.Sy crl_scan_interval_sec .
+A
+.Dv SIGHUP
+forces an immediate reload independent of this setting.
+.It Sy crl_scan_interval_sec
+Seconds between automatic CRL/cert rescan when
+.Sy monitor_ssl_files
+is enabled.
+.El
+.Sh LISTENERS
+.Bl -tag -width Ds
+.It Sy port
+TCP port to listen on.
+.It Sy listen_backlog
+Backlog passed to
+.Xr listen 2 .
+.It Sy prefork
+Number of independent listener processes.
+For maximum throughput, set this to the number of cores on the host;
+see the sample configuration for guidance.
+.It Sy max_clients
+Per-prefork cap on concurrent TLS sessions.
+.It Sy max_conn_per_ip
+Per-prefork cap on concurrent connections from a single peer address.
+.It Sy socket_timeout_min Ns , Sy socket_timeout_max
+Bounds in seconds on the per-connection idle timeout.
+The effective timeout scales linearly between these two values as the
+listener fills up: at full load, idle clients are reaped after
+.Sy socket_timeout_min
+seconds; at low load, after
+.Sy socket_timeout_max .
+.It Sy use_rcv_lowat
+If true, the listener manages
+.Dv SO_RCVLOWAT
+on each client socket to avoid waking the event loop on partial TLS
+records.
+Recommended.
+.It Sy so_debug
+.Pq OpenBSD only
+Sets
+.Dv SO_DEBUG
+on the listening socket.
+.It Sy rcvbuf Ns , Sy sndbuf
+.Dv SO_RCVBUF
+and
+.Dv SO_SNDBUF
+in bytes, applied to every accepted client socket.
+A value of 0 leaves the operating system to auto-tune.
+.El
+.Sh MESSAGES
+.Bl -tag -width Ds
+.It Sy max_payload_size
+Upper bound, in bytes, on a single client message.
+TLS records are normally at most 16 KiB; values larger than that come at
+the cost of stack and per-connection memory.
+On
+.Ox
+the pipe between mdrd and the back-end is 16 KiB, so payloads above
+that size will require a blocking write to the back-end pipe.
+.It Sy max_cert_size
+Upper bound, in bytes, on a single client leaf certificate.
+4 KiB is comfortable for classical certs; raise to 8 or 16 KiB for
+post-quantum certificates (ML-DSA-65 and above).
+.It Sy allowed_mdr_domains
+Optional list of 32-bit mdr
+.Sy domain
+values accepted from clients.
+Messages whose domain is not on the list are rejected with
+.Dv MDR_ERR_NOTSUPP .
+If unset, all domains are allowed.
+.It Sy dbg_delay_to_backend_seconds
+Debugging knob that sleeps the listener for the specified number of
+seconds before forwarding each client message, giving an operator time
+to attach a debugger to the back-end.
+Leave at 0 in production.
+.El
+.Sh BACKEND
+.Bl -tag -width Ds
+.It Sy backend_argv
+Command line of the back-end process to spawn, given as a list whose
+first element is the executable.
+.It Sy backend_uid Ns , Sy backend_gid
+User and group the back-end runs as.
+.It Sy backend_promises
+.Pq OpenBSD only
+Promises passed to
+.Xr pledge 2
+when the back-end is exec'd.
+.It Sy backend_unveils
+.Pq OpenBSD only
+List of
+.Ar perms Ns = Ns Ar path
+entries passed to
+.Xr unveil 2
+before the back-end is exec'd.
+.El
+.Sh FILES
+.Bl -tag -width Pa
+.It Pa /etc/mdrd.conf
+Default configuration file.
+.It Pa /etc/examples/mdrd.conf.sample
+Annotated sample configuration shipped with the distribution.
+.El
+.Sh SEE ALSO
+.Xr mdrd 8 ,
+.Xr pledge 2 ,
+.Xr unveil 2
+.Sh HISTORY
+.Nm
+first appeared in
+.Sy mdr
+0.8.0 .
+.Sh AUTHORS
+.An Pascal Lalonde Aq Mt plalonde@overnet.ca

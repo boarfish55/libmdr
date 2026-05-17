@@ -1,0 +1,201 @@
+.\"
+.\" Copyright (C) 2026 Pascal Lalonde <plalonde@overnet.ca>
+.\"
+.\" SPDX-License-Identifier: ISC
+.\"
+.Dd $Mdocdate$
+.Dt TLSEV 3
+.Os
+.Sh NAME
+.Nm tlsev
+.Nd single-threaded TLS event-loop library
+.Sh SYNOPSIS
+.In mdr/tlsev.h
+.Sh DESCRIPTION
+The
+.Nm
+library terminates TLS connections from many concurrent clients on a
+single-threaded, level-triggered event loop and dispatches their
+decrypted application messages to a user-provided callback.
+It is intended as the foundation of small purpose-built network
+services where a dedicated event-loop layer such as
+.Sy libevent
+would be more dependency than the service is worth.
+.Pp
+On Linux the event loop is implemented with
+.Xr epoll_wait 2 ;
+on
+.Ox
+and other BSDs, with
+.Xr kevent 2 .
+The choice is made at compile time; the API is identical on either
+platform.
+.Sh OVERVIEW
+A
+.Nm
+service is built around a single
+.Vt "struct tlsev_listener" .
+The listener owns the listening sockets, the per-client session table,
+the timeout heap, and a peer-tree used to enforce per-IP connection
+caps.
+.Pp
+Each accepted client is represented by a
+.Vt "struct tlsev" .
+Per-session state is held in two OpenSSL or LibreSSL memory-backed
+.Vt BIO
+objects:
+the read
+.Vt BIO
+receives encrypted bytes from the socket, and the write
+.Vt BIO
+buffers encrypted bytes destined for the socket.
+TCP back-pressure is propagated by suspending reads on a client whose
+write buffer cannot drain; see
+.Xr tlsev_reply 3 .
+.Pp
+Sessions are uniquely identified by a monotonically increasing 64-bit
+identifier
+.Pq Xr tlsev_id 3
+that is safe to forward to a back-end process and use as a return
+address, even across file descriptor reuse.
+.Sh LIFECYCLE
+A typical service follows this order:
+.Bl -enum
+.It
+Create one or more bound and listening sockets.
+.It
+Build an
+.Vt SSL_CTX
+configured with a server certificate, key, peer-verification
+callback, and any session-cache policy required.
+.It
+Call
+.Xr tlsev_init 3
+to associate those sockets and the
+.Vt SSL_CTX
+with a fresh listener, passing the
+.Fa in_cb
+callback that will receive decrypted application bytes and the
+optional
+.Fa in_cb_data_free
+callback used to release per-connection state at close time.
+.It
+Optionally tune the listener with
+.Xr tlsev_set_socket_timeouts 3 ,
+.Xr tlsev_set_max_conns_per_ip 3 ,
+or
+.Xr tlsev_auto_rcv_lowat 3 ,
+and register any additional file descriptors that should share the
+event loop with
+.Xr tlsev_add_fd_cb 3 .
+.It
+Enter the loop with
+.Xr tlsev_run 3 ,
+passing an optional per-iteration
+.Fa tasks
+hook (used for things like certificate hot-reload or counter rollups).
+.It
+On shutdown signal, call
+.Xr tlsev_shutdown 3
+from the signal handler.
+The listening sockets stop accepting new connections; existing
+connections are allowed to drain their write buffers before being
+closed.
+.Xr tlsev_run 3
+returns once the last active client has gone.
+.It
+Call
+.Xr tlsev_destroy 3
+to release listener resources.
+The caller retains ownership of the
+.Vt SSL_CTX .
+.El
+.Sh CALLBACK CONTRACT
+The
+.Fa in_cb
+callback is invoked from inside
+.Xr tlsev_run 3
+whenever decrypted bytes are available for a client.
+It receives:
+.Bl -tag -width "void **data"
+.It Vt "struct tlsev *t"
+The session those bytes belong to.
+.It Vt "const char *buf , size_t n"
+The plaintext bytes;
+.Fa buf
+is a transient buffer owned by the listener and must not be retained
+beyond the call.
+.It Vt "void **data"
+A per-session slot owned by the listener.
+On the first call for a session,
+.Va *data
+is
+.Dv NULL ;
+the callback may allocate state and store the pointer there.
+On every subsequent call for the same session,
+.Va *data
+is the value the callback last stored.
+.El
+.Pp
+The callback returns zero to keep the session open or
+.Dv -1
+to close it immediately, discarding any pending output.
+For orderly close after flushing pending bytes, call
+.Xr tlsev_drain 3
+and return zero.
+.Pp
+If
+.Fa in_cb_data_free
+was supplied to
+.Xr tlsev_init 3 ,
+it is invoked at close time with the value the callback last stored in
+.Va *data ,
+allowing per-session state to be released.
+.Sh BACK-PRESSURE AND TIMEOUTS
+Connections are reaped when idle.
+The effective timeout for any given session scales linearly between
+the configured minimum and maximum based on the current load
+.Po see Xr tlsev_set_socket_timeouts 3 Pc ,
+shrinking idle tolerance as the listener fills up.
+.Pp
+When a client cannot keep up with output, the listener buffers in its
+write
+.Vt BIO
+and, on a short write to the socket, in an auxiliary retry buffer.
+Reads on that client are paused until the buffer drains, propagating
+TCP back-pressure to the peer rather than absorbing it on the server.
+.Pp
+Per-IP fairness is enforced by
+.Xr tlsev_set_max_conns_per_ip 3 :
+a connection that would exceed the configured cap is rejected before
+the TLS handshake begins.
+.Sh THREAD AND SIGNAL SAFETY
+.Nm
+is single-threaded.
+A given listener must be driven by exactly one thread.
+.Pp
+.Xr tlsev_shutdown 3
+is async-signal-safe and is the only function in the library safe to
+call from a signal handler.
+All other entry points must be called from the same thread that runs
+the loop, typically from inside the
+.Fa tasks
+hook or from
+.Fa in_cb .
+.Sh SEE ALSO
+.Xr tlsev_init 3 ,
+.Xr tlsev_reply 3 ,
+.Xr tlsev_peer 3 ,
+.Xr tlsev_set_socket_timeouts 3 ,
+.Xr tlsev_dump_counters 3 ,
+.Xr epoll_wait 2 ,
+.Xr kevent 2 ,
+.Xr SSL_CTX_new 3
+.Sh HISTORY
+The
+.Nm
+library first appeared in
+.Sy mdr
+0.8.0 .
+.Sh AUTHORS
+.An Pascal Lalonde Aq Mt plalonde@overnet.ca
