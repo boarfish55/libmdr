@@ -477,7 +477,7 @@ do_tls(struct pmdr *m, const char *target, const char *key_path,
 			if ((r = BIO_write(b, pmdr_buf(m), pmdr_size(m))) == -1)
 				ssl_err();
 			else if (r < pmdr_size(m))
-				errx(1, "short write: %d < %llu", r,
+				errx(1, "short write: %d < %" PRIu64, r,
 				    pmdr_size(m));
 		} else {
 			for (j = 0; j < pmdr_size(m); j++) {
@@ -594,7 +594,7 @@ do_stdout(struct pmdr *m)
 		if ((r = write(1, pmdr_buf(m), pmdr_size(m))) == -1)
 			err(1, "write");
 		else if (r < pmdr_size(m))
-			errx(1, "short write: %d < %llu", r, pmdr_size(m));
+			errx(1, "short write: %d < %" PRIu64, r, pmdr_size(m));
 	}
 	pmdr_free(m);
 }
