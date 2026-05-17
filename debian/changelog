@@ -1,3 +1,25 @@
+libmdr (0.8.3-1) unstable; urgency=medium
+
+  * Fixed double-free
+  * Retry writes after EINTR, don't abort on EAGAIN, just return and retry
+    later
+  * Fixed error reporting after SSL_accept error
+  * Don't abort connection once the write BIO is empty
+  * Fix possible connection stall if we receive multiple TLS records at once
+  * Fixed resource leak on shutdown
+  * Fixed possible fd corruption (closing the wrong fd; seemingly only on BSD)
+  * Fix tlsev_close() invocation on OpenBSD
+  * idxheap_top() should really be a _peek(0) rather than remove. So do that,
+    then add a new idxheap_pop() that does remove the top entry. More
+    intuitive like that.
+  * Explicitly handle null peer_cert in pack_bein(); not a bug with
+    OpenSSL/LibreSSL, but this is not documented behavior so err on the
+    side of caution
+  * Fix leak in strarray_add when realloc fails
+  * manpages & doc
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Sat, 16 May 2026 22:25:27 -0400
+
 libmdr (0.8.2-1) unstable; urgency=medium
 
   * Don't let decoding be fooled by a massive array size for strings/mdrs that
