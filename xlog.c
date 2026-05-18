@@ -161,7 +161,7 @@ xerr_is(const struct xerr *e, int code, int subcode)
 		return 0;
 
 	if (e->sp == code && e->code == subcode)
-		return subcode;
+		return 1;
 
 	return 0;
 }
