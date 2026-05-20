@@ -161,10 +161,9 @@ libmdr.so.0 libmdr0 #MINVER#
  writeall@Base 0.7.0
  xerr_fail@Base 0.7.0
  xerr_is@Base 0.7.0
- xerr_prepend@Base 0.7.0
  xerr_print@Base 0.7.0
+ xerr_push@Base 0.8.5
  xerrf@Base 0.7.0
- xerrfn@Base 0.7.0
  xerrz@Base 0.7.0
  xlog@Base 0.7.0
  xlog_dbg@Base 0.7.0
