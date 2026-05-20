@@ -92,7 +92,7 @@ static int
 xerr_assemble(const struct xerr *e, char *dst, size_t dst_sz,
     const char *fmt, va_list *ap)
 {
-	int     i, len, attempt;
+	int     i, len = 0;
 	char    errmsg[128];
 
 	if (dst == NULL || dst_sz < 16)
@@ -103,41 +103,42 @@ xerr_assemble(const struct xerr *e, char *dst, size_t dst_sz,
 	if (e == NULL)
 		return 0;
 
-	if (e->depth >= XERR_MAX_DEPTH)
-		strlcat(dst, "*", dst_sz);
+	if (fmt != NULL) {
+		len = vsnprintf(dst, dst_sz, fmt, *ap);
+		if (len >= dst_sz) {
+			dst[dst_sz - 2] = '*';
+			return len;
+		}
+	}
+
+	if (strlcat(dst, ">>", dst_sz) >= dst_sz) {
+		dst[dst_sz - 2] = '*';
+		return dst_sz;
+	}
+	len += 2;
+
+	if (e->depth >= XERR_MAX_DEPTH) {
+		if (strlcat(dst, "*", dst_sz) >= dst_sz) {
+			dst[dst_sz - 2] = '*';
+			return dst_sz;
+		}
+	}
 
 	for (i = MIN(e->depth, XERR_MAX_DEPTH - 1); i >= 0; i--) {
 		if (strlcat(dst, e->stack[i], dst_sz) >= dst_sz) {
 			strlcpy(dst, "*: ", dst_sz);
 			break;
 		}
-		if (i > 0) {
-			if (strlcat(dst, "> ", dst_sz) >= dst_sz) {
-				strlcpy(dst, "*: ", dst_sz);
-				break;
-			}
+		if (strlcat(dst, ">>", dst_sz) >= dst_sz) {
+			strlcpy(dst, "*: ", dst_sz);
+			break;
 		}
 	}
 
-	if (strlcat(dst, ": ", dst_sz) >= dst_sz)
+	if (strlcat(dst, " ", dst_sz) >= dst_sz)
 		strlcpy(dst, "*: ", dst_sz);
 
 	len = strlen(dst);
-
-	if (fmt != NULL) {
-		attempt = vsnprintf(dst + len, dst_sz - len, fmt, *ap);
-		if (len + attempt >= dst_sz) {
-			dst[dst_sz - 2] = '*';
-			return len + attempt;
-		}
-		len += attempt;
-
-		if (strlcat(dst, ": ", dst_sz) >= dst_sz) {
-			dst[dst_sz - 2] = '*';
-			return dst_sz;
-		}
-		len += 2;
-	}
 
 	if (e->sp == XLOG_ERRNO && e->code != 0) {
 		strerror_r(e->code, errmsg, sizeof(errmsg));

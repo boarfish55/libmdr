@@ -21,8 +21,9 @@ MDRD_OBJS = mdrd.o idxheap.o flatconf.o mdr.o mdr_mdrd.o tlsev.o util.o xlog.o
 MDRC_OBJS = mdrc.o mdr.o
 BE_ECHO_OBJS = mdrd_backend_echo.o mdr.o mdr_mdrd.o xlog.o util.o
 MDR_TESTS_OBJS = mdr_tests.o mdr.o util.o xlog.o
+XLOG_TESTS_OBJS = xlog_tests.o xlog.o
 
-all: mdrc mdr_tests flatconf_tests mdrd mdrd_backend_echo libmdr.a \
+all: mdrc mdr_tests xlog_tests flatconf_tests mdrd mdrd_backend_echo libmdr.a \
 	libflatconf.a \
 	libmdr.so libmdr.so.${VERSION} libmdr.so.${VERSION_MAJOR} \
 	libflatconf.so libflatconf.so.${VERSION} libflatconf.so.${VERSION_MAJOR}
@@ -73,6 +74,9 @@ flatconf_tests: flatconf_tests.c flatconf.o
 mdr_tests: ${MDR_TESTS_OBJS}
 	${CC} ${CFLAGS} ${MDR_TESTS_OBJS} ${LDFLAGS} -o $@
 
+xlog_tests: ${XLOG_TESTS_OBJS}
+	${CC} ${CFLAGS} ${XLOG_TESTS_OBJS} ${LDFLAGS} -o $@
+
 mdrc: ${MDRC_OBJS}
 	${CC} ${CFLAGS} ${MDRC_OBJS} ${LDFLAGS} -o $@
 
@@ -111,7 +115,7 @@ install: all
 	install -m 0644 man/*.8 ${DESTDIR}/share/man/man8/
 
 clean:
-	rm -f $(DEPDIR)/* *.o mdr_tests mdrc mdrd mdrd_backend_echo \
+	rm -f $(DEPDIR)/* *.o mdr_tests xlog_tests mdrc mdrd mdrd_backend_echo \
 		flatconf.c flatconf_tests *.core core .depend \
 		*.so *.so.[0-9]* *.a *.tmp
 
