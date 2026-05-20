@@ -3,6 +3,7 @@
  *
  * SPDX-License-Identifier: ISC
  */
+#include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <openssl/err.h>
@@ -82,22 +83,95 @@ xerrz(struct xerr *e)
 
 	e->sp = 0;
 	e->code = 0;
+	e->depth = 0;
 	e->msg[0] = '\0';
 	return e;
 }
 
-int
-xerrf(struct xerr *e, int space, int code, const char *fmt, ...)
+static int
+xerr_assemble(const struct xerr *e, char *dst, size_t dst_sz,
+    const char *fmt, va_list *ap)
 {
-	va_list  ap;
-	int      written;
-	int      status = (space || code) ? -1 : 0;
+	int     i, len, attempt;
+	char    errmsg[128];
+
+	if (dst == NULL || dst_sz < 16)
+		return -1;
+
+	dst[0] = '\0';
+
+	if (e == NULL)
+		return 0;
+
+	if (e->depth >= XERR_MAX_DEPTH)
+		strlcat(dst, "*", dst_sz);
+
+	for (i = MIN(e->depth, XERR_MAX_DEPTH - 1); i >= 0; i--) {
+		if (strlcat(dst, e->stack[i], dst_sz) >= dst_sz) {
+			strlcpy(dst, "*: ", dst_sz);
+			break;
+		}
+		if (i > 0) {
+			if (strlcat(dst, "> ", dst_sz) >= dst_sz) {
+				strlcpy(dst, "*: ", dst_sz);
+				break;
+			}
+		}
+	}
+
+	if (strlcat(dst, ": ", dst_sz) >= dst_sz)
+		strlcpy(dst, "*: ", dst_sz);
+
+	len = strlen(dst);
+
+	if (fmt != NULL) {
+		attempt = vsnprintf(dst + len, dst_sz - len, fmt, *ap);
+		if (len + attempt >= dst_sz) {
+			dst[dst_sz - 2] = '*';
+			return len + attempt;
+		}
+		len += attempt;
+
+		if (strlcat(dst, ": ", dst_sz) >= dst_sz) {
+			dst[dst_sz - 2] = '*';
+			return dst_sz;
+		}
+		len += 2;
+	}
+
+	if (e->sp == XLOG_ERRNO && e->code != 0) {
+		strerror_r(e->code, errmsg, sizeof(errmsg));
+		len += snprintf(dst + len, dst_sz - len, "%s: %s",
+		    e->msg, errmsg);
+	} else if (e->sp == XLOG_EAI && e->code != 0) {
+		len += snprintf(dst + len, dst_sz - len, "%s: %s",
+		    e->msg, gai_strerror(e->code));
+	} else if (e->sp == XLOG_SSL && e->code != 0) {
+		ERR_error_string_n(e->code, errmsg, sizeof(errmsg));
+		len += snprintf(dst + len, dst_sz - len, "%s: %s",
+		    e->msg, errmsg);
+	} else {
+		len += snprintf(dst + len, dst_sz - len, "%s", e->msg);
+	}
+
+	return len;
+}
+
+int
+xerrf(struct xerr *e, int space, int code, const char *fn,
+    const char *fmt, ...)
+{
+	va_list ap;
+	int     written;
+	int     status = (space || code) ? -1 : 0;
 
 	if (e == NULL)
 		return status;
 
 	e->sp = space;
 	e->code = code;
+	e->depth = 0;
+	e->stack[0] = fn;
 	e->msg[0] = '\0';
 
 	if (fmt == NULL)
@@ -105,38 +179,6 @@ xerrf(struct xerr *e, int space, int code, const char *fmt, ...)
 
 	va_start(ap, fmt);
 	written = vsnprintf(e->msg, sizeof(e->msg), fmt, ap);
-	va_end(ap);
-
-	if (written >= sizeof(e->msg))
-		e->msg[sizeof(e->msg) - 2] = '*';
-
-	return status;
-}
-
-int
-xerrfn(struct xerr *e, int space, int code, const char *fn,
-    const char *fmt, ...)
-{
-	va_list  ap;
-	int      written;
-	int      status = (space || code) ? -1 : 0;
-	char     pfmt[LINE_MAX];
-
-	if (e == NULL)
-		return status;
-
-	e->sp = space;
-	e->code = code;
-	e->msg[0] = '\0';
-
-	if (fmt == NULL)
-		return status;
-
-	written = snprintf(pfmt, sizeof(pfmt), "%s: %s", fn, fmt);
-	if (written >= sizeof(pfmt))
-		pfmt[sizeof(pfmt) - 2] = '*';
-	va_start(ap, fmt);
-	written = vsnprintf(e->msg, sizeof(e->msg), pfmt, ap);
 	va_end(ap);
 
 	if (written >= sizeof(e->msg))
@@ -264,8 +306,6 @@ xlog(int priority, const struct xerr *e, const char *fmt, ...)
 {
 	va_list ap;
 	char    msg[LINE_MAX];
-	char    errmsg[256] = "";
-	size_t  written;
 
 	if (priority > log_level)
 		return;
@@ -281,82 +321,14 @@ xlog(int priority, const struct xerr *e, const char *fmt, ...)
 		return;
 	}
 
-	if (fmt != NULL) {
-		va_start(ap, fmt);
-		written = vsnprintf(msg, sizeof(msg), fmt, ap);
-		va_end(ap);
+	va_start(ap, fmt);
+	xerr_assemble(e, msg, sizeof(msg), fmt, &ap);
+	va_end(ap);
 
-		if (written >= sizeof(msg))
-			msg[sizeof(e->msg) - 2] = '*';
-	}
-
-	if (e->sp == XLOG_ERRNO && e->code != 0) {
-		strerror_r(e->code, errmsg, sizeof(errmsg));
-		if (fmt) {
-			syslog(priority, "{%s:%s:%" PRIi64 "} %s: %s: %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    msg, e->msg, errmsg);
-			xlog_fprintf("{%s:%s:%" PRIi64 "} %s: %s: %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    msg, e->msg, errmsg);
-		} else {
-			syslog(priority, "{%s:%s:%" PRIi64 "} %s: %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    e->msg, errmsg);
-			xlog_fprintf("{%s:%s:%" PRIi64 "} %s: %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    e->msg, errmsg);
-		}
-	} else if (e->sp == XLOG_EAI && e->code != 0) {
-		if (fmt) {
-			syslog(priority, "{%s:%s:%" PRIi64 "} %s: %s: %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    msg, e->msg, gai_strerror(e->code));
-			xlog_fprintf("{%s:%s:%" PRIi64 "} %s: %s: %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    msg, e->msg, gai_strerror(e->code));
-		} else {
-			syslog(priority, "{%s:%s:%" PRIi64 "} %s: %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    e->msg, gai_strerror(e->code));
-			xlog_fprintf("{%s:%s:%" PRIi64 "} %s: %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    e->msg, gai_strerror(e->code));
-		}
-	} else if (e->sp == XLOG_SSL && e->code != 0) {
-		ERR_error_string_n(e->code, errmsg, sizeof(errmsg));
-		if (fmt) {
-			syslog(priority, "{%s:%s:%" PRIi64 "} %s: %s: %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    msg, e->msg, errmsg);
-			xlog_fprintf("{%s:%s:%" PRIi64 "} %s: %s: %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    msg, e->msg, errmsg);
-		} else {
-			syslog(priority, "{%s:%s:%" PRIi64 "} %s: %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    e->msg, errmsg);
-			xlog_fprintf("{%s:%s:%" PRIi64 "} %s: %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    e->msg, errmsg);
-		}
-	} else {
-		if (fmt) {
-			syslog(priority, "{%s:%s:%" PRIi64 "} %s: %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    msg, e->msg);
-			xlog_fprintf("{%s:%s:%" PRIi64 "} %s: %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    msg, e->msg);
-		} else {
-			syslog(priority, "{%s:%s:%" PRIi64 "} %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    e->msg);
-			xlog_fprintf("{%s:%s:%" PRIi64 "} %s",
-			    priostr(priority), spacestr(e->sp), e->code,
-			    e->msg);
-		}
-	}
+	syslog(priority, "{%s:%s:%" PRIi64 "} %s",
+	    priostr(priority), spacestr(e->sp), e->code, msg);
+	xlog_fprintf("{%s:%s:%" PRIi64 "} %s",
+	    priostr(priority), spacestr(e->sp), e->code, msg);
 }
 
 void
@@ -385,37 +357,27 @@ xlog_strerror(int priority, int err, const char *fmt, ...)
 void
 xerr_print(const struct xerr *e)
 {
-	char errmsg[256] = "";
+	char msg[LINE_MAX];
 
 	if (e == NULL)
 		return;
 
-	if (e->sp == XLOG_ERRNO && e->code != 0) {
-		strerror_r(e->code, errmsg, sizeof(errmsg));
-		warnx("{%s:%" PRIi64 "} %s: %s", spacestr(e->sp), e->code,
-		    e->msg, errmsg);
-	} else if (e->sp == XLOG_EAI && e->code != 0) {
-		warnx("{%s:%" PRIi64 "} %s: %s", spacestr(e->sp), e->code,
-		    e->msg, gai_strerror(e->code));
-	} else if (e->sp == XLOG_SSL && e->code != 0) {
-		ERR_error_string_n(e->code, errmsg, sizeof(errmsg));
-		warnx("{%s:%" PRIi64 "} %s: %s",
-		    spacestr(e->sp), e->code, e->msg, errmsg);
-	} else
-		warnx("{%s:%" PRIi64 "} %s", spacestr(e->sp), e->code, e->msg);
+	xerr_assemble(e, msg, sizeof(msg), NULL, NULL);
+
+	warnx("{%s:%" PRIi64 "} %s", spacestr(e->sp), e->code, msg);
 }
 
 int
-xerr_prepend(struct xerr *e, const char *prefix)
+xerr_push(struct xerr *e, const char *fn)
 {
-	char msg[LINE_MAX];
-
 	if (e == NULL)
 		return 0;
 
-	strlcpy(msg, e->msg, sizeof(msg));
-	if (snprintf(e->msg, sizeof(e->msg), "%s: %s", prefix, msg) >=
-	    sizeof(e->msg))
-		e->msg[sizeof(e->msg) - 2] = '*';
+	e->depth++;
+
+	if (e->depth >= XERR_MAX_DEPTH)
+		return xerr_fail(e);
+
+	e->stack[e->depth] = fn;
 	return xerr_fail(e);
 }
