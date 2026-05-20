@@ -373,7 +373,8 @@ xerr_push(struct xerr *e, const char *fn)
 	if (e == NULL)
 		return 0;
 
-	e->depth++;
+	if (e->depth < UINT8_MAX)
+		e->depth++;
 
 	if (e->depth >= XERR_MAX_DEPTH)
 		return xerr_fail(e);

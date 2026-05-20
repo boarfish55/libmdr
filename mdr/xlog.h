@@ -66,11 +66,11 @@ extern const struct module_dbg_map_entry {
 struct xerr {
 	enum xerr_space  sp;
 	int64_t          code;
-	int8_t           depth;
+	uint8_t          depth;
 	char             msg[XERR_MAX_MSG_LEN];
 	const char      *stack[XERR_MAX_DEPTH];
 };
-#define XERR_INITIALIZER { 0, 0, 0, "" }
+#define XERR_INITIALIZER { 0, 0, 0, "", {0} }
 
 /*
  * Zero the structure; common usage pattern is to zero the structure
