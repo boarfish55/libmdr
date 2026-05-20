@@ -1,3 +1,15 @@
+libmdr (0.8.5-1) unstable; urgency=medium
+
+  * Faster, smaller xerr type. We assemble the full message only when logging
+    or printing as opposed to everytime we add a function to the error "stack"
+  * Make xerr_is is boolean; don't return the subcode (which could be 0 for
+    XLOG_SUCCESS)
+  * Hook xlog_tests (placeholder for now) into makefiles
+  * Reorder line line output so that we have: log message>>trace>> xerr message
+  * Setup OpenBSD Makefile for tagging
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Wed, 20 May 2026 18:35:11 -0400
+
 libmdr (0.8.4-1) unstable; urgency=medium
 
   * Make conversions portable
