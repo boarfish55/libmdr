@@ -1,3 +1,9 @@
+libmdr (0.8.5-2) unstable; urgency=medium
+
+  * Refresh symbols
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Wed, 20 May 2026 18:36:52 -0400
+
 libmdr (0.8.5-1) unstable; urgency=medium
 
   * Faster, smaller xerr type. We assemble the full message only when logging
