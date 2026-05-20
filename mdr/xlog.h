@@ -60,12 +60,17 @@ extern const struct module_dbg_map_entry {
 	xlog_mask_t  flag;
 } module_dbg_map[];
 
+#define XERR_MAX_DEPTH     8
+#define XERR_MAX_MSG_LEN 128
+
 struct xerr {
-	char            msg[LINE_MAX];
-	enum xerr_space sp;
-	int64_t         code;
+	enum xerr_space  sp;
+	int64_t          code;
+	uint8_t          depth;
+	char             msg[XERR_MAX_MSG_LEN];
+	const char      *stack[XERR_MAX_DEPTH];
 };
-#define XLOG_ERR_INITIALIZER {"", 0, 0}
+#define XERR_INITIALIZER { 0, 0, 0, "", {0} }
 
 /*
  * Zero the structure; common usage pattern is to zero the structure
@@ -87,13 +92,10 @@ struct xerr *xerrz(struct xerr *);
  * If 'c_err' is non-zero, strerror_l() is called to fill the 'c_msg' field.
  * If fmt is non-NULL, 'msg' is filled up with the appropriate string.
  * 
- * Example:
- *   return xerrf(e, XLOG_ERRNO, errno, "stuff failed: %s", details);
  */
-int  xerrf(struct xerr *, int, int, const char *, ...);
 #define XERRF(e, sp, code, fmt, ...) \
-    xerrfn(e, sp, code, __func__, fmt, ##__VA_ARGS__)
-int  xerrfn(struct xerr *, int, int, const char *, const char *, ...);
+    xerrf(e, sp, code, __func__, fmt, ##__VA_ARGS__)
+int  xerrf(struct xerr *, int, int, const char *, const char *, ...);
 
 /*
  * Returns non-zero if any error is contained in the xlog_err structure.
@@ -109,8 +111,9 @@ void xlog_dbg(xlog_mask_t, const char *, ...);
 void xlog(int, const struct xerr *, const char *, ...);
 void xlog_strerror(int, int, const char *, ...);
 void xerr_print(const struct xerr *);
-int  xerr_prepend(struct xerr *, const char *);
-#define XERR_PREPENDFN(e) xerr_prepend(e, __func__)
+int  xerr_push(struct xerr *, const char *);
+#define XERR_PREPENDFN(e) xerr_push(e, __func__)
+#define XERR_PUSH(e) xerr_push(e, __func__)
 
 __END_DECLS
 
