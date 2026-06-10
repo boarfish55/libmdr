@@ -24,6 +24,7 @@ int verbose = 0;
 #define MDR_DCV_MDR_TEST_3 MDR_MAKE_VARIANT(MDR_DCV_MDR_TEST, 3)
 #define MDR_DCV_MDR_TEST_4 MDR_MAKE_VARIANT(MDR_DCV_MDR_TEST, 4)
 #define MDR_DCV_MDR_TEST_5 MDR_MAKE_VARIANT(MDR_DCV_MDR_TEST, 5)
+#define MDR_DCV_MDR_TEST_6 MDR_MAKE_VARIANT(MDR_DCV_MDR_TEST, 6)
 
 struct mdr_def msgdef_test_0 = {
 	MDR_DCV_MDR_TEST,
@@ -68,7 +69,7 @@ const struct mdr_spec *msg_test_3;
 
 struct mdr_def msgdef_test_4 = {
 	MDR_DCV_MDR_TEST_4,
-	"test.3",
+	"test.4",
 	{
 		MDR_U64,
 		MDR_I8,
@@ -86,13 +87,23 @@ const struct mdr_spec *msg_test_4;
 
 struct mdr_def msgdef_test_5 = {
 	MDR_DCV_MDR_TEST_5,
-	"test.3",
+	"test.5",
 	{
 		MDR_B,
 		MDR_LAST
 	}
 };
 const struct mdr_spec *msg_test_5;
+
+struct mdr_def msgdef_test_6 = {
+	MDR_DCV_MDR_TEST_6,
+	"test.6",
+	{
+		MDR_REPEAT, MDR_U8, MDR_S, MDR_END_REPEAT,
+		MDR_LAST
+	}
+};
+const struct mdr_spec *msg_test_6;
 
 struct test_status
 {
@@ -564,6 +575,50 @@ test_pack_array()
 }
 
 struct test_status *
+test_pack_repeats()
+{
+	struct pmdr_vec  repeated[6];
+	struct umdr_vec  urepeated[6];
+
+	char             buf[1024];
+	struct pmdr      pm;
+	struct pmdr_vec  pv[2];
+	struct umdr      um;
+	struct umdr_vec  uv[2];
+
+	repeated[0].type = MDR_U8;
+	repeated[0].v.u8 = 1;
+	repeated[1].type = MDR_S;
+	repeated[1].v.s = "blah1";
+
+	repeated[2].type = MDR_U8;
+	repeated[2].v.u8 = 2;
+	repeated[3].type = MDR_S;
+	repeated[3].v.s = "blah2";
+
+	repeated[4].type = MDR_U8;
+	repeated[4].v.u8 = 3;
+	repeated[5].type = MDR_S;
+	repeated[5].v.s = "blah3";
+
+	if (pmdr_init(&pm, buf, sizeof(buf), MDR_FNONE) == MDR_FAIL)
+		return ERR(errno, "pmdr_init");
+	pv[0].type = MDR_REPEAT;
+	pv[0].v.repeat.items = (const struct pmdr_vec *)repeated;
+	pv[0].v.repeat.length = 6;
+	if (pmdr_pack(&pm, msg_test_6, pv, PMDRVECLEN(pv)) == MDR_FAIL)
+		return ERR(errno, "pmdr_pack");
+
+	if (umdr_init(&um, pmdr_buf(&pm), pmdr_size(&pm), MDR_FNONE)
+	    == MDR_FAIL)
+		return ERR(errno, "umdr_init");
+	if (umdr_unpack(&um, msg_test_6, uv, UMDRVECLEN(uv)) == MDR_FAIL)
+		return ERR(errno, "umdr_unpack");
+
+	return success();
+}
+
+struct test_status *
 test_mdr_spec_base_sz()
 {
 	size_t sz = mdr_spec_base_sz(msg_test_4, 0);
@@ -783,6 +838,11 @@ struct mdr_test {
 		&test_pack_array
 	},
 	{
+		"pack repeats",
+		1,
+		&test_pack_repeats
+	},
+	{
 		"",
 		1,
 		NULL
@@ -837,6 +897,8 @@ main(int argc, char **argv)
 	if ((msg_test_4 = mdr_register_spec(&msgdef_test_4)) == NULL)
 		err(1, "mdr_register_spec");
 	if ((msg_test_5 = mdr_register_spec(&msgdef_test_5)) == NULL)
+		err(1, "mdr_register_spec");
+	if ((msg_test_6 = mdr_register_spec(&msgdef_test_6)) == NULL)
 		err(1, "mdr_register_spec");
 
 	for (t = tests; t->fn != NULL; t++) {

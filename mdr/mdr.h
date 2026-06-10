@@ -55,6 +55,9 @@ enum mdr_type {
 	MDR_AS,
 	MDR_AM,
 
+	MDR_REPEAT,
+	MDR_END_REPEAT,
+
 	MDR_LAST = 255
 };
 
@@ -62,6 +65,7 @@ struct mdr_spec {
 	RB_ENTRY(mdr_spec)  entry;
 	char               *label;
 	uint64_t            dcv;
+	size_t              vec_size;
 	size_t              types_count;
 	uint8_t             types[];
 };
@@ -239,6 +243,11 @@ struct pmdr_vec {
 			void     **dst;
 			uint64_t   sz;
 		} rsvb;
+
+		struct {
+			uint32_t               length;
+			const struct pmdr_vec *items;
+		} repeat;
 	} v;
 };
 #define PMDRVECLEN(v) (sizeof(v) / sizeof(struct pmdr_vec))
@@ -250,6 +259,14 @@ struct umdr_vec_ah
 	uint32_t    length;
 	const void *p;
 	uint64_t    size;
+};
+
+struct umdr_rseq_h
+{
+	uint32_t    length;
+	const void *p;
+	uint64_t    size;
+	int         types_i0;
 };
 
 /* Unpacking MDR vector */
@@ -283,6 +300,7 @@ struct umdr_vec {
 		struct umdr_vec_ah ai8, ai16, ai32, ai64;
 		struct umdr_vec_ah af32, af64;
 		struct umdr_vec_ah as, am;
+		struct umdr_vec_ah arep;
 	} v;
 };
 #define UMDRVECLEN(v) (sizeof(v) / sizeof(struct umdr_vec))
@@ -301,6 +319,7 @@ int32_t  umdr_vec_af32(struct umdr_vec_ah *, float *, int32_t);
 int32_t  umdr_vec_af64(struct umdr_vec_ah *, double *, int32_t);
 int32_t  umdr_vec_as(struct umdr_vec_ah *, const char **, int32_t);
 int32_t  umdr_vec_am(struct umdr_vec_ah *, struct mdr *, int32_t);
+int32_t  umdr_rseq(struct umdr_rseq_h *, struct umdr_vec *, int32_t);
 
 #define MDR_FAIL -1
 

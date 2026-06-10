@@ -367,11 +367,19 @@ mdr_unpack_num_nochk(struct mdr *m, uint8_t type, union mdr_num_v *v)
 	switch (type) {
 	case MDR_U8:
 	case MDR_I8:
+		if (m->buf_sz - mdr_tell(m) < sizeof(uint8_t)) {
+			errno = EAGAIN;
+			return MDR_FAIL;
+		}
 		v->u8 = *(uint8_t *)m->pos;
 		m->pos += sizeof(uint8_t);
 		break;
 	case MDR_U16:
 	case MDR_I16:
+		if (m->buf_sz - mdr_tell(m) < sizeof(uint16_t)) {
+			errno = EAGAIN;
+			return MDR_FAIL;
+		}
 		memcpy(&v->u16, m->pos, sizeof(uint16_t));
 		v->u16 = be16toh(v->u16);
 		m->pos += sizeof(uint16_t);
@@ -379,6 +387,10 @@ mdr_unpack_num_nochk(struct mdr *m, uint8_t type, union mdr_num_v *v)
 	case MDR_U32:
 	case MDR_I32:
 	case MDR_F32:
+		if (m->buf_sz - mdr_tell(m) < sizeof(uint32_t)) {
+			errno = EAGAIN;
+			return MDR_FAIL;
+		}
 		memcpy(&v->u32, m->pos, sizeof(uint32_t));
 		v->u32 = be32toh(v->u32);
 		m->pos += sizeof(uint32_t);
@@ -386,6 +398,10 @@ mdr_unpack_num_nochk(struct mdr *m, uint8_t type, union mdr_num_v *v)
 	case MDR_U64:
 	case MDR_I64:
 	case MDR_F64:
+		if (m->buf_sz - mdr_tell(m) < sizeof(uint64_t)) {
+			errno = EAGAIN;
+			return MDR_FAIL;
+		}
 		memcpy(&v->u64, m->pos, sizeof(uint64_t));
 		v->u64 = be64toh(v->u64);
 		m->pos += sizeof(uint64_t);
@@ -645,13 +661,8 @@ mdr_pack_num(struct mdr *m, uint8_t type, union mdr_num_v nv, size_t sz)
 }
 
 static ptrdiff_t
-mdr_unpack_num(struct mdr *m, uint8_t type, union mdr_num_v *nv, size_t sz)
+mdr_unpack_num(struct mdr *m, uint8_t type, union mdr_num_v *nv)
 {
-	if (m->buf_sz - mdr_tell(m) < sz) {
-		errno = EAGAIN;
-		return MDR_FAIL;
-	}
-
 	if (!mdr_check_next_type(m, type))
 		return MDR_FAIL;
 
@@ -665,6 +676,11 @@ mdr_unpack_array(struct mdr *m, uint8_t type, struct umdr_vec_ah *ah)
 
 	if (!mdr_check_next_type(m, type))
 		return MDR_FAIL;
+
+	if (m->buf_sz - mdr_tell(m) < sizeof(uint8_t)) {
+		errno = EAGAIN;
+		return MDR_FAIL;
+	}
 
 	if (*(uint8_t *)m->pos & 0x80) {
 		if (m->buf_sz - mdr_tell(m) < sizeof(uint32_t)) {
@@ -807,6 +823,11 @@ mdr_pack_array(struct mdr *m, uint8_t type, int32_t n, void *a)
 	if (!mdr_check_next_type(m, type))
 		return MDR_FAIL;
 
+	/*
+	 * Callers can pass a negative value for the count of items
+	 * in a string or message nul-terminated array. In that case we
+	 * count how many items we have until we hit NULL.
+	 */
 	if (type == MDR_AS || type == MDR_AM) {
 		if (n < 0)
 			n = 0x7fffffff;
@@ -1049,6 +1070,167 @@ mdr_print(FILE *out, const struct mdr *m)
 	return 0;
 }
 
+static ptrdiff_t
+mdr_pack_rseq(struct mdr *m, uint32_t count, const struct pmdr_vec *src)
+{
+	const uint8_t   *tp;
+	int              i, types_start, r;
+	union mdr_num_v  nv;
+	void            *start;
+
+	if (src == NULL || count > INT32_MAX) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	if (!mdr_check_next_type(m, MDR_REPEAT))
+		return MDR_FAIL;
+
+	for (i = m->spec_fld_idx; m->spec->types[i] != MDR_END_REPEAT; i++) {
+		if (i >= m->spec->types_count) {
+			errno = ERANGE;
+			return MDR_FAIL;
+		}
+
+		/*
+		 * Don't allow MDR_REPEAT within MDR_REPEAT.
+		 */
+		if (m->spec->types[i] == MDR_REPEAT) {
+			errno = EINVAL;
+			return MDR_FAIL;
+		}
+	}
+
+	types_start = m->spec_fld_idx;
+	m->spec_fld_idx += i;
+
+	/*
+	 * Space for the spec size and item count
+	 */
+	if (count <= 0x7f) {
+		if (!mdr_can_fit(m, sizeof(uint8_t)))
+			return MDR_FAIL;
+		*(uint8_t *)m->pos = count;
+		m->pos += sizeof(uint8_t);
+	} else {
+		if (!mdr_can_fit(m, sizeof(uint32_t)))
+			return MDR_FAIL;
+		htobe32buf(m->pos, count | 0x80000000);
+		m->pos += sizeof(uint32_t);
+	}
+
+	/*
+	 * We pack the total size of the array data for those types so
+	 * we can easily skip when unpacking. To be filled later.
+	 */
+	if (!mdr_can_fit(m, sizeof(uint64_t)))
+		return MDR_FAIL;
+	*(uint64_t *)m->pos = 0;
+	m->pos += sizeof(uint64_t);
+	start = m->pos;
+
+	for (i = 0; i < count;) {
+		for (tp = m->spec->types + types_start;
+		    i < count && *tp != MDR_END_REPEAT;
+		    tp++, i++) {
+			if (src[i].type != *tp) {
+				errno = EINVAL;
+				return MDR_FAIL;
+			}
+			switch (*tp) {
+			case MDR_U8:
+				nv.u8 = src[i].v.u8;
+				r = mdr_pack_num_nochk(m, *tp, nv);
+				break;
+			case MDR_S:
+				r = mdr_pack_str_nochk(m, src[i].v.s);
+				break;
+			//TODO: other types
+			}
+			if (r == MDR_FAIL)
+				return MDR_FAIL;
+		}
+	}
+
+	if (*tp != MDR_END_REPEAT) {
+		/*
+		 * We should always end of MDR_END_REPEAT otherwise the
+		 * sequence isn't complete.
+		 */
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	htobe64buf((char *)start - sizeof(uint64_t),
+	    (char *)m->pos - (char *)start);
+
+	return mdr_update_size(m);
+}
+
+static ptrdiff_t
+mdr_unpack_rseq(struct mdr *m, struct umdr_rseq_h *h)
+{
+	const uint8_t   *tp;
+	int              i, types_start, r;
+	union mdr_num_v  nv;
+	uint32_t         count;
+
+	if (m == NULL || ah == NULL) {
+		errno = EINVAL;
+		return MDR_FAIL;
+	}
+
+	if (!mdr_check_next_type(m, MDR_REPEAT))
+		return MDR_FAIL;
+
+	for (i = m->spec_fld_idx; m->spec->types[i] != MDR_END_REPEAT; i++) {
+		if (i >= m->spec->types_count) {
+			errno = ERANGE;
+			return MDR_FAIL;
+		}
+
+		if (m->spec->types[i] == MDR_REPEAT) {
+			errno = EINVAL;
+			return MDR_FAIL;
+		}
+	}
+
+	h->types_i0 = m->spec_fld_idx;
+	h->types_count = i;
+	m->spec_fld_idx += i;
+
+	if (m->buf_sz - mdr_tell(m) < sizeof(uint8_t)) {
+		errno = EAGAIN;
+		return MDR_FAIL;
+	}
+
+	if (*(uint8_t *)m->pos & 0x80) {
+		if (m->buf_sz - mdr_tell(m) < sizeof(uint32_t)) {
+			errno = EAGAIN;
+			return MDR_FAIL;
+		}
+		count = be32buftoh(m->pos) & 0x7fffffff;
+		m->pos += sizeof(uint32_t);
+	} else {
+		count = *(uint8_t *)m->pos;
+		m->pos += sizeof(uint8_t);
+	}
+	h->length = count;
+
+	if (m->buf_sz - mdr_tell(m) < sizeof(uint64_t)) {
+		errno = EAGAIN;
+		return MDR_FAIL;
+	}
+	h->size = be64buftoh(m->pos);
+	m->pos += sizeof(uint64_t);
+
+	h->p = m->pos;
+
+	m->pos += h->size;
+
+	return mdr_tell(m);
+}
+
 int
 mdr_register_builtin_specs()
 {
@@ -1072,7 +1254,7 @@ mdr_register_builtin_specs()
 const struct mdr_spec *
 mdr_register_spec(struct mdr_def *def)
 {
-	int              n;
+	int              n, vec_sz = 0, in_repeat = 0;
 	struct mdr_spec *spec;
 	size_t           label_sz;
 
@@ -1081,8 +1263,27 @@ mdr_register_spec(struct mdr_def *def)
 		return NULL;
 	}
 
-	for (n = 0; def->types[n] != MDR_LAST; n++)
-		/* Nothing */;
+	for (n = 0; def->types[n] != MDR_LAST; n++) {
+		if (!in_repeat) {
+			if (def->types[n] == MDR_END_REPEAT) {
+				errno = EINVAL;
+				return NULL;
+			}
+
+			vec_sz++;
+			if (def->types[n] == MDR_REPEAT) {
+				in_repeat = 1;
+				continue;
+			}
+		} else {
+			if (def->types[n] == MDR_REPEAT) {
+				errno = EINVAL;
+				return NULL;
+			} else if (def->types[n] == MDR_END_REPEAT) {
+				in_repeat = 0;
+			}
+		}
+	}
 
 	label_sz = strlen(def->label);
 
@@ -1093,6 +1294,7 @@ mdr_register_spec(struct mdr_def *def)
 
 	spec->dcv = def->dcv;
 	spec->types_count = n;
+	spec->vec_size = vec_sz;
 	memcpy(spec->types, def->types, n * sizeof(uint8_t));
 	spec->label = (char *)spec->types + (n * sizeof(uint8_t));
 	memcpy(spec->label, def->label, label_sz);
@@ -1650,18 +1852,18 @@ pmdr_pack(struct pmdr *pm, const struct mdr_spec *spec, struct pmdr_vec *pvec,
 	m->spec_fld_idx = 0;
 	htobe64buf(m->dcv, spec->dcv);
 
-	if (pvec_sz < m->spec->types_count) {
+	if (pvec_sz < m->spec->vec_size) {
 		errno = EINVAL;
 		return MDR_FAIL;
 	}
 
-	for (i = 0; i < pvec_sz && i < m->spec->types_count; i++) {
+	for (i = 0; i < pvec_sz && i < m->spec->vec_size; i++) {
 		if (pvec[i].type == MDR_RSVB) {
 			if (m->spec->types[i] != MDR_B) {
 				errno = EINVAL;
 				goto fail;
 			}
-		} else if (pvec[i].type != m->spec->types[i]) {
+		} else if (pvec[i].type != m->spec->types[m->spec_fld_idx]) {
 			errno = EINVAL;
 			goto fail;
 		}
@@ -1787,6 +1989,10 @@ pmdr_pack(struct pmdr *pm, const struct mdr_spec *spec, struct pmdr_vec *pvec,
 			r = mdr_pack_array(m, MDR_AM,
 			    pvec[i].v.am.length,
 			    (void *)pvec[i].v.am.items);
+			break;
+		case MDR_REPEAT:
+			r = mdr_pack_repeat(m, pvec[i].v.repeat.length,
+			    pvec[i].v.repeat.items);
 			break;
 		default:
 			errno = EINVAL;
@@ -2245,7 +2451,7 @@ umdr_unpack(struct umdr *um, const struct mdr_spec *spec, struct umdr_vec *uvec,
 	} else
 		m->spec = spec;
 
-	if (uvec_sz < m->spec->types_count) {
+	if (uvec_sz < m->spec->vec_size) {
 		errno = EINVAL;
 		return MDR_FAIL;
 	}
@@ -2256,52 +2462,52 @@ umdr_unpack(struct umdr *um, const struct mdr_spec *spec, struct umdr_vec *uvec,
 		union mdr_num_v nv;
 		switch (m->spec->types[i]) {
 		case MDR_U8:
-			r = mdr_unpack_num(m, MDR_U8, &nv, sizeof(uint8_t));
+			r = mdr_unpack_num(m, MDR_U8, &nv);
 			if (r != MDR_FAIL)
 				uvec[i].v.u8 = nv.u8;
 			break;
 		case MDR_U16:
-			r = mdr_unpack_num(m, MDR_U16, &nv, sizeof(uint16_t));
+			r = mdr_unpack_num(m, MDR_U16, &nv);
 			if (r != MDR_FAIL)
 				uvec[i].v.u16 = nv.u16;
 			break;
 		case MDR_U32:
-			r = mdr_unpack_num(m, MDR_U32, &nv, sizeof(uint32_t));
+			r = mdr_unpack_num(m, MDR_U32, &nv);
 			if (r != MDR_FAIL)
 				uvec[i].v.u32 = nv.u32;
 			break;
 		case MDR_U64:
-			r = mdr_unpack_num(m, MDR_U64, &nv, sizeof(uint64_t));
+			r = mdr_unpack_num(m, MDR_U64, &nv);
 			if (r != MDR_FAIL)
 				uvec[i].v.u64 = nv.u64;
 			break;
 		case MDR_I8:
-			r = mdr_unpack_num(m, MDR_I8, &nv, sizeof(int8_t));
+			r = mdr_unpack_num(m, MDR_I8, &nv);
 			if (r != MDR_FAIL)
 				uvec[i].v.i8 = nv.i8;
 			break;
 		case MDR_I16:
-			r = mdr_unpack_num(m, MDR_I16, &nv, sizeof(int16_t));
+			r = mdr_unpack_num(m, MDR_I16, &nv);
 			if (r != MDR_FAIL)
 				uvec[i].v.i16 = nv.i16;
 			break;
 		case MDR_I32:
-			r = mdr_unpack_num(m, MDR_I32, &nv, sizeof(int32_t));
+			r = mdr_unpack_num(m, MDR_I32, &nv);
 			if (r != MDR_FAIL)
 				uvec[i].v.i32 = nv.i32;
 			break;
 		case MDR_I64:
-			r = mdr_unpack_num(m, MDR_I64, &nv, sizeof(int64_t));
+			r = mdr_unpack_num(m, MDR_I64, &nv);
 			if (r != MDR_FAIL)
 				uvec[i].v.i64 = nv.i64;
 			break;
 		case MDR_F32:
-			r = mdr_unpack_num(m, MDR_F32, &nv, sizeof(float));
+			r = mdr_unpack_num(m, MDR_F32, &nv);
 			if (r != MDR_FAIL)
 				uvec[i].v.f32 = nv.f32;
 			break;
 		case MDR_F64:
-			r = mdr_unpack_num(m, MDR_F64, &nv, sizeof(double));
+			r = mdr_unpack_num(m, MDR_F64, &nv);
 			if (r != MDR_FAIL)
 				uvec[i].v.f64 = nv.f64;
 			break;
@@ -2353,6 +2559,10 @@ umdr_unpack(struct umdr *um, const struct mdr_spec *spec, struct umdr_vec *uvec,
 			break;
 		case MDR_AM:
 			r = mdr_unpack_array(m, MDR_AM, &uvec[i].v.am);
+			break;
+		case MDR_REPEAT:
+			r = mdr_unpack_rseq(m, uvec[i].v.repeat.items,
+			    &uvec[i].v.repeat.length);
 			break;
 		default:
 			errno = EINVAL;
@@ -2460,4 +2670,35 @@ int32_t
 umdr_vec_am(struct umdr_vec_ah *h, struct mdr *dst, int32_t maxlen)
 {
 	return umdr_vec_asm(h, MDR_M, dst, maxlen);
+}
+
+int32_t
+umdr_rseq(struct umdr_rseq_h *h, struct umdr_vec *dst, int32_t maxlen)
+{
+	uint8_t  *tp;
+	int       types_start;
+	uint32_t  count;
+
+	count = MIN(h->length, maxlen);
+
+	for (i = 0; i < count;) {
+		for (tp = m->spec->types + h->types_i0;
+		    i < count && *tp != MDR_END_REPEAT; tp++, i++) {
+			switch (*tp) {
+			case MDR_U8:
+				r = mdr_unpack_num_nochk(m, *tp, &nv);
+				dst[i].v.u8 = nv.u8;
+				break;
+			case MDR_S:
+				r = mdr_unpack_str_nochk(m, &dst[i].v.s.bytes,
+				    &dst[i].v.s.sz);
+				break;
+			// TODO: other types
+			}
+			if (r == MDR_FAIL)
+				return MDR_FAIL;
+		}
+	}
+
+	return h->length;
 }
