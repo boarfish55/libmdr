@@ -1,6 +1,6 @@
 COMMENT =	Minimal Data Representation, a data serialization library
 CATEGORIES =	devel
-VERSION =	0.8.5
+VERSION =	0.8.6
 DISTNAME =	libmdr-${VERSION}
 HOMEPAGE =	https://www.overnet.ca
 MAINTAINER =	Pascal Lalonde <plalonde@overnet.ca>
