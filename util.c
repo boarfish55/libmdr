@@ -228,7 +228,7 @@ spawnproc_init(struct spawnproc *sp, int nochdir, const char *execpromises,
 	}
 	close(sv[0]);
 
-	setproctitle("executor");
+	setproctitle("spawnproc");
 
 	if (!nochdir && chdir("/") == -1) {
 		xlog_strerror(LOG_ERR, errno, "%s: chdir", __func__);

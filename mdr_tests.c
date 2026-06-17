@@ -99,7 +99,7 @@ struct mdr_def msgdef_test_6 = {
 	MDR_DCV_MDR_TEST_6,
 	"test.6",
 	{
-		MDR_REPEAT, MDR_U8, MDR_S, MDR_END_REPEAT,
+		MDR_RSEQ, MDR_U8, MDR_S, MDR_END_RSEQ,
 		MDR_LAST
 	}
 };
@@ -575,45 +575,82 @@ test_pack_array()
 }
 
 struct test_status *
-test_pack_repeats()
+test_pack_rseq()
 {
-	struct pmdr_vec  repeated[6];
-	struct umdr_vec  urepeated[6];
+	struct pmdr_vec    seq[6];
+	struct umdr_vec    useq[6];
+	const char         encoded[] =
+	    "\x00\x00\x00\x00\x00\x00\x00\x35" /* size */
+	    "\x00\x00\x00\x00"                 /* flags */
+	    "\x00\x00\x00\x00"                 /* domain */
+	    "\x00\x04"                         /* code */
+	    "\x00\x06"                         /* variant */
+	    "\x06"                             /* rseq length */
+	    "\x00\x00\x00\x00\x00\x00\x00\x18" /* rseq sz */
+	    "\x01"                             /* u8 */
+	    "\x06\x62\x6c\x61\x68\x31\x00"     /* s blah1 */
+	    "\x02"                             /* u8 */
+	    "\x06\x62\x6c\x61\x68\x32\x00"     /* s blah2 */
+	    "\x03"                             /* u8 */
+	    "\x06\x62\x6c\x61\x68\x33\x00"     /* s blah3 */
+	    ;
+	size_t             encoded_length = sizeof(encoded) - 1;
 
 	char             buf[1024];
 	struct pmdr      pm;
 	struct pmdr_vec  pv[2];
 	struct umdr      um;
-	struct umdr_vec  uv[2];
+	struct umdr_vec  uv[1];
 
-	repeated[0].type = MDR_U8;
-	repeated[0].v.u8 = 1;
-	repeated[1].type = MDR_S;
-	repeated[1].v.s = "blah1";
+	seq[MDR_RSEQ_ROWI(2, 0, 0)].type = MDR_U8;
+	seq[MDR_RSEQ_ROWI(2, 0, 0)].v.u8 = 1;
+	seq[MDR_RSEQ_ROWI(2, 0, 1)].type = MDR_S;
+	seq[MDR_RSEQ_ROWI(2, 0, 1)].v.s = "blah1";
 
-	repeated[2].type = MDR_U8;
-	repeated[2].v.u8 = 2;
-	repeated[3].type = MDR_S;
-	repeated[3].v.s = "blah2";
+	seq[MDR_RSEQ_ROWI(2, 1, 0)].type = MDR_U8;
+	seq[MDR_RSEQ_ROWI(2, 1, 0)].v.u8 = 2;
+	seq[MDR_RSEQ_ROWI(2, 1, 1)].type = MDR_S;
+	seq[MDR_RSEQ_ROWI(2, 1, 1)].v.s = "blah2";
 
-	repeated[4].type = MDR_U8;
-	repeated[4].v.u8 = 3;
-	repeated[5].type = MDR_S;
-	repeated[5].v.s = "blah3";
+	seq[MDR_RSEQ_ROWI(2, 2, 0)].type = MDR_U8;
+	seq[MDR_RSEQ_ROWI(2, 2, 0)].v.u8 = 3;
+	seq[MDR_RSEQ_ROWI(2, 2, 1)].type = MDR_S;
+	seq[MDR_RSEQ_ROWI(2, 2, 1)].v.s = "blah3";
 
 	if (pmdr_init(&pm, buf, sizeof(buf), MDR_FNONE) == MDR_FAIL)
 		return ERR(errno, "pmdr_init");
-	pv[0].type = MDR_REPEAT;
-	pv[0].v.repeat.items = (const struct pmdr_vec *)repeated;
-	pv[0].v.repeat.length = 6;
+	pv[0].type = MDR_RSEQ;
+	pv[0].v.rseq.items = (const struct pmdr_vec *)seq;
+	pv[0].v.rseq.length = 6;
 	if (pmdr_pack(&pm, msg_test_6, pv, PMDRVECLEN(pv)) == MDR_FAIL)
 		return ERR(errno, "pmdr_pack");
+
+	if (memcmp(pmdr_buf(&pm), encoded, encoded_length) != 0)
+		return ERR(0, "encoding mismatch");
 
 	if (umdr_init(&um, pmdr_buf(&pm), pmdr_size(&pm), MDR_FNONE)
 	    == MDR_FAIL)
 		return ERR(errno, "umdr_init");
 	if (umdr_unpack(&um, msg_test_6, uv, UMDRVECLEN(uv)) == MDR_FAIL)
 		return ERR(errno, "umdr_unpack");
+
+	if (umdr_size(&um) != encoded_length)
+		return ERR(0, "encoded length should be %zu but was %" PRIu64,
+		    encoded_length, umdr_size(&um));
+
+	if (umdr_rseq(&uv[0].v.rseq, useq, UMDRVECLEN(useq)) == MDR_FAIL)
+		return ERR(errno, "umdr_rseq");
+
+	if (useq[MDR_RSEQ_ROWI(2, 0, 0)].v.u8 != 1 ||
+	    useq[MDR_RSEQ_ROWI(2, 1, 0)].v.u8 != 2 ||
+	    useq[MDR_RSEQ_ROWI(2, 2, 0)].v.u8 != 3 ||
+	    strcmp(useq[MDR_RSEQ_ROWI(2, 0, 1)].v.s.bytes, "blah1") != 0 ||
+	    strcmp(useq[MDR_RSEQ_ROWI(2, 1, 1)].v.s.bytes, "blah2") != 0 ||
+	    strcmp(useq[MDR_RSEQ_ROWI(2, 2, 1)].v.s.bytes, "blah3") != 0 ||
+	    useq[MDR_RSEQ_ROWI(2, 0, 1)].v.s.sz != 5 ||
+	    useq[MDR_RSEQ_ROWI(2, 1, 1)].v.s.sz != 5 ||
+	    useq[MDR_RSEQ_ROWI(2, 1, 1)].v.s.sz != 5)
+		return ERR(0, "rseq contains wrong values");
 
 	return success();
 }
@@ -838,9 +875,9 @@ struct mdr_test {
 		&test_pack_array
 	},
 	{
-		"pack repeats",
+		"pack rseq",
 		1,
-		&test_pack_repeats
+		&test_pack_rseq
 	},
 	{
 		"",
