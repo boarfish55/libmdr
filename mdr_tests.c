@@ -100,6 +100,7 @@ struct mdr_def msgdef_test_6 = {
 	"test.6",
 	{
 		MDR_RSEQ, MDR_U8, MDR_S, MDR_END_RSEQ,
+		MDR_RSEQ, MDR_I16, MDR_AU32, MDR_END_RSEQ,
 		MDR_LAST
 	}
 };
@@ -577,10 +578,10 @@ test_pack_array()
 struct test_status *
 test_pack_rseq()
 {
-	struct pmdr_vec    seq[6];
-	struct umdr_vec    useq[6];
+	struct pmdr_vec    seq[3 * 2], seq2[2 * 2];
+	struct umdr_vec    useq[3 * 2], useq2[2 * 2];
 	const char         encoded[] =
-	    "\x00\x00\x00\x00\x00\x00\x00\x35" /* size */
+	    "\x00\x00\x00\x00\x00\x00\x00\x5c" /* size */
 	    "\x00\x00\x00\x00"                 /* flags */
 	    "\x00\x00\x00\x00"                 /* domain */
 	    "\x00\x04"                         /* code */
@@ -593,14 +594,28 @@ test_pack_rseq()
 	    "\x06\x62\x6c\x61\x68\x32\x00"     /* s blah2 */
 	    "\x03"                             /* u8 */
 	    "\x06\x62\x6c\x61\x68\x33\x00"     /* s blah3 */
+	    "\x04"                             /* rseq length */
+	    "\x00\x00\x00\x00\x00\x00\x00\x1e" /* rseq sz */
+	    "\xff\xf6"                         /* i16 */
+	    "\x03"                             /* au32 len 3 */
+	    "\x00\x00\x00\x00"                 /* u32 */
+	    "\x00\x00\x00\x01"                 /* u32 */
+	    "\x00\x00\x00\x02"                 /* u32 */
+	    "\xff\xf5"                         /* i16 */
+	    "\x03"                             /* au32 len 3 */
+	    "\x00\x00\x00\x00"                 /* u32 */
+	    "\x00\x00\x00\x01"                 /* u32 */
+	    "\x00\x00\x00\x02"                 /* u32 */
 	    ;
 	size_t             encoded_length = sizeof(encoded) - 1;
+	uint32_t           au32[3] = { 0, 1, 2 };
+	uint32_t           au32_out[3] = { 0, 0, 0 };
 
 	char             buf[1024];
 	struct pmdr      pm;
 	struct pmdr_vec  pv[2];
 	struct umdr      um;
-	struct umdr_vec  uv[1];
+	struct umdr_vec  uv[2];
 
 	seq[MDR_RSEQ_ROWI(2, 0, 0)].type = MDR_U8;
 	seq[MDR_RSEQ_ROWI(2, 0, 0)].v.u8 = 1;
@@ -617,11 +632,26 @@ test_pack_rseq()
 	seq[MDR_RSEQ_ROWI(2, 2, 1)].type = MDR_S;
 	seq[MDR_RSEQ_ROWI(2, 2, 1)].v.s = "blah3";
 
+	seq2[MDR_RSEQ_ROWI(2, 0, 0)].type = MDR_I16;
+	seq2[MDR_RSEQ_ROWI(2, 0, 0)].v.i16 = -10;
+	seq2[MDR_RSEQ_ROWI(2, 0, 1)].type = MDR_AU32;
+	seq2[MDR_RSEQ_ROWI(2, 0, 1)].v.au32.items = au32;
+	seq2[MDR_RSEQ_ROWI(2, 0, 1)].v.au32.length = 3;
+
+	seq2[MDR_RSEQ_ROWI(2, 1, 0)].type = MDR_I16;
+	seq2[MDR_RSEQ_ROWI(2, 1, 0)].v.i16 = -11;
+	seq2[MDR_RSEQ_ROWI(2, 1, 1)].type = MDR_AU32;
+	seq2[MDR_RSEQ_ROWI(2, 1, 1)].v.au32.items = au32;
+	seq2[MDR_RSEQ_ROWI(2, 1, 1)].v.au32.length = 3;
+
 	if (pmdr_init(&pm, buf, sizeof(buf), MDR_FNONE) == MDR_FAIL)
 		return ERR(errno, "pmdr_init");
 	pv[0].type = MDR_RSEQ;
 	pv[0].v.rseq.items = (const struct pmdr_vec *)seq;
-	pv[0].v.rseq.length = 6;
+	pv[0].v.rseq.length = PMDRVECLEN(seq);
+	pv[1].type = MDR_RSEQ;
+	pv[1].v.rseq.items = (const struct pmdr_vec *)seq2;
+	pv[1].v.rseq.length = PMDRVECLEN(seq2);
 	if (pmdr_pack(&pm, msg_test_6, pv, PMDRVECLEN(pv)) == MDR_FAIL)
 		return ERR(errno, "pmdr_pack");
 
@@ -640,6 +670,8 @@ test_pack_rseq()
 
 	if (umdr_rseq(&uv[0].v.rseq, useq, UMDRVECLEN(useq)) == MDR_FAIL)
 		return ERR(errno, "umdr_rseq");
+	if (umdr_rseq(&uv[1].v.rseq, useq2, UMDRVECLEN(useq2)) == MDR_FAIL)
+		return ERR(errno, "umdr_rseq");
 
 	if (useq[MDR_RSEQ_ROWI(2, 0, 0)].v.u8 != 1 ||
 	    useq[MDR_RSEQ_ROWI(2, 1, 0)].v.u8 != 2 ||
@@ -651,6 +683,24 @@ test_pack_rseq()
 	    useq[MDR_RSEQ_ROWI(2, 1, 1)].v.s.sz != 5 ||
 	    useq[MDR_RSEQ_ROWI(2, 1, 1)].v.s.sz != 5)
 		return ERR(0, "rseq contains wrong values");
+
+	if (useq2[MDR_RSEQ_ROWI(2, 0, 0)].v.i16 != -10 ||
+	    useq2[MDR_RSEQ_ROWI(2, 1, 0)].v.i16 != -11)
+		return ERR(0, "rseq contains wrong values");
+
+	if (umdr_vec_au32(&useq2[MDR_RSEQ_ROWI(2, 0, 1)].v.au32, au32_out, 3)
+	    == MDR_FAIL)
+		return ERR(errno, "umdr_vec_au32");
+
+	if (memcmp(au32, au32_out, sizeof(au32)) != 0)
+		return ERR(0, "first array has wrong content");
+
+	if (umdr_vec_au32(&useq2[MDR_RSEQ_ROWI(2, 1, 1)].v.au32, au32_out, 3)
+	    == MDR_FAIL)
+		return ERR(errno, "umdr_vec_au32");
+
+	if (memcmp(au32, au32_out, sizeof(au32)) != 0)
+		return ERR(0, "second array has wrong content");
 
 	return success();
 }

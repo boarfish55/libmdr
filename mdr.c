@@ -891,9 +891,6 @@ mdr_pack_array(struct mdr *m, uint8_t type, int32_t n, void *a)
 	union mdr_num_v  nv;
 	void            *start;
 
-	if (!mdr_check_next_type(m, type))
-		return MDR_FAIL;
-
 	/*
 	 * Callers can pass a negative value for the count of items
 	 * in a string or message nul-terminated array. In that case we
@@ -1173,7 +1170,7 @@ mdr_pack_rseq(struct mdr *m, uint32_t count, const struct pmdr_vec *src)
 	}
 
 	types_start = m->spec_fld_idx;
-	m->spec_fld_idx += i;
+	m->spec_fld_idx = i + 1;
 
 	/*
 	 * Space for the spec size and item count
@@ -1207,14 +1204,30 @@ mdr_pack_rseq(struct mdr *m, uint32_t count, const struct pmdr_vec *src)
 				errno = EINVAL;
 				return MDR_FAIL;
 			}
+
 			switch (*tp) {
 			case MDR_U8:
 				nv.u8 = src[i].v.u8;
 				r = mdr_pack_num_nochk(m, *tp, nv);
 				break;
+			case MDR_U16:
+				nv.u16 = src[i].v.u16;
+				r = mdr_pack_num_nochk(m, *tp, nv);
+				break;
+			case MDR_I16:
+				nv.i16 = src[i].v.i16;
+				r = mdr_pack_num_nochk(m, *tp, nv);
+				break;
+			case MDR_AU32:
+				r = mdr_pack_array(m, *tp, src[i].v.au32.length,
+				    src[i].v.au32.items);
+				break;
 			case MDR_S:
 				r = mdr_pack_str_nochk(m, src[i].v.s);
 				break;
+			default:
+				errno = EINVAL;
+				return MDR_FAIL;
 			//TODO: other types
 			}
 			if (r == MDR_FAIL)
@@ -1933,6 +1946,10 @@ pmdr_pack(struct pmdr *pm, const struct mdr_spec *spec, struct pmdr_vec *pvec,
 			errno = EINVAL;
 			goto fail;
 		}
+
+		if (pvec[i].type >= MDR_AU8 && pvec[i].type <= MDR_AM)
+			if (!mdr_check_next_type(m, pvec[i].type))
+				return MDR_FAIL;
 
 		union mdr_num_v nv;
 		switch (pvec[i].type) {
