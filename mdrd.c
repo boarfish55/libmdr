@@ -436,7 +436,7 @@ pack_bein(struct pmdr *m, uint64_t id, int fd, struct sockaddr_in6 *peer,
  *  X509_V_FLAG_NOTIFY_POLICY is set then ok is set to 2 to indicate the policy
  *  checking is complete.
  */
-int
+static int
 verify_callback_daemon(int ok, X509_STORE_CTX *ctx)
 {
 	int           e;
@@ -482,7 +482,7 @@ verify_callback_daemon(int ok, X509_STORE_CTX *ctx)
 	return ok;
 }
 
-void
+static void
 usage()
 {
 	printf("Usage: %s [options] <subcommand>\n", program);
@@ -496,7 +496,7 @@ usage()
 	printf("\tshutdown      Terminate the service and its backends\n");
 }
 
-void
+static void
 handle_signals(int sig)
 {
 	switch (sig) {
@@ -509,7 +509,7 @@ handle_signals(int sig)
 	}
 }
 
-void
+static void
 listener_handle_signals(int sig)
 {
 	switch (sig) {
@@ -532,7 +532,7 @@ struct client_cb_data {
 	int          send_cert;
 };
 
-void
+static void
 client_close_cb(struct tlsev *t, void *data)
 {
 	struct pmdr     bemsg;
@@ -580,7 +580,7 @@ error_reply(struct tlsev *t, enum mdr_err_code errcode, const char *errdesc)
  * Message is coming from remote client, we're passing it to the
  * backend.
  */
-int
+static int
 client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 {
 	struct client_cb_data *cb_data = (struct client_cb_data *)(*data);
@@ -731,7 +731,7 @@ end:
 /*
  * A message comes from our backend, destined for the remote client.
  */
-int
+static int
 backend_msg_in_cb(int fd)
 {
 	struct umdr      beout;
@@ -918,7 +918,7 @@ load_crl(X509_STORE *store, const char *crl_path, struct xerr *e)
 	return 0;
 }
 
-int
+static int
 scan_crls(struct crl_stat *dst, size_t dst_sz, X509_STORE *store,
     struct xerr *e)
 {
@@ -993,7 +993,7 @@ scan_crls(struct crl_stat *dst, size_t dst_sz, X509_STORE *store,
 	return i;
 }
 
-X509_STORE *
+static X509_STORE *
 mk_store(struct xerr *e)
 {
 	FILE            *f = NULL;
@@ -1072,7 +1072,7 @@ fail:
 	return NULL;
 }
 
-void
+static void
 cleanup()
 {
 	SSL_CTX_free(ssl_ctx);
@@ -1087,7 +1087,7 @@ cleanup()
 		free(crls);
 }
 
-int
+static int
 reload_cert(SSL_CTX *ctx)
 {
 	struct stat st;
@@ -1126,7 +1126,7 @@ reload_cert(SSL_CTX *ctx)
 	return 1;
 }
 
-int
+static int
 reload_crls(SSL_CTX *ctx)
 {
 	X509_STORE      *store;
@@ -1197,7 +1197,7 @@ reload_crls(SSL_CTX *ctx)
 	return 1;
 }
 
-int
+static int
 listener_tasks(struct tlsev_listener *l, void *args)
 {
 	SSL_CTX         *ctx = (SSL_CTX *)args;
@@ -1234,7 +1234,7 @@ listener_tasks(struct tlsev_listener *l, void *args)
 	return 1;
 }
 
-int
+static int
 run()
 {
 	int              status;
@@ -1290,7 +1290,7 @@ run()
 	return status;
 }
 
-int
+static int
 get_listen_socket(int domain, int backlog, unsigned short port,
     const char *path, int flags)
 {
@@ -1405,7 +1405,7 @@ fail:
 	return -1;
 }
 
-void
+static void
 send_shutdown()
 {
 	FILE *f;
@@ -1429,7 +1429,7 @@ send_shutdown()
 		err(1, "kill");
 }
 
-void
+static void
 read_counters()
 {
 	int                      fd, i;
@@ -1535,7 +1535,7 @@ read_counters()
 	    global.tlsev.session_timeouts);
 }
 
-int
+static int
 send_counters()
 {
 	int            sock, i;
@@ -1598,7 +1598,7 @@ send_counters()
 	return 0;
 }
 
-int
+static int
 spawn_backend(int idx)
 {
 	struct xerr e;
@@ -1645,7 +1645,7 @@ spawn_backend(int idx)
 	return 0;
 }
 
-int
+static int
 parent_loop()
 {
 	int                      i, r, pidx;

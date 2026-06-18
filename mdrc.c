@@ -26,7 +26,7 @@ int insecure = 0;
 int repeat = 1;
 int rcvbuf = 0;
 
-void
+static void
 usage()
 {
 	printf("%s: [-dhi] [-n <repeat>] [-t <tls target|->] "
@@ -35,7 +35,7 @@ usage()
 	    "<send domain:code:varian> <format> <args>\n", program);
 }
 
-void
+static void
 make_spec(uint32_t domain, uint16_t code, uint16_t variant,
     const char *spec, int count)
 {
@@ -149,7 +149,7 @@ make_spec(uint32_t domain, uint16_t code, uint16_t variant,
 	free(def);
 }
 
-void
+static void
 pack(struct pmdr *m, const char *spec, const char **args, int count)
 {
 	int               finish = 0;
@@ -385,7 +385,7 @@ pack(struct pmdr *m, const char *spec, const char **args, int count)
 			free(subm_bytes[i]);
 }
 
-void
+static void
 ssl_err()
 {
 	fprintf(stderr, "ssl_err:\n");
@@ -393,7 +393,7 @@ ssl_err()
 	exit(1);
 }
 
-void
+static void
 do_tls(struct pmdr *m, const char *target, const char *key_path,
     const char *crt_path, const char *ca_path)
 {
@@ -531,7 +531,7 @@ do_tls(struct pmdr *m, const char *target, const char *key_path,
 	SSL_CTX_free(ctx);
 }
 
-void
+static void
 do_stdin()
 {
 	int          r, len;
@@ -578,7 +578,7 @@ do_stdin()
 	}
 }
 
-void
+static void
 do_stdout(struct pmdr *m)
 {
 	int i, r;

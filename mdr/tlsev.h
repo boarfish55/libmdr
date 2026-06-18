@@ -146,6 +146,7 @@ int                  tlsev_set_max_conns_per_ip(struct tlsev_listener *,
 int                  tlsev_auto_rcv_lowat(struct tlsev_listener *, int);
 int                  tlsev_add_fd_cb(struct tlsev_listener *,
                          struct tlsev_fd_cb *);
+void                 tlsev_del_fd_cb(struct tlsev_listener *, int);
 void                 tlsev_destroy(struct tlsev_listener *);
 int                  tlsev_run(struct tlsev_listener *,
                          int(*)(struct tlsev_listener *, void *), void *);

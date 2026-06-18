@@ -1194,7 +1194,7 @@ tlsev_drain(struct tlsev *t)
 	t->drain = 1;
 }
 
-int
+static int
 tlsev_poll(struct tlsev_listener *l)
 {
 #define TLSEV_NONE   0x00
