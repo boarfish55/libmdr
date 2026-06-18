@@ -1154,12 +1154,9 @@ mdr_pack_rseq(struct mdr *m, uint32_t count, const struct pmdr_vec *src)
 	if (!mdr_check_next_type(m, MDR_RSEQ))
 		return MDR_FAIL;
 
-	for (i = m->spec_fld_idx; m->spec->types[i] != MDR_END_RSEQ; i++) {
-		if (i >= m->spec->types_count) {
-			errno = ERANGE;
-			return MDR_FAIL;
-		}
-
+	for (i = m->spec_fld_idx;
+	    m->spec->types[i] != MDR_END_RSEQ && i < m->spec->types_count;
+	    i++) {
 		/*
 		 * Don't allow MDR_RSEQ within MDR_RSEQ.
 		 */
@@ -1167,6 +1164,11 @@ mdr_pack_rseq(struct mdr *m, uint32_t count, const struct pmdr_vec *src)
 			errno = EINVAL;
 			return MDR_FAIL;
 		}
+	}
+
+	if (i >= m->spec->types_count) {
+		errno = ERANGE;
+		return MDR_FAIL;
 	}
 
 	types_start = m->spec_fld_idx;
@@ -1193,7 +1195,11 @@ mdr_pack_rseq(struct mdr *m, uint32_t count, const struct pmdr_vec *src)
 	 */
 	if (!mdr_can_fit(m, sizeof(uint64_t)))
 		return MDR_FAIL;
+
+	/* In case count is zero, zero the size here too. */
+	bzero(m->pos, sizeof(uint64_t));
 	m->pos += sizeof(uint64_t);
+
 	start = m->pos;
 
 	for (i = 0; i < count;) {
@@ -1235,7 +1241,7 @@ mdr_pack_rseq(struct mdr *m, uint32_t count, const struct pmdr_vec *src)
 		}
 	}
 
-	if (*tp != MDR_END_RSEQ) {
+	if (count > 0 && *tp != MDR_END_RSEQ) {
 		/*
 		 * We should always end of MDR_END_RSEQ otherwise the
 		 * sequence isn't complete.
@@ -1264,20 +1270,22 @@ mdr_unpack_rseq(struct mdr *m, struct umdr_rseq_h *h)
 	if (!mdr_check_next_type(m, MDR_RSEQ))
 		return MDR_FAIL;
 
-	for (i = m->spec_fld_idx; m->spec->types[i] != MDR_END_RSEQ; i++) {
-		if (i >= m->spec->types_count) {
-			errno = ERANGE;
-			return MDR_FAIL;
-		}
-
+	for (i = m->spec_fld_idx;
+	    m->spec->types[i] != MDR_END_RSEQ && i < m->spec->types_count;
+	    i++) {
 		if (m->spec->types[i] == MDR_RSEQ) {
 			errno = EINVAL;
 			return MDR_FAIL;
 		}
 	}
 
+	if (i >= m->spec->types_count) {
+		errno = ERANGE;
+		return MDR_FAIL;
+	}
+
 	h->types = m->spec->types + m->spec_fld_idx;
-	m->spec_fld_idx += i;
+	m->spec_fld_idx = i + 1;
 
 	if (m->buf_sz - mdr_tell(m) < sizeof(uint8_t)) {
 		errno = EAGAIN;
@@ -1300,8 +1308,13 @@ mdr_unpack_rseq(struct mdr *m, struct umdr_rseq_h *h)
 		errno = EAGAIN;
 		return MDR_FAIL;
 	}
+
 	sz = be64buftoh(m->pos);
 	m->pos += sizeof(uint64_t);
+	if (m->buf_sz - mdr_tell(m) < sz) {
+		errno = EAGAIN;
+		return MDR_FAIL;
+	}
 
 	h->p = m->pos;
 	m->pos += sz;
@@ -1362,6 +1375,14 @@ mdr_register_spec(struct mdr_def *def)
 				in_repeat = 0;
 			}
 		}
+	}
+
+	if (in_repeat) {
+		/*
+		 * We don't allow unfinished sequences.
+		 */
+		errno = EINVAL;
+		return NULL;
 	}
 
 	label_sz = strlen(def->label);
@@ -2777,7 +2798,7 @@ umdr_rseq(struct umdr_rseq_h *h, struct umdr_vec *dst, int32_t maxlen)
 	for (i = 0; i < count;) {
 		for (tp = h->types; i < count && *tp != MDR_END_RSEQ;
 		    tp++, i++) {
-
+			dst[i].type = *tp;
 			switch (*tp) {
 			case MDR_U8:
 			case MDR_I8:
