@@ -25,6 +25,7 @@ int verbose = 0;
 #define MDR_DCV_MDR_TEST_4 MDR_MAKE_VARIANT(MDR_DCV_MDR_TEST, 4)
 #define MDR_DCV_MDR_TEST_5 MDR_MAKE_VARIANT(MDR_DCV_MDR_TEST, 5)
 #define MDR_DCV_MDR_TEST_6 MDR_MAKE_VARIANT(MDR_DCV_MDR_TEST, 6)
+#define MDR_DCV_MDR_TEST_7 MDR_MAKE_VARIANT(MDR_DCV_MDR_TEST, 7)
 
 struct mdr_def msgdef_test_0 = {
 	MDR_DCV_MDR_TEST,
@@ -106,6 +107,24 @@ struct mdr_def msgdef_test_6 = {
 };
 const struct mdr_spec *msg_test_6;
 
+/*
+ * Wide repeated sequence exercising the full set of packable element
+ * types: every scalar width, a byte blob, and a representative spread of
+ * array kinds.
+ */
+struct mdr_def msgdef_test_7 = {
+	MDR_DCV_MDR_TEST_7,
+	"test.7",
+	{
+		MDR_RSEQ,
+		MDR_U32, MDR_U64, MDR_I8, MDR_I32, MDR_I64, MDR_F32, MDR_F64,
+		MDR_B, MDR_AU8, MDR_AI16, MDR_AF64, MDR_AS,
+		MDR_END_RSEQ,
+		MDR_LAST
+	}
+};
+const struct mdr_spec *msg_test_7;
+
 struct test_status
 {
 	char *msg;
@@ -125,7 +144,7 @@ const char *status_description[] = {
 };
 
 
-struct test_status *
+static struct test_status *
 success()
 {
 	test_status.status = OK;
@@ -133,15 +152,7 @@ success()
 	return &test_status;
 }
 
-struct test_status *
-skipped()
-{
-	test_status.status = SKIPPED;
-	test_status.msg = NULL;
-	return &test_status;
-}
-
-struct test_status *
+static struct test_status *
 fail(int status, int e, const char *fn, int line, const char *msg, ...)
 {
 	va_list  ap;
@@ -162,7 +173,7 @@ fail(int status, int e, const char *fn, int line, const char *msg, ...)
 #define ERR(e, msg, ...) fail(FAIL, e, __func__, __LINE__, msg __VA_OPT__(,) __VA_ARGS__)
 #define FLAKY(e, msg, ...) fail(FLAKED, e, __func__, __LINE__, msg __VA_OPT__(,) __VA_ARGS__)
 
-struct test_status *
+static struct test_status *
 test_long_str()
 {
 	int             i;
@@ -205,7 +216,7 @@ test_long_str()
 	return success();
 }
 
-struct test_status *
+static struct test_status *
 test_pack_mdr()
 {
 	char            str[32] = "hey hey hey";
@@ -253,7 +264,7 @@ test_pack_mdr()
 	return success();
 }
 
-struct test_status *
+static struct test_status *
 test_pack_reserved_bytes()
 {
 	uint64_t         r;
@@ -310,7 +321,7 @@ test_pack_reserved_bytes()
 	return success();
 }
 
-struct test_status *
+static struct test_status *
 test_long_tail_bytes()
 {
 	uint64_t         r, tbsz;
@@ -379,7 +390,7 @@ test_long_tail_bytes()
 	return success();
 }
 
-struct test_status *
+static struct test_status *
 test_null_bytes()
 {
 	struct pmdr     pm;
@@ -439,7 +450,7 @@ test_null_bytes()
 	return success();
 }
 
-struct test_status *
+static struct test_status *
 test_limits()
 {
 	uint64_t        n;
@@ -516,7 +527,7 @@ test_limits()
 	return success();
 }
 
-struct test_status *
+static struct test_status *
 test_pack_array()
 {
 	uint32_t         a_u32[3] = { 0, 1, 2 };
@@ -575,7 +586,7 @@ test_pack_array()
 	return success();
 }
 
-struct test_status *
+static struct test_status *
 test_pack_rseq()
 {
 	struct pmdr_vec    seq[3 * 2], seq2[2 * 2];
@@ -617,32 +628,32 @@ test_pack_rseq()
 	struct umdr      um;
 	struct umdr_vec  uv[2];
 
-	seq[MDR_RSEQ_ROWI(2, 0, 0)].type = MDR_U8;
-	seq[MDR_RSEQ_ROWI(2, 0, 0)].v.u8 = 1;
-	seq[MDR_RSEQ_ROWI(2, 0, 1)].type = MDR_S;
-	seq[MDR_RSEQ_ROWI(2, 0, 1)].v.s = "blah1";
+	seq[MDR_RSEQ_IDX(2, 0, 0)].type = MDR_U8;
+	seq[MDR_RSEQ_IDX(2, 0, 0)].v.u8 = 1;
+	seq[MDR_RSEQ_IDX(2, 0, 1)].type = MDR_S;
+	seq[MDR_RSEQ_IDX(2, 0, 1)].v.s = "blah1";
 
-	seq[MDR_RSEQ_ROWI(2, 1, 0)].type = MDR_U8;
-	seq[MDR_RSEQ_ROWI(2, 1, 0)].v.u8 = 2;
-	seq[MDR_RSEQ_ROWI(2, 1, 1)].type = MDR_S;
-	seq[MDR_RSEQ_ROWI(2, 1, 1)].v.s = "blah2";
+	seq[MDR_RSEQ_IDX(2, 1, 0)].type = MDR_U8;
+	seq[MDR_RSEQ_IDX(2, 1, 0)].v.u8 = 2;
+	seq[MDR_RSEQ_IDX(2, 1, 1)].type = MDR_S;
+	seq[MDR_RSEQ_IDX(2, 1, 1)].v.s = "blah2";
 
-	seq[MDR_RSEQ_ROWI(2, 2, 0)].type = MDR_U8;
-	seq[MDR_RSEQ_ROWI(2, 2, 0)].v.u8 = 3;
-	seq[MDR_RSEQ_ROWI(2, 2, 1)].type = MDR_S;
-	seq[MDR_RSEQ_ROWI(2, 2, 1)].v.s = "blah3";
+	seq[MDR_RSEQ_IDX(2, 2, 0)].type = MDR_U8;
+	seq[MDR_RSEQ_IDX(2, 2, 0)].v.u8 = 3;
+	seq[MDR_RSEQ_IDX(2, 2, 1)].type = MDR_S;
+	seq[MDR_RSEQ_IDX(2, 2, 1)].v.s = "blah3";
 
-	seq2[MDR_RSEQ_ROWI(2, 0, 0)].type = MDR_I16;
-	seq2[MDR_RSEQ_ROWI(2, 0, 0)].v.i16 = -10;
-	seq2[MDR_RSEQ_ROWI(2, 0, 1)].type = MDR_AU32;
-	seq2[MDR_RSEQ_ROWI(2, 0, 1)].v.au32.items = au32;
-	seq2[MDR_RSEQ_ROWI(2, 0, 1)].v.au32.length = 3;
+	seq2[MDR_RSEQ_IDX(2, 0, 0)].type = MDR_I16;
+	seq2[MDR_RSEQ_IDX(2, 0, 0)].v.i16 = -10;
+	seq2[MDR_RSEQ_IDX(2, 0, 1)].type = MDR_AU32;
+	seq2[MDR_RSEQ_IDX(2, 0, 1)].v.au32.items = au32;
+	seq2[MDR_RSEQ_IDX(2, 0, 1)].v.au32.length = 3;
 
-	seq2[MDR_RSEQ_ROWI(2, 1, 0)].type = MDR_I16;
-	seq2[MDR_RSEQ_ROWI(2, 1, 0)].v.i16 = -11;
-	seq2[MDR_RSEQ_ROWI(2, 1, 1)].type = MDR_AU32;
-	seq2[MDR_RSEQ_ROWI(2, 1, 1)].v.au32.items = au32;
-	seq2[MDR_RSEQ_ROWI(2, 1, 1)].v.au32.length = 3;
+	seq2[MDR_RSEQ_IDX(2, 1, 0)].type = MDR_I16;
+	seq2[MDR_RSEQ_IDX(2, 1, 0)].v.i16 = -11;
+	seq2[MDR_RSEQ_IDX(2, 1, 1)].type = MDR_AU32;
+	seq2[MDR_RSEQ_IDX(2, 1, 1)].v.au32.items = au32;
+	seq2[MDR_RSEQ_IDX(2, 1, 1)].v.au32.length = 3;
 
 	if (pmdr_init(&pm, buf, sizeof(buf), MDR_FNONE) == MDR_FAIL)
 		return ERR(errno, "pmdr_init");
@@ -673,29 +684,29 @@ test_pack_rseq()
 	if (umdr_rseq(&uv[1].v.rseq, useq2, UMDRVECLEN(useq2)) == MDR_FAIL)
 		return ERR(errno, "umdr_rseq");
 
-	if (useq[MDR_RSEQ_ROWI(2, 0, 0)].v.u8 != 1 ||
-	    useq[MDR_RSEQ_ROWI(2, 1, 0)].v.u8 != 2 ||
-	    useq[MDR_RSEQ_ROWI(2, 2, 0)].v.u8 != 3 ||
-	    strcmp(useq[MDR_RSEQ_ROWI(2, 0, 1)].v.s.bytes, "blah1") != 0 ||
-	    strcmp(useq[MDR_RSEQ_ROWI(2, 1, 1)].v.s.bytes, "blah2") != 0 ||
-	    strcmp(useq[MDR_RSEQ_ROWI(2, 2, 1)].v.s.bytes, "blah3") != 0 ||
-	    useq[MDR_RSEQ_ROWI(2, 0, 1)].v.s.sz != 5 ||
-	    useq[MDR_RSEQ_ROWI(2, 1, 1)].v.s.sz != 5 ||
-	    useq[MDR_RSEQ_ROWI(2, 1, 1)].v.s.sz != 5)
+	if (useq[MDR_RSEQ_IDX(2, 0, 0)].v.u8 != 1 ||
+	    useq[MDR_RSEQ_IDX(2, 1, 0)].v.u8 != 2 ||
+	    useq[MDR_RSEQ_IDX(2, 2, 0)].v.u8 != 3 ||
+	    strcmp(useq[MDR_RSEQ_IDX(2, 0, 1)].v.s.bytes, "blah1") != 0 ||
+	    strcmp(useq[MDR_RSEQ_IDX(2, 1, 1)].v.s.bytes, "blah2") != 0 ||
+	    strcmp(useq[MDR_RSEQ_IDX(2, 2, 1)].v.s.bytes, "blah3") != 0 ||
+	    useq[MDR_RSEQ_IDX(2, 0, 1)].v.s.sz != 5 ||
+	    useq[MDR_RSEQ_IDX(2, 1, 1)].v.s.sz != 5 ||
+	    useq[MDR_RSEQ_IDX(2, 1, 1)].v.s.sz != 5)
 		return ERR(0, "rseq contains wrong values");
 
-	if (useq2[MDR_RSEQ_ROWI(2, 0, 0)].v.i16 != -10 ||
-	    useq2[MDR_RSEQ_ROWI(2, 1, 0)].v.i16 != -11)
+	if (useq2[MDR_RSEQ_IDX(2, 0, 0)].v.i16 != -10 ||
+	    useq2[MDR_RSEQ_IDX(2, 1, 0)].v.i16 != -11)
 		return ERR(0, "rseq contains wrong values");
 
-	if (umdr_vec_au32(&useq2[MDR_RSEQ_ROWI(2, 0, 1)].v.au32, au32_out, 3)
+	if (umdr_vec_au32(&useq2[MDR_RSEQ_IDX(2, 0, 1)].v.au32, au32_out, 3)
 	    == MDR_FAIL)
 		return ERR(errno, "umdr_vec_au32");
 
 	if (memcmp(au32, au32_out, sizeof(au32)) != 0)
 		return ERR(0, "first array has wrong content");
 
-	if (umdr_vec_au32(&useq2[MDR_RSEQ_ROWI(2, 1, 1)].v.au32, au32_out, 3)
+	if (umdr_vec_au32(&useq2[MDR_RSEQ_IDX(2, 1, 1)].v.au32, au32_out, 3)
 	    == MDR_FAIL)
 		return ERR(errno, "umdr_vec_au32");
 
@@ -705,7 +716,144 @@ test_pack_rseq()
 	return success();
 }
 
-struct test_status *
+/*
+ * Round-trips a repeated sequence that uses every packable element type:
+ * all scalar widths, a byte blob, and a spread of array kinds. Two
+ * repetitions, so the per-row template is walked more than once. Unlike
+ * test_pack_rseq this does not compare against a hand-encoded golden
+ * buffer; it relies on pack/unpack agreeing on the wire format.
+ */
+static struct test_status *
+test_pack_rseq_types()
+{
+	enum { ROWS = 2, COLS = 12 };
+
+	struct pmdr_vec  seq[COLS * ROWS];
+	struct umdr_vec  useq[COLS * ROWS];
+	uint8_t          au8[ROWS][3]  = { { 10, 11, 12 }, { 20, 21, 22 } };
+	int16_t          ai16[ROWS][3] = { { -1, -2, -3 }, { -4, -5, -6 } };
+	double           af64[ROWS][2] = { { 1.5, 2.5 }, { 3.5, 4.5 } };
+	uint8_t          blob[ROWS][4] = {
+		{ 0xde, 0xad, 0xbe, 0xef },
+		{ 0x01, 0x02, 0x03, 0x04 }
+	};
+	const char      *as[ROWS][2] = {
+		{ "red", "green" },
+		{ "blue", "cyan" }
+	};
+
+	uint8_t          au8_out[3];
+	int16_t          ai16_out[3];
+	double           af64_out[2];
+	const char      *as_out[2];
+
+	char             buf[1024];
+	struct pmdr      pm;
+	struct pmdr_vec  pv[1];
+	struct umdr      um;
+	struct umdr_vec  uv[1];
+	int              r;
+
+	/* The whole sequence collapses to a single vector slot. */
+	if (mdr_spec_vlen(msg_test_7) != 1)
+		return ERR(0, "spec_vlen should count the rseq block as one");
+
+	for (r = 0; r < ROWS; r++) {
+		seq[MDR_RSEQ_IDX(COLS, r, 0)].type  = MDR_U32;
+		seq[MDR_RSEQ_IDX(COLS, r, 0)].v.u32 = 0xcafe0000 + r;
+		seq[MDR_RSEQ_IDX(COLS, r, 1)].type  = MDR_U64;
+		seq[MDR_RSEQ_IDX(COLS, r, 1)].v.u64 = 0x1122334455660000ULL + r;
+		seq[MDR_RSEQ_IDX(COLS, r, 2)].type  = MDR_I8;
+		seq[MDR_RSEQ_IDX(COLS, r, 2)].v.i8  = -8 - r;
+		seq[MDR_RSEQ_IDX(COLS, r, 3)].type  = MDR_I32;
+		seq[MDR_RSEQ_IDX(COLS, r, 3)].v.i32 = -123456 - r;
+		seq[MDR_RSEQ_IDX(COLS, r, 4)].type  = MDR_I64;
+		seq[MDR_RSEQ_IDX(COLS, r, 4)].v.i64 = -9876543210LL - r;
+		seq[MDR_RSEQ_IDX(COLS, r, 5)].type  = MDR_F32;
+		seq[MDR_RSEQ_IDX(COLS, r, 5)].v.f32 = 1.25f + r;
+		seq[MDR_RSEQ_IDX(COLS, r, 6)].type  = MDR_F64;
+		seq[MDR_RSEQ_IDX(COLS, r, 6)].v.f64 = 3.0625 + r;
+
+		seq[MDR_RSEQ_IDX(COLS, r, 7)].type    = MDR_B;
+		seq[MDR_RSEQ_IDX(COLS, r, 7)].v.b.bytes = blob[r];
+		seq[MDR_RSEQ_IDX(COLS, r, 7)].v.b.sz  = sizeof(blob[r]);
+
+		seq[MDR_RSEQ_IDX(COLS, r, 8)].type        = MDR_AU8;
+		seq[MDR_RSEQ_IDX(COLS, r, 8)].v.au8.items  = au8[r];
+		seq[MDR_RSEQ_IDX(COLS, r, 8)].v.au8.length = 3;
+		seq[MDR_RSEQ_IDX(COLS, r, 9)].type         = MDR_AI16;
+		seq[MDR_RSEQ_IDX(COLS, r, 9)].v.ai16.items  = ai16[r];
+		seq[MDR_RSEQ_IDX(COLS, r, 9)].v.ai16.length = 3;
+		seq[MDR_RSEQ_IDX(COLS, r, 10)].type         = MDR_AF64;
+		seq[MDR_RSEQ_IDX(COLS, r, 10)].v.af64.items  = af64[r];
+		seq[MDR_RSEQ_IDX(COLS, r, 10)].v.af64.length = 2;
+		seq[MDR_RSEQ_IDX(COLS, r, 11)].type          = MDR_AS;
+		seq[MDR_RSEQ_IDX(COLS, r, 11)].v.as.items  = as[r];
+		seq[MDR_RSEQ_IDX(COLS, r, 11)].v.as.length = 2;
+	}
+
+	if (pmdr_init(&pm, buf, sizeof(buf), MDR_FNONE) == MDR_FAIL)
+		return ERR(errno, "pmdr_init");
+	pv[0].type = MDR_RSEQ;
+	pv[0].v.rseq.items = (const struct pmdr_vec *)seq;
+	pv[0].v.rseq.length = PMDRVECLEN(seq);
+	if (pmdr_pack(&pm, msg_test_7, pv, PMDRVECLEN(pv)) == MDR_FAIL)
+		return ERR(errno, "pmdr_pack");
+
+	if (umdr_init(&um, pmdr_buf(&pm), pmdr_size(&pm), MDR_FNONE)
+	    == MDR_FAIL)
+		return ERR(errno, "umdr_init");
+	if (umdr_unpack(&um, msg_test_7, uv, UMDRVECLEN(uv)) == MDR_FAIL)
+		return ERR(errno, "umdr_unpack");
+
+	if (umdr_rseq(&uv[0].v.rseq, useq, UMDRVECLEN(useq)) != COLS * ROWS)
+		return ERR(errno, "umdr_rseq");
+
+	for (r = 0; r < ROWS; r++) {
+		struct umdr_vec *row = &useq[MDR_RSEQ_IDX(COLS, r, 0)];
+
+		if (row[0].type != MDR_U32 || row[0].v.u32 != 0xcafe0000 + r)
+			return ERR(0, "row %d u32 mismatch", r);
+		if (row[1].type != MDR_U64 ||
+		    row[1].v.u64 != 0x1122334455660000ULL + r)
+			return ERR(0, "row %d u64 mismatch", r);
+		if (row[2].type != MDR_I8 || row[2].v.i8 != -8 - r)
+			return ERR(0, "row %d i8 mismatch", r);
+		if (row[3].type != MDR_I32 || row[3].v.i32 != -123456 - r)
+			return ERR(0, "row %d i32 mismatch", r);
+		if (row[4].type != MDR_I64 || row[4].v.i64 != -9876543210LL - r)
+			return ERR(0, "row %d i64 mismatch", r);
+		if (row[5].type != MDR_F32 || row[5].v.f32 != 1.25f + r)
+			return ERR(0, "row %d f32 mismatch", r);
+		if (row[6].type != MDR_F64 || row[6].v.f64 != 3.0625 + r)
+			return ERR(0, "row %d f64 mismatch", r);
+
+		if (row[7].type != MDR_B ||
+		    row[7].v.b.sz != sizeof(blob[r]) ||
+		    memcmp(row[7].v.b.bytes, blob[r], sizeof(blob[r])) != 0)
+			return ERR(0, "row %d blob mismatch", r);
+
+		if (umdr_vec_au8(&row[8].v.au8, au8_out, 3) != 3 ||
+		    memcmp(au8_out, au8[r], sizeof(au8[r])) != 0)
+			return ERR(0, "row %d au8 mismatch", r);
+		if (umdr_vec_ai16(&row[9].v.ai16, ai16_out, 3) != 3 ||
+		    memcmp(ai16_out, ai16[r], sizeof(ai16[r])) != 0)
+			return ERR(0, "row %d ai16 mismatch", r);
+		if (umdr_vec_af64(&row[10].v.af64, af64_out, 2) != 2 ||
+		    memcmp(af64_out, af64[r], sizeof(af64[r])) != 0)
+			return ERR(0, "row %d af64 mismatch", r);
+		if (umdr_vec_as(&row[11].v.as, as_out, 2) != 2 ||
+		    strcmp(as_out[0], as[r][0]) != 0 ||
+		    strcmp(as_out[1], as[r][1]) != 0)
+			return ERR(0, "row %d as mismatch", r);
+	}
+
+	pmdr_free(&pm);
+
+	return success();
+}
+
+static struct test_status *
 test_mdr_spec_base_sz()
 {
 	size_t sz = mdr_spec_base_sz(msg_test_4, 0);
@@ -724,7 +872,7 @@ test_mdr_spec_base_sz()
 	return success();
 }
 
-struct test_status *
+static struct test_status *
 test_encoding()
 {
 	struct pmdr      pm;
@@ -930,13 +1078,18 @@ struct mdr_test {
 		&test_pack_rseq
 	},
 	{
+		"pack rseq types",
+		1,
+		&test_pack_rseq_types
+	},
+	{
 		"",
 		1,
 		NULL
 	}
 };
 
-void
+static void
 usage()
 {
 	fprintf(stderr, "Usage: mdr_tests [options] [test substring]\n"
@@ -986,6 +1139,8 @@ main(int argc, char **argv)
 	if ((msg_test_5 = mdr_register_spec(&msgdef_test_5)) == NULL)
 		err(1, "mdr_register_spec");
 	if ((msg_test_6 = mdr_register_spec(&msgdef_test_6)) == NULL)
+		err(1, "mdr_register_spec");
+	if ((msg_test_7 = mdr_register_spec(&msgdef_test_7)) == NULL)
 		err(1, "mdr_register_spec");
 
 	for (t = tests; t->fn != NULL; t++) {

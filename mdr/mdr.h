@@ -261,7 +261,7 @@ struct umdr_vec_ah
 	uint64_t    size;
 };
 
-#define MDR_RSEQ_ROWI(rseq_l, row, i) (rseq_l * row + i)
+#define MDR_RSEQ_IDX(cols, row, col) ((cols) * (row) + (col))
 
 struct umdr_rseq_h
 {
@@ -340,6 +340,10 @@ ptrdiff_t      pmdr_add_tail_bytes(struct pmdr *, uint64_t);
 ptrdiff_t      pmdr_set_stream_id(struct pmdr *, uint64_t);
 ptrdiff_t      pmdr_set_acct_id(struct pmdr *, uint64_t);
 ptrdiff_t      pmdr_set_trace_id(struct pmdr *, const union mdr_trace_id *);
+uint64_t       pmdr_stream_id(const struct pmdr *);
+uint64_t       pmdr_acct_id(const struct pmdr *);
+const uint8_t *pmdr_trace_id(const struct pmdr *);
+int            pmdr_dcv_match(const struct pmdr *, uint64_t, uint64_t);
 void          *pmdr_buf(struct pmdr *);
 uint64_t       pmdr_size(const struct pmdr *);
 ptrdiff_t      pmdr_tell(const struct pmdr *);
@@ -372,22 +376,22 @@ const uint8_t *umdr_trace_id(const struct umdr *);
 int            umdr_dcv_match(const struct umdr *, uint64_t, uint64_t);
 int            umdr_print(FILE *, const struct umdr *);
 
-int                    mdr_register_builtin_specs();
+int                    mdr_register_builtin_specs(void);
 const struct mdr_spec *mdr_register_spec(struct mdr_def *);
 const struct mdr_spec *mdr_registry_get(uint64_t);
-void                   mdr_registry_clear();
+void                   mdr_registry_clear(void);
 
 uint64_t               mdr_spec_base_sz(const struct mdr_spec *, uint64_t);
 size_t                 mdr_spec_vlen(const struct mdr_spec *);
 
 #define MDR_DCV(domain, code, variant) \
-    ((uint64_t)domain << 32 | (uint64_t)code << 16 | (uint64_t)variant)
+    (((uint64_t)(domain) << 32) | ((uint64_t)(code) << 16) | (uint64_t)(variant))
 
 #define MDR_MASK_D   0xffffffff00000000
 #define MDR_MASK_DC  0xffffffffffff0000
 #define MDR_MASK_DCV 0xffffffffffffffff
 #define MDR_MAKE_VARIANT(dcv, variant) \
-    (((uint64_t)dcv & MDR_MASK_DC) | (uint64_t)variant)
+    (((uint64_t)(dcv) & MDR_MASK_DC) | (uint64_t)(variant))
 
 /*
  * Built-in DCVs (Domain/Code/Variant). Domains are 32 bits, code and

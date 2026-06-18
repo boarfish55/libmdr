@@ -1402,7 +1402,7 @@ mdr_unpack_rseq(struct mdr *m, struct umdr_rseq_h *h)
 }
 
 int
-mdr_register_builtin_specs()
+mdr_register_builtin_specs(void)
 {
 	if ((mdr_msg_null = mdr_register_spec(&mdr_null)) == NULL ||
 	    (mdr_msg_ping = mdr_register_spec(&mdr_ping)) == NULL ||
@@ -1502,7 +1502,7 @@ mdr_registry_get(uint64_t dcv)
 }
 
 void
-mdr_registry_clear()
+mdr_registry_clear(void)
 {
 	struct mdr_spec *s, *next;
 
@@ -1595,7 +1595,12 @@ mdr_spec_vlen(const struct mdr_spec *spec)
 		errno = EINVAL;
 		return SIZE_MAX;
 	}
-	return spec->types_count;
+	/*
+	 * vec_size, not types_count: a repeated sequence spans several
+	 * entries in the type list but occupies a single pmdr_vec/umdr_vec
+	 * slot. For specs without a sequence the two are equal.
+	 */
+	return spec->vec_size;
 }
 
 void *
