@@ -3,8 +3,8 @@ EXTRA_CFLAGS =
 VERSION = 0.8.6
 VERSION_MAJOR = $(shell echo ${VERSION} | cut -d. -f 1)
 DEPDIR = .deps
-CFLAGS = -Wall -g -I. -pie -fstack-protector-strong -fstack-clash-protection \
-	 -DYY_NO_LEAKS=1 -fcf-protection \
+CFLAGS = -Wall -Wmissing-prototypes -g -I. -pie -fstack-protector-strong \
+	 -fstack-clash-protection -DYY_NO_LEAKS=1 -fcf-protection \
 	 $(shell pkg-config --cflags libbsd-overlay libbsd-ctor \
 	 libssl libcrypto)
 LDFLAGS = $(shell pkg-config --libs libbsd-overlay libbsd-ctor \
