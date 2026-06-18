@@ -678,7 +678,12 @@ umdr_vec_asm(struct umdr_vec_ah *h, uint8_t type, void *dst, int32_t maxlen)
 			((const char **)dst)[i] = (const char *)pos;
 			pos += sz;
 		} else if (type == MDR_M) {
-			if (end - pos < sizeof(uint64_t)) {
+			/*
+			 * Need room for both the size prefix and the features
+			 * word that follows it, since we read features below
+			 * before umdr_init validates the rest of the header.
+			 */
+			if (end - pos < sizeof(uint64_t) + sizeof(uint32_t)) {
 				errno = EBADMSG;
 				return MDR_FAIL;
 			}

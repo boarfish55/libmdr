@@ -70,6 +70,16 @@ the TLS handshake begins.
 .Fa n
 must be at least 1.
 .Pp
+The default established by
+.Xr tlsev_init 3
+is
+.Dv TLSEV_DEFAULT_MAX_CONN_PER_IP
+(100), chosen so that a single source address cannot monopolize
+.Fa max_clients .
+Deployments where many clients legitimately share one address, such as
+behind a NAT or a forwarding proxy, may need to raise it; conversely,
+listeners on hostile networks may lower it further.
+.Pp
 .Fn tlsev_auto_rcv_lowat
 toggles the listener's automatic management of the
 .Dv SO_RCVLOWAT
