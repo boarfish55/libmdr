@@ -1220,21 +1220,99 @@ mdr_pack_rseq(struct mdr *m, uint32_t count, const struct pmdr_vec *src)
 				nv.u16 = src[i].v.u16;
 				r = mdr_pack_num_nochk(m, *tp, nv);
 				break;
+			case MDR_U32:
+				nv.u32 = src[i].v.u32;
+				r = mdr_pack_num_nochk(m, *tp, nv);
+				break;
+			case MDR_U64:
+				nv.u64 = src[i].v.u64;
+				r = mdr_pack_num_nochk(m, *tp, nv);
+				break;
+			case MDR_I8:
+				nv.i8 = src[i].v.i8;
+				r = mdr_pack_num_nochk(m, *tp, nv);
+				break;
 			case MDR_I16:
 				nv.i16 = src[i].v.i16;
 				r = mdr_pack_num_nochk(m, *tp, nv);
+				break;
+			case MDR_I32:
+				nv.i32 = src[i].v.i32;
+				r = mdr_pack_num_nochk(m, *tp, nv);
+				break;
+			case MDR_I64:
+				nv.i64 = src[i].v.i64;
+				r = mdr_pack_num_nochk(m, *tp, nv);
+				break;
+			case MDR_F32:
+				nv.f32 = src[i].v.f32;
+				r = mdr_pack_num_nochk(m, *tp, nv);
+				break;
+			case MDR_F64:
+				nv.f64 = src[i].v.f64;
+				r = mdr_pack_num_nochk(m, *tp, nv);
+				break;
+			case MDR_S:
+				r = mdr_pack_str_nochk(m, src[i].v.s);
+				break;
+			case MDR_B:
+				r = mdr_pack_bytes_nochk(m, src[i].v.b.bytes,
+				    src[i].v.b.sz);
+				break;
+			case MDR_M:
+				r = mdr_pack_mdr(m, &src[i].v.pmdr->m);
+				break;
+			case MDR_AU8:
+				r = mdr_pack_array(m, *tp, src[i].v.au8.length,
+				    src[i].v.au8.items);
+				break;
+			case MDR_AU16:
+				r = mdr_pack_array(m, *tp, src[i].v.au16.length,
+				    src[i].v.au16.items);
 				break;
 			case MDR_AU32:
 				r = mdr_pack_array(m, *tp, src[i].v.au32.length,
 				    src[i].v.au32.items);
 				break;
-			case MDR_S:
-				r = mdr_pack_str_nochk(m, src[i].v.s);
+			case MDR_AU64:
+				r = mdr_pack_array(m, *tp, src[i].v.au64.length,
+				    src[i].v.au64.items);
+				break;
+			case MDR_AI8:
+				r = mdr_pack_array(m, *tp, src[i].v.ai8.length,
+				    src[i].v.ai8.items);
+				break;
+			case MDR_AI16:
+				r = mdr_pack_array(m, *tp, src[i].v.ai16.length,
+				    src[i].v.ai16.items);
+				break;
+			case MDR_AI32:
+				r = mdr_pack_array(m, *tp, src[i].v.ai32.length,
+				    src[i].v.ai32.items);
+				break;
+			case MDR_AI64:
+				r = mdr_pack_array(m, *tp, src[i].v.ai64.length,
+				    src[i].v.ai64.items);
+				break;
+			case MDR_AF32:
+				r = mdr_pack_array(m, *tp, src[i].v.af32.length,
+				    src[i].v.af32.items);
+				break;
+			case MDR_AF64:
+				r = mdr_pack_array(m, *tp, src[i].v.af64.length,
+				    src[i].v.af64.items);
+				break;
+			case MDR_AS:
+				r = mdr_pack_array(m, *tp, src[i].v.as.length,
+				    src[i].v.as.items);
+				break;
+			case MDR_AM:
+				r = mdr_pack_array(m, *tp, src[i].v.am.length,
+				    (void *)src[i].v.am.items);
 				break;
 			default:
 				errno = EINVAL;
 				return MDR_FAIL;
-			//TODO: other types
 			}
 			if (r == MDR_FAIL)
 				return MDR_FAIL;
