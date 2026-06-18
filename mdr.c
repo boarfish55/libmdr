@@ -1155,7 +1155,7 @@ mdr_pack_rseq(struct mdr *m, uint32_t count, const struct pmdr_vec *src)
 		return MDR_FAIL;
 
 	for (i = m->spec_fld_idx;
-	    m->spec->types[i] != MDR_END_RSEQ && i < m->spec->types_count;
+	    i < m->spec->types_count && m->spec->types[i] != MDR_END_RSEQ;
 	    i++) {
 		/*
 		 * Don't allow MDR_RSEQ within MDR_RSEQ.
@@ -1271,7 +1271,7 @@ mdr_unpack_rseq(struct mdr *m, struct umdr_rseq_h *h)
 		return MDR_FAIL;
 
 	for (i = m->spec_fld_idx;
-	    m->spec->types[i] != MDR_END_RSEQ && i < m->spec->types_count;
+	    i < m->spec->types_count && m->spec->types[i] != MDR_END_RSEQ;
 	    i++) {
 		if (m->spec->types[i] == MDR_RSEQ) {
 			errno = EINVAL;
