@@ -58,6 +58,43 @@ When the cap is reached, the listening sockets are disarmed until enough
 clients disconnect.
 The value is clamped to
 .Dv TLSEV_MAX_CLIENTS .
+.Pp
+.Fa max_clients
+may also be lowered automatically at run time.
+If
+.Xr accept 2
+fails with
+.Er EMFILE ,
+the process has reached its per-process descriptor limit
+.Pq Dv RLIMIT_NOFILE ,
+and the listener cannot service further connections regardless of the
+configured cap.
+It therefore lowers
+.Fa max_clients
+to the current number of active clients
+.Pq or to 1 if none are active ,
+logs the condition, and increments the
+.Va file_ulimit_hits
+counter, so that it stops trying to accept connections it has no
+descriptors for.
+This reduction is one-way for the life of the listener; it is not
+raised again automatically.
+Administrators who want a higher effective cap should raise
+.Dv RLIMIT_NOFILE
+.Pq see Xr setrlimit 2 and Xr getrlimit 2
+before starting, so that the per-process descriptor limit is not the
+binding constraint.
+A system-wide descriptor exhaustion
+.Pq Xr accept 2 failing with Er ENFILE
+is logged and counted in
+.Va sys_ulimit_hits
+but does
+.Em not
+lower
+.Fa max_clients ,
+since the shortage is not specific to this process.
+The counters are reported by
+.Xr tlsev_dump_counters 3 .
 .It Fa ctx
 The SSL context used for every accepted connection.
 The listener does not take ownership.
@@ -182,6 +219,8 @@ or
 .Xr epoll_wait 2
 returned when polling failed.
 .Sh SEE ALSO
+.Xr setrlimit 2 ,
+.Xr tlsev_dump_counters 3 ,
 .Xr tlsev_reply 3 ,
 .Xr tlsev_set_socket_timeouts 3 ,
 .Xr tlsev_peer 3 ,
