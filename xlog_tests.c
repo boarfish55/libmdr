@@ -6,70 +6,70 @@
 #include <errno.h>
 #include <stdlib.h>
 
-int
+static int
 some_func8(struct xerr *e)
 {
 	return XERRF(e, XLOG_ERRNO, ENOENT, "some file op: %s",
 	    "somefile");
 }
 
-int
+static int
 some_func7(struct xerr *e)
 {
 	some_func8(e);
 	return XERR_PUSH(e);
 }
 
-int
+static int
 some_func6(struct xerr *e)
 {
 	some_func7(e);
 	return XERR_PUSH(e);
 }
 
-int
+static int
 some_func5(struct xerr *e)
 {
 	some_func6(e);
 	return XERR_PUSH(e);
 }
 
-int
+static int
 some_func4(struct xerr *e)
 {
 	some_func5(e);
 	return XERR_PUSH(e);
 }
 
-int
+static int
 some_func3(struct xerr *e)
 {
 	some_func4(e);
 	return XERR_PUSH(e);
 }
 
-int
+static int
 some_func2(struct xerr *e)
 {
 	some_func3(e);
 	return XERR_PUSH(e);
 }
 
-int
+static int
 some_func1(struct xerr *e)
 {
 	some_func2(e);
 	return XERR_PUSH(e);
 }
 
-int
+static int
 some_func0(struct xerr *e)
 {
 	some_func1(e);
 	return XERR_PUSH(e);
 }
 
-struct xerr
+static struct xerr
 direct_error()
 {
 	struct xerr e;
@@ -77,7 +77,7 @@ direct_error()
 	return e;
 }
 
-struct xerr
+static struct xerr
 direct_error2()
 {
 	struct xerr e;

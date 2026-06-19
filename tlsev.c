@@ -868,7 +868,7 @@ tlsev_init(struct tlsev_listener *l, int *lsock, size_t lsock_len,
 	if (max_clients > TLSEV_MAX_CLIENTS)
 		max_clients = TLSEV_MAX_CLIENTS;
 	l->max_clients = max_clients;
-	l->max_conn_per_ip = UINT16_MAX;
+	l->max_conn_per_ip = TLSEV_DEFAULT_MAX_CONN_PER_IP;
 	l->use_rcv_lowat = 1;
 	l->accepting = 1;
 
@@ -1010,8 +1010,37 @@ tlsev_auto_rcv_lowat(struct tlsev_listener *l, int on)
 }
 
 void
-tlsev_del_fd_cb(struct tlsev_listener *l, int i)
+tlsev_del_fd_cb(struct tlsev_listener *l, size_t i)
 {
+#ifndef __linux__
+	struct kevent ch;
+#endif
+	int fd;
+
+	/*
+	 * A negative index from the caller wraps to a large size_t and is
+	 * caught here along with any out-of-range value.
+	 */
+	if (l == NULL || i >= l->fd_callbacks_used)
+		return;
+
+	/*
+	 * Deregister the descriptor from the event loop. We do not own it,
+	 * so we never close it; but it must be removed from the poll set,
+	 * otherwise a level-triggered readable descriptor with no callback
+	 * left to drain it would wake the loop on every iteration.
+	 */
+	fd = l->fd_callbacks[i].fd;
+#ifdef __linux__
+	if (epoll_ctl(l->epollfd, EPOLL_CTL_DEL, fd, NULL) == -1)
+		xlog_strerror(LOG_ERR, errno,
+		    "epoll_ctl: EPOLL_CTL_DEL fd %d", fd);
+#else
+	EV_SET(&ch, fd, EVFILT_READ, EV_DELETE, 0, 0, 0);
+	if (kevent(l->kq, &ch, 1, NULL, 0, NULL) == -1)
+		xlog_strerror(LOG_ERR, errno, "kevent: EV_DELETE fd %d", fd);
+#endif
+
 	for (++i; i < l->fd_callbacks_used; i++)
 		memcpy(&l->fd_callbacks[i - 1], &l->fd_callbacks[i],
 		    sizeof(struct tlsev_fd_cb));
@@ -1194,7 +1223,7 @@ tlsev_drain(struct tlsev *t)
 	t->drain = 1;
 }
 
-int
+static int
 tlsev_poll(struct tlsev_listener *l)
 {
 #define TLSEV_NONE   0x00

@@ -31,14 +31,14 @@
 X509_STORE_CTX      *ctx;
 X509_STORE          *store;
 
-void
+static void
 usage()
 {
 	fprintf(stderr, "Usage: mdrd_backend_echo <CA file> <CRL file>\n");
 	exit(1);
 }
 
-void
+static void
 process_messages()
 {
 	int                  r;

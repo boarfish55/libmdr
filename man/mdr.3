@@ -244,6 +244,20 @@ and
 an array of already-built messages.
 Unpack returns an array handle whose elements can be materialised as
 .Vt struct mdr .
+.It Dv MDR_RSEQ , Dv MDR_END_RSEQ
+Delimit a
+.Em repeated sequence :
+a template of one or more fields that is packed an arbitrary number of
+times behind a single block header.
+These two constants are spec-list delimiters rather than ordinary field
+types; the whole bracketed block occupies one
+.Vt struct pmdr_vec
+or
+.Vt struct umdr_vec
+entry, accessed through
+.Va .v.rseq .
+See
+.Sx REPEATED SEQUENCES .
 .El
 .Sh ARRAY ACCESS
 For every array type, the corresponding
@@ -397,6 +411,169 @@ buffer contents as well.
 This is useful when an unpacked nested message
 .Pq Va uv[i].v.m
 must outlive its parent buffer.
+.Sh REPEATED SEQUENCES
+A repeated sequence packs a variable number of repetitions of a fixed
+template of fields behind a single block header, instead of repeating
+the per-field framing or spreading the data across several parallel
+arrays.
+This keeps the per-element overhead to the field encodings themselves
+and is the right tool for a homogeneous, row-like payload, for example a
+table of
+.Pq Vt u32 id , Vt string name
+pairs of unknown length.
+.Pp
+The template is declared in the spec type list by bracketing its fields
+between
+.Dv MDR_RSEQ
+and
+.Dv MDR_END_RSEQ :
+.Bd -literal -offset indent
+static struct mdr_def my_table_def = {
+	MY_DCV_TABLE,
+	"my.table",
+	{
+		MDR_U32,                  /* a leading scalar */
+		MDR_RSEQ,
+		    MDR_U32,              /* row: id   */
+		    MDR_S,                /* row: name */
+		MDR_END_RSEQ,
+		MDR_LAST
+	}
+};
+.Ed
+.Pp
+Sequences may not be nested, and every
+.Dv MDR_RSEQ
+must be balanced by a later
+.Dv MDR_END_RSEQ ;
+.Fn mdr_register_spec
+rejects an unbalanced or nested spec with
+.Er EINVAL .
+The entire bracketed block counts as a
+.Em single
+field in the
+.Vt struct pmdr_vec
+and
+.Vt struct umdr_vec
+arrays passed to
+.Fn pmdr_pack
+and
+.Fn umdr_unpack ;
+in the spec above those arrays therefore hold two entries, one for the
+leading
+.Dv MDR_U32
+and one for the whole sequence.
+.Pp
+The repetitions are supplied as a single flat, row-major vector: for a
+template of
+.Va C
+fields repeated
+.Va R
+times, the element at
+.Pq Va row , Va col
+lives at index
+.Va "row * C + col" .
+The
+.Fn MDR_RSEQ_IDX C row col
+macro computes that index for both the pack and unpack vectors.
+.Ss Packing
+Set one
+.Vt struct pmdr_vec
+entry to type
+.Dv MDR_RSEQ
+and point
+.Va .v.rseq.items
+at the flat
+.Vt struct pmdr_vec
+template vector.
+.Va .v.rseq.length
+is the
+.Em total
+number of elements in that vector
+.Pq Va "R * C" ,
+not the repetition count
+.Va R .
+It must be a whole multiple of the template length, or
+.Fn pmdr_pack
+fails with
+.Er EINVAL ;
+a length of zero packs an empty sequence.
+Each element's
+.Va type
+must match the template type at its column, and its value is set through
+the same union member a standalone field of that type would use.
+.Bd -literal -offset indent
+struct pmdr_vec  rows[2 * 2];   /* 2 rows of (u32, string) */
+
+rows[MDR_RSEQ_IDX(2, 0, 0)].type  = MDR_U32;
+rows[MDR_RSEQ_IDX(2, 0, 0)].v.u32 = 1;
+rows[MDR_RSEQ_IDX(2, 0, 1)].type  = MDR_S;
+rows[MDR_RSEQ_IDX(2, 0, 1)].v.s   = "alice";
+rows[MDR_RSEQ_IDX(2, 1, 0)].type  = MDR_U32;
+rows[MDR_RSEQ_IDX(2, 1, 0)].v.u32 = 2;
+rows[MDR_RSEQ_IDX(2, 1, 1)].type  = MDR_S;
+rows[MDR_RSEQ_IDX(2, 1, 1)].v.s   = "bob";
+
+pv[1].type          = MDR_RSEQ;
+pv[1].v.rseq.items  = rows;
+pv[1].v.rseq.length = PMDRVECLEN(rows);   /* 4, not 2 */
+.Ed
+.Ss Unpacking
+After
+.Fn umdr_unpack ,
+the sequence field appears as
+.Va uv[i].v.rseq ,
+a
+.Vt struct umdr_rseq_h
+handle that, like an array handle, does not copy the elements.
+Expand it with:
+.Bl -tag -width "umdr_rseq"
+.It Fn umdr_rseq h dst maxlen
+Materialise up to
+.Fa maxlen
+elements of the sequence into the caller-owned flat
+.Vt struct umdr_vec
+array
+.Fa dst ,
+in the same row-major layout.
+Returns the total number of elements present
+.Pq Va "R * C" ,
+which may exceed
+.Fa maxlen ,
+or
+.Dv MDR_FAIL
+on error.
+The repetition count is that return value divided by the template
+length.
+.El
+.Pp
+Each populated
+.Fa dst
+entry is an ordinary
+.Vt struct umdr_vec
+with its
+.Va type
+set; scalars are read directly and arrays through the usual
+.Fn umdr_vec_a*
+extractors on
+.Va dst[j].v.a* ,
+exactly as for top-level fields.
+String, blob, nested-message, and array payloads borrow into the parent
+.Vt umdr
+buffer and share its lifetime.
+.Bd -literal -offset indent
+struct umdr_vec  rows[64];
+int32_t          n, r, cols = 2;
+
+n = umdr_rseq(&uv[i].v.rseq, rows, UMDRVECLEN(rows));
+if (n == MDR_FAIL)
+	/* handle decode error */;
+for (r = 0; r < n / cols; r++) {
+	uint32_t    id   = rows[MDR_RSEQ_IDX(cols, r, 0)].v.u32;
+	const char *name = rows[MDR_RSEQ_IDX(cols, r, 1)].v.s.bytes;
+	printf("%u %s\en", id, name);
+}
+.Ed
 .Sh OPTIONAL FIELDS AND TAIL BYTES
 Some metadata is too situational to warrant a place in every message
 but too common to keep reinventing.
@@ -579,6 +756,9 @@ array required by
 .Fn pmdr_pack
 or
 .Fn umdr_unpack .
+A repeated sequence counts as a single field regardless of how many
+types its template spans
+.Pq see Sx REPEATED SEQUENCES .
 .El
 .Pp
 A typical application defines its message specs as static

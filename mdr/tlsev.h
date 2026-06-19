@@ -20,6 +20,13 @@
 					ulimit stack space */
 #define TLSEV_MAX_CLIENTS 1000000000
 
+/*
+ * Default per-peer connection cap applied by tlsev_init() until the
+ * caller overrides it with tlsev_set_max_conns_per_ip(). Conservative
+ * on purpose so a single source address cannot monopolize max_clients.
+ */
+#define TLSEV_DEFAULT_MAX_CONN_PER_IP 100
+
 __BEGIN_DECLS
 
 struct tlsev;
@@ -146,6 +153,7 @@ int                  tlsev_set_max_conns_per_ip(struct tlsev_listener *,
 int                  tlsev_auto_rcv_lowat(struct tlsev_listener *, int);
 int                  tlsev_add_fd_cb(struct tlsev_listener *,
                          struct tlsev_fd_cb *);
+void                 tlsev_del_fd_cb(struct tlsev_listener *, size_t);
 void                 tlsev_destroy(struct tlsev_listener *);
 int                  tlsev_run(struct tlsev_listener *,
                          int(*)(struct tlsev_listener *, void *), void *);

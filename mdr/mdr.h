@@ -55,6 +55,9 @@ enum mdr_type {
 	MDR_AS,
 	MDR_AM,
 
+	MDR_RSEQ,
+	MDR_END_RSEQ,
+
 	MDR_LAST = 255
 };
 
@@ -62,6 +65,7 @@ struct mdr_spec {
 	RB_ENTRY(mdr_spec)  entry;
 	char               *label;
 	uint64_t            dcv;
+	size_t              vec_size;
 	size_t              types_count;
 	uint8_t             types[];
 };
@@ -239,6 +243,11 @@ struct pmdr_vec {
 			void     **dst;
 			uint64_t   sz;
 		} rsvb;
+
+		struct {
+			uint32_t               length;
+			const struct pmdr_vec *items;
+		} rseq;
 	} v;
 };
 #define PMDRVECLEN(v) (sizeof(v) / sizeof(struct pmdr_vec))
@@ -250,6 +259,16 @@ struct umdr_vec_ah
 	uint32_t    length;
 	const void *p;
 	uint64_t    size;
+};
+
+#define MDR_RSEQ_IDX(cols, row, col) ((cols) * (row) + (col))
+
+struct umdr_rseq_h
+{
+	uint32_t       length;
+	const void    *p;
+	const void    *end;
+	const uint8_t *types;
 };
 
 /* Unpacking MDR vector */
@@ -283,6 +302,7 @@ struct umdr_vec {
 		struct umdr_vec_ah ai8, ai16, ai32, ai64;
 		struct umdr_vec_ah af32, af64;
 		struct umdr_vec_ah as, am;
+		struct umdr_rseq_h rseq;
 	} v;
 };
 #define UMDRVECLEN(v) (sizeof(v) / sizeof(struct umdr_vec))
@@ -301,6 +321,7 @@ int32_t  umdr_vec_af32(struct umdr_vec_ah *, float *, int32_t);
 int32_t  umdr_vec_af64(struct umdr_vec_ah *, double *, int32_t);
 int32_t  umdr_vec_as(struct umdr_vec_ah *, const char **, int32_t);
 int32_t  umdr_vec_am(struct umdr_vec_ah *, struct mdr *, int32_t);
+int32_t  umdr_rseq(struct umdr_rseq_h *, struct umdr_vec *, int32_t);
 
 #define MDR_FAIL -1
 
@@ -319,6 +340,10 @@ ptrdiff_t      pmdr_add_tail_bytes(struct pmdr *, uint64_t);
 ptrdiff_t      pmdr_set_stream_id(struct pmdr *, uint64_t);
 ptrdiff_t      pmdr_set_acct_id(struct pmdr *, uint64_t);
 ptrdiff_t      pmdr_set_trace_id(struct pmdr *, const union mdr_trace_id *);
+uint64_t       pmdr_stream_id(const struct pmdr *);
+uint64_t       pmdr_acct_id(const struct pmdr *);
+const uint8_t *pmdr_trace_id(const struct pmdr *);
+int            pmdr_dcv_match(const struct pmdr *, uint64_t, uint64_t);
 void          *pmdr_buf(struct pmdr *);
 uint64_t       pmdr_size(const struct pmdr *);
 ptrdiff_t      pmdr_tell(const struct pmdr *);
@@ -351,22 +376,22 @@ const uint8_t *umdr_trace_id(const struct umdr *);
 int            umdr_dcv_match(const struct umdr *, uint64_t, uint64_t);
 int            umdr_print(FILE *, const struct umdr *);
 
-int                    mdr_register_builtin_specs();
+int                    mdr_register_builtin_specs(void);
 const struct mdr_spec *mdr_register_spec(struct mdr_def *);
 const struct mdr_spec *mdr_registry_get(uint64_t);
-void                   mdr_registry_clear();
+void                   mdr_registry_clear(void);
 
 uint64_t               mdr_spec_base_sz(const struct mdr_spec *, uint64_t);
 size_t                 mdr_spec_vlen(const struct mdr_spec *);
 
 #define MDR_DCV(domain, code, variant) \
-    ((uint64_t)domain << 32 | (uint64_t)code << 16 | (uint64_t)variant)
+    (((uint64_t)(domain) << 32) | ((uint64_t)(code) << 16) | (uint64_t)(variant))
 
 #define MDR_MASK_D   0xffffffff00000000
 #define MDR_MASK_DC  0xffffffffffff0000
 #define MDR_MASK_DCV 0xffffffffffffffff
 #define MDR_MAKE_VARIANT(dcv, variant) \
-    (((uint64_t)dcv & MDR_MASK_DC) | (uint64_t)variant)
+    (((uint64_t)(dcv) & MDR_MASK_DC) | (uint64_t)(variant))
 
 /*
  * Built-in DCVs (Domain/Code/Variant). Domains are 32 bits, code and

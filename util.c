@@ -228,7 +228,7 @@ spawnproc_init(struct spawnproc *sp, int nochdir, const char *execpromises,
 	}
 	close(sv[0]);
 
-	setproctitle("executor");
+	setproctitle("spawnproc");
 
 	if (!nochdir && chdir("/") == -1) {
 		xlog_strerror(LOG_ERR, errno, "%s: chdir", __func__);
@@ -278,7 +278,8 @@ spawnproc_init(struct spawnproc *sp, int nochdir, const char *execpromises,
 			    "unveiled %s [%s]", path, perms[i]);
 		}
 	}
-	if (pledge("stdio rpath id proc exec sendfd", execpromises) == -1) {
+	if (pledge("stdio rpath wpath id proc exec sendfd",
+	    execpromises) == -1) {
 		xlog_strerror(LOG_ERR, errno, "%s: pledge", __func__);
 		_exit(1);
 	}

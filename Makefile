@@ -1,8 +1,8 @@
 CC = cc
 EXTRA_CFLAGS =
-VERSION = 0.8.5
+VERSION = 0.9.0
 VERSION_MAJOR != echo ${VERSION} | cut -d. -f 1
-CFLAGS = -Wall -g ${EXTRA_CFLAGS}
+CFLAGS = -Wall -Wmissing-prototypes -g ${EXTRA_CFLAGS}
 INCLUDES = -I.
 LIBS = -lcrypto -lssl
 YACC=yacc
@@ -68,8 +68,9 @@ mdrd_backend_echo: ${BE_ECHO_OBJS}
 
 test: mdr_tests
 	test -x /usr/bin/valgrind \
-		&& valgrind --keep-stacktraces=none --leak-check=full \
-		--track-origins=yes --show-leak-kinds=all -s ./mdr_tests \
+		&& valgrind --keep-stacktraces=alloc-and-free \
+		--leak-check=full --track-origins=yes \
+		--show-leak-kinds=all -s ./mdr_tests \
 		|| ./mdr_tests
 
 install: all
