@@ -1,6 +1,6 @@
 CC = cc
 EXTRA_CFLAGS =
-VERSION = 0.8.6
+VERSION = 0.9.0
 VERSION_MAJOR = $(shell echo ${VERSION} | cut -d. -f 1)
 DEPDIR = .deps
 CFLAGS = -Wall -Wmissing-prototypes -g -I. -pie -fstack-protector-strong \
