@@ -119,7 +119,6 @@ libmdr.so.0 libmdr0 #MINVER#
  tlsev_peer_tree_RB_PREV@Base 0.7.0
  tlsev_peer_tree_RB_REMOVE@Base 0.7.0
  tlsev_peer_tree_RB_REMOVE_COLOR@Base 0.7.0
- tlsev_poll@Base 0.7.0
  tlsev_reply@Base 0.7.0
  tlsev_run@Base 0.7.0
  tlsev_set_max_conns_per_ip@Base 0.7.0
@@ -137,6 +136,7 @@ libmdr.so.0 libmdr0 #MINVER#
  umdr_init@Base 0.7.0
  umdr_pending@Base 0.7.0
  umdr_print@Base 0.7.0
+ umdr_rseq@Base 0.9.0
  umdr_size@Base 0.7.0
  umdr_stream_id@Base 0.7.0
  umdr_tail_bytes@Base 0.7.0

@@ -1,3 +1,19 @@
+libmdr (0.9.0-1) unstable; urgency=medium
+
+  * Add missing wpath promise for write to /dev/null, which gets caught on
+    OpenBSD 7.9
+  * Support for repeated sequences of types (rseq)
+  * Make sure valgrind shows leak location properly
+  * Warn on missing prototypes
+  * Fix prototypes/exported functions
+  * Document the behavior of max_clients when under fd pressure
+  * Document default for max connections per IP
+  * Fix non-exploitable overread in umdr_vec_asm()
+  * Fix tlsev_del_fd_cb bounds checking and fd deregistration, especially
+    since it is now an exported symbol
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Thu, 18 Jun 2026 20:18:35 -0400
+
 libmdr (0.8.5-2) unstable; urgency=medium
 
   * Refresh symbols
