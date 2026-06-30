@@ -16,6 +16,7 @@
 #include <mdr/flatconf.h>
 
 static int yyparse();
+static int yylex(void);
 
 static long      pwnam_sz;
 static int       lineno = 1;

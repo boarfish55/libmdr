@@ -146,8 +146,11 @@ static struct {
 	size_t                               count;
 } mdr_registry = { RB_INITIALIZER(&mdr_registry.head), 0 };
 
+/* internal tree; keep its generated symbols out of the exported ABI */
+#pragma GCC visibility push(hidden)
 RB_PROTOTYPE(mdr_registry_tree, mdr_spec, entry, speccmp);
 RB_GENERATE(mdr_registry_tree, mdr_spec, entry, speccmp);
+#pragma GCC visibility pop
 
 
 static uint64_t

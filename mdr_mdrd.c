@@ -21,9 +21,13 @@ session_cmp(struct mdrd_besession *s1, struct mdrd_besession *s2)
 	return (s1->id < s2->id) ? -1 : s1->id > s2->id;
 }
 
-SPLAY_HEAD(session_tree, mdrd_besession) sessions = SPLAY_INITIALIZER(&sessions);
+static SPLAY_HEAD(session_tree, mdrd_besession) sessions =
+	SPLAY_INITIALIZER(&sessions);
+/* internal tree; keep its generated symbols out of the exported ABI */
+#pragma GCC visibility push(hidden)
 SPLAY_PROTOTYPE(session_tree, mdrd_besession, entries, session_cmp);
 SPLAY_GENERATE(session_tree, mdrd_besession, entries, session_cmp);
+#pragma GCC visibility pop
 
 static void
 session_free(struct mdrd_besession *s)
