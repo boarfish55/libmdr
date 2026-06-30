@@ -1028,7 +1028,7 @@ mdr_pack_array(struct mdr *m, uint8_t type, int32_t n, void *a)
 		    (char *)m->pos - (char *)start);
 	}
 
-	return mdr_tell(m);
+	return mdr_update_size(m);
 }
 
 static uint64_t

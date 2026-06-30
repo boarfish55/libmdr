@@ -583,6 +583,60 @@ test_pack_array()
 	if (a_s_out[2] != NULL)
 		return ERR(0, "a_s_out[2] should be NULL");
 
+	/*
+	 * A trailing empty array must still round-trip. The array header
+	 * (count, and the byte-size for string/mdr arrays) has to make it
+	 * into the message size; otherwise the receiver reads past the end
+	 * and unpacking fails with EAGAIN.
+	 */
+	if (pmdr_init(&pm, buf, sizeof(buf), MDR_FNONE) == MDR_FAIL)
+		return ERR(errno, "pmdr_init");
+	pv[0].type = MDR_AU32;
+	pv[0].v.au32.items = a_u32;
+	pv[0].v.au32.length = 3;
+	pv[1].type = MDR_AS;
+	pv[1].v.as.items = NULL;
+	pv[1].v.as.length = 0;
+	if (pmdr_pack(&pm, msg_test_3, pv, PMDRVECLEN(pv)) == MDR_FAIL)
+		return ERR(errno, "pmdr_pack/empty trailing array");
+
+	if (umdr_init(&um, pmdr_buf(&pm), pmdr_size(&pm), MDR_FNONE)
+	    == MDR_FAIL)
+		return ERR(errno, "umdr_init/empty trailing array");
+	if (umdr_unpack(&um, msg_test_3, uv, UMDRVECLEN(uv)) == MDR_FAIL)
+		return ERR(errno, "umdr_unpack/empty trailing array");
+
+	if (uv[0].v.au32.length != 3)
+		return ERR(0, "leading array lost items after empty trailer");
+	if (uv[1].v.as.length != 0)
+		return ERR(0, "trailing array should be empty");
+
+	/*
+	 * Same again with the leading numeric array also empty, so an empty
+	 * array in a non-trailing position is exercised too.
+	 */
+	if (pmdr_init(&pm, buf, sizeof(buf), MDR_FNONE) == MDR_FAIL)
+		return ERR(errno, "pmdr_init");
+	pv[0].type = MDR_AU32;
+	pv[0].v.au32.items = NULL;
+	pv[0].v.au32.length = 0;
+	pv[1].type = MDR_AS;
+	pv[1].v.as.items = NULL;
+	pv[1].v.as.length = 0;
+	if (pmdr_pack(&pm, msg_test_3, pv, PMDRVECLEN(pv)) == MDR_FAIL)
+		return ERR(errno, "pmdr_pack/all empty arrays");
+
+	if (umdr_init(&um, pmdr_buf(&pm), pmdr_size(&pm), MDR_FNONE)
+	    == MDR_FAIL)
+		return ERR(errno, "umdr_init/all empty arrays");
+	if (umdr_unpack(&um, msg_test_3, uv, UMDRVECLEN(uv)) == MDR_FAIL)
+		return ERR(errno, "umdr_unpack/all empty arrays");
+
+	if (uv[0].v.au32.length != 0)
+		return ERR(0, "leading array should be empty");
+	if (uv[1].v.as.length != 0)
+		return ERR(0, "trailing array should be empty");
+
 	return success();
 }
 
