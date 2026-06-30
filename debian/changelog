@@ -1,3 +1,11 @@
+libmdr (0.9.1-1) unstable; urgency=medium
+
+  * Fix: mdr_pack_array was not advancing its m->pos pointer as it was calling
+    mdr_tell() instead of mdr_update_size(), which means unpacking would fail
+    with EAGAIN when an empty array was packed.
+
+ -- Pascal Lalonde <plalonde@overnet.ca>  Mon, 29 Jun 2026 20:49:41 -0400
+
 libmdr (0.9.0-1) unstable; urgency=medium
 
   * Add missing wpath promise for write to /dev/null, which gets caught on
