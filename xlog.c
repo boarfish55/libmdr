@@ -26,7 +26,7 @@ const struct module_dbg_map_entry module_dbg_map[] = {
 };
 
 static xlog_mask_t  debug_mask = 0;
-FILE               *log_file = NULL;
+static FILE        *log_file = NULL;
 static int          log_level = LOG_INFO;
 
 static const char *

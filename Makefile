@@ -49,7 +49,7 @@ libmdr.so.${VERSION}: ${MDR_LIBOBJS}
 		-o $@ ${MDR_LIBOBJS}
 
 flatconf.c: flatconf.y mdr/flatconf.h
-	${YACC} -o flatconf.c flatconf.y
+	${YACC} -p flatconf_yy -o flatconf.c flatconf.y
 
 mdr_tests: ${MDR_TESTS_OBJS}
 	${CC} ${CFLAGS} ${MDR_TESTS_OBJS} ${LIBS} -o $@

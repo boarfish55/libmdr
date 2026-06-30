@@ -67,8 +67,11 @@ tlsev_peer_tree_cmp(struct tlsev_peer *p1, struct tlsev_peer *p2)
 	    sizeof(p1->addr.v6.s6_addr));
 }
 
+/* internal tree; keep its generated symbols out of the exported ABI */
+#pragma GCC visibility push(hidden)
 RB_PROTOTYPE(tlsev_peer_tree, tlsev_peer, entry, tlsev_peer_tree_cmp);
 RB_GENERATE(tlsev_peer_tree, tlsev_peer, entry, tlsev_peer_tree_cmp);
+#pragma GCC visibility pop
 
 static int
 tlsev_timeout_cmp(const void *k1, const void *k2)

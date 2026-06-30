@@ -3,16 +3,32 @@ EXTRA_CFLAGS =
 VERSION = 0.9.1
 VERSION_MAJOR = $(shell echo ${VERSION} | cut -d. -f 1)
 DEPDIR = .deps
-CFLAGS = -Wall -Wmissing-prototypes -g -I. -pie -fstack-protector-strong \
+
+# Project-mandatory flags. We *append* to CFLAGS/CPPFLAGS/LDFLAGS so that any
+# flags supplied through the environment (notably dpkg-buildflags under Debian:
+# hardening, -D_FORTIFY_SOURCE, -ffile-prefix-map, ...) are preserved instead of
+# being clobbered. Libraries go in LIBS, not LDFLAGS.
+CFLAGS += -Wall -Wmissing-prototypes -g -I. -pie -fstack-protector-strong \
 	 -fstack-clash-protection -DYY_NO_LEAKS=1 -fcf-protection \
 	 $(shell pkg-config --cflags libbsd-overlay libbsd-ctor \
 	 libssl libcrypto)
-LDFLAGS = $(shell pkg-config --libs libbsd-overlay libbsd-ctor \
-	libssl libcrypto) \
-	-Wl,-z,relro -Wl,-z,now
+LDFLAGS += -Wl,-z,relro -Wl,-z,now
+LIBS = $(shell pkg-config --libs libbsd-overlay libbsd-ctor libssl libcrypto)
+# Shared objects must not pull in libbsd-ctor: its constructor (libbsd_init_func)
+# belongs in the final executable, not in libmdr.so's exported ABI.
+SOLIBS = $(shell pkg-config --libs libbsd-overlay libssl libcrypto)
 DEPFLAGS = -MMD -MP -MF $(DEPDIR)/$@.d
 YACC = byacc
-DESTDIR ?= /usr/local
+
+PREFIX ?= /usr/local
+DESTDIR ?=
+LIBDIRSUFFIX ?= lib
+BINDIR = $(PREFIX)/bin
+SBINDIR = $(PREFIX)/sbin
+LIBDIR = $(PREFIX)/$(LIBDIRSUFFIX)
+INCLUDEDIR = $(PREFIX)/include
+MANDIR = $(PREFIX)/share/man
+DOCDIR ?= $(PREFIX)/share/doc/libmdr
 
 MDR_LIBOBJS = mdr.pic.o mdr_mdrd.pic.o tlsev.pic.o idxheap.pic.o util.pic.o \
 	      xlog.pic.o
@@ -31,16 +47,16 @@ all: mdrc mdr_tests xlog_tests flatconf_tests mdrd mdrd_backend_echo libmdr.a \
 .SUFFIXES: .c .o .pic.o
 .c.pic.o:
 	@mkdir -p $(DEPDIR)
-	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(DEPFLAGS) -c -fPIC $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(EXTRA_CFLAGS) $(DEPFLAGS) -c -fPIC $< -o $@
 .c.o:
 	@mkdir -p $(DEPDIR)
-	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(DEPFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(EXTRA_CFLAGS) $(DEPFLAGS) -c $< -o $@
 
 libflatconf.a: flatconf.o
 	ar cr $@ flatconf.o
 
 libflatconf.so.${VERSION}: flatconf.pic.o
-	${CC} -shared -Wl,-z,relro -Wl,-z,now \
+	${CC} -shared $(LDFLAGS) \
 		-Wl,-soname,libflatconf.so.${VERSION_MAJOR} \
 		-o $@ flatconf.pic.o
 
@@ -54,9 +70,9 @@ libmdr.a: ${MDR_AROBJS}
 	ar cr $@ ${MDR_AROBJS}
 
 libmdr.so.${VERSION}: ${MDR_LIBOBJS}
-	${CC} -shared -Wl,-z,relro -Wl,-z,now \
+	${CC} -shared $(LDFLAGS) \
 		-Wl,-soname,libmdr.so.${VERSION_MAJOR} \
-		-o $@ ${MDR_LIBOBJS}
+		-o $@ ${MDR_LIBOBJS} $(SOLIBS)
 
 libmdr.so.${VERSION_MAJOR}: libmdr.so.${VERSION}
 	ln -fs libmdr.so.${VERSION} $@
@@ -65,26 +81,26 @@ libmdr.so: libmdr.so.${VERSION}
 	ln -fs libmdr.so.${VERSION} $@
 
 flatconf.c: flatconf.y mdr/flatconf.h
-	${YACC} -o flatconf.c flatconf.y
+	${YACC} -p flatconf_yy -o flatconf.c flatconf.y
 
 flatconf_tests: flatconf_tests.c flatconf.o
-	$(CC) $(CFLAGS) flatconf_tests.c -o flatconf_tests \
-		flatconf.o $(LDFLAGS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) flatconf_tests.c -o flatconf_tests \
+		flatconf.o $(LDFLAGS) $(LIBS)
 
 mdr_tests: ${MDR_TESTS_OBJS}
-	${CC} ${CFLAGS} ${MDR_TESTS_OBJS} ${LDFLAGS} -o $@
+	${CC} ${CFLAGS} ${MDR_TESTS_OBJS} ${LDFLAGS} ${LIBS} -o $@
 
 xlog_tests: ${XLOG_TESTS_OBJS}
-	${CC} ${CFLAGS} ${XLOG_TESTS_OBJS} ${LDFLAGS} -o $@
+	${CC} ${CFLAGS} ${XLOG_TESTS_OBJS} ${LDFLAGS} ${LIBS} -o $@
 
 mdrc: ${MDRC_OBJS}
-	${CC} ${CFLAGS} ${MDRC_OBJS} ${LDFLAGS} -o $@
+	${CC} ${CFLAGS} ${MDRC_OBJS} ${LDFLAGS} ${LIBS} -o $@
 
 mdrd: ${MDRD_OBJS}
-	${CC} ${CFLAGS} ${MDRD_OBJS} ${LDFLAGS} -o $@
+	${CC} ${CFLAGS} ${MDRD_OBJS} ${LDFLAGS} ${LIBS} -o $@
 
 mdrd_backend_echo: ${BE_ECHO_OBJS}
-	${CC} ${CFLAGS} ${BE_ECHO_OBJS} ${LDFLAGS} -o $@
+	${CC} ${CFLAGS} ${BE_ECHO_OBJS} ${LDFLAGS} ${LIBS} -o $@
 
 tests: mdr_tests
 	test -x /usr/bin/valgrind \
@@ -94,26 +110,35 @@ tests: mdr_tests
 		|| ./mdr_tests
 
 install: all
-	mkdir -p ${DESTDIR}/bin
-	mkdir -p ${DESTDIR}/sbin
-	mkdir -p ${DESTDIR}/lib
-	mkdir -p ${DESTDIR}/include/mdr
-	mkdir -p ${DESTDIR}/share/doc/libmdr/examples
-	mkdir -p ${DESTDIR}/share/man/man3
-	mkdir -p ${DESTDIR}/share/man/man5
-	mkdir -p ${DESTDIR}/share/man/man8
+	mkdir -p ${DESTDIR}${BINDIR}
+	mkdir -p ${DESTDIR}${SBINDIR}
+	mkdir -p ${DESTDIR}${LIBDIR}/pkgconfig
+	mkdir -p ${DESTDIR}${INCLUDEDIR}/mdr
+	mkdir -p ${DESTDIR}${DOCDIR}/examples
+	mkdir -p ${DESTDIR}${MANDIR}/man3
+	mkdir -p ${DESTDIR}${MANDIR}/man5
+	mkdir -p ${DESTDIR}${MANDIR}/man8
 
-	install -m 0755 mdrd ${DESTDIR}/sbin/
-	install -m 0755 mdrc ${DESTDIR}/bin/
-	install -m 0644 mdr/*.h ${DESTDIR}/include/mdr/
-	install -m 0644 libmdr.a ${DESTDIR}/lib/
-	install -m 0644 libmdr.so ${DESTDIR}/lib/
-	install -m 0644 libflatconf.a ${DESTDIR}/lib/
-	install -m 0644 libflatconf.so ${DESTDIR}/lib/
-	install -m 0644 mdrd.conf.sample ${DESTDIR}/share/doc/libmdr/examples
-	install -m 0644 man/*.3 ${DESTDIR}/share/man/man3/
-	install -m 0644 man/*.5 ${DESTDIR}/share/man/man5/
-	install -m 0644 man/*.8 ${DESTDIR}/share/man/man8/
+	install -m 0755 mdrd ${DESTDIR}${SBINDIR}/
+	install -m 0755 mdrc ${DESTDIR}${BINDIR}/
+	install -m 0644 mdr/*.h ${DESTDIR}${INCLUDEDIR}/mdr/
+	install -m 0644 libmdr.a ${DESTDIR}${LIBDIR}/
+	install -m 0644 libflatconf.a ${DESTDIR}${LIBDIR}/
+	install -m 0644 libmdr.so.${VERSION} ${DESTDIR}${LIBDIR}/
+	ln -fs libmdr.so.${VERSION} ${DESTDIR}${LIBDIR}/libmdr.so.${VERSION_MAJOR}
+	ln -fs libmdr.so.${VERSION} ${DESTDIR}${LIBDIR}/libmdr.so
+	install -m 0644 libflatconf.so.${VERSION} ${DESTDIR}${LIBDIR}/
+	ln -fs libflatconf.so.${VERSION} \
+		${DESTDIR}${LIBDIR}/libflatconf.so.${VERSION_MAJOR}
+	ln -fs libflatconf.so.${VERSION} ${DESTDIR}${LIBDIR}/libflatconf.so
+	install -m 0644 mdrd.conf.sample ${DESTDIR}${DOCDIR}/examples/
+	install -m 0644 man/*.3 ${DESTDIR}${MANDIR}/man3/
+	install -m 0644 man/*.5 ${DESTDIR}${MANDIR}/man5/
+	install -m 0644 man/*.8 ${DESTDIR}${MANDIR}/man8/
+	PC_PREFIX=${PREFIX} VERSION=${VERSION} LIBDIRSUFFIX=${LIBDIRSUFFIX} \
+		./mdr.pc.sh > ${DESTDIR}${LIBDIR}/pkgconfig/mdr.pc
+	PC_PREFIX=${PREFIX} VERSION=${VERSION} LIBDIRSUFFIX=${LIBDIRSUFFIX} \
+		./flatconf.pc.sh > ${DESTDIR}${LIBDIR}/pkgconfig/flatconf.pc
 
 clean:
 	rm -f $(DEPDIR)/* *.o mdr_tests xlog_tests mdrc mdrd mdrd_backend_echo \
