@@ -81,13 +81,18 @@ tlsev_timeout_cmp(const void *k1, const void *k2)
 	t1 = &((struct tlsev *)k1)->last_used_at;
 	t2 = &((struct tlsev *)k2)->last_used_at;
 
+	/*
+	 * Make sure the smallest integer (we're dealing with a last_used
+	 * timestamp) makes it to the top of the heap so it can be purged
+	 * when idle.
+	 */
 	if (t1->tv_sec < t2->tv_sec ||
 	    (t1->tv_sec == t2->tv_sec && t1->tv_nsec < t2->tv_nsec))
-		return -1;
+		return 1;
 
 	if (t1->tv_sec > t2->tv_sec ||
 	    (t1->tv_sec == t2->tv_sec && t1->tv_nsec > t2->tv_nsec))
-		return 1;
+		return -1;
 
 	return 0;
 }
