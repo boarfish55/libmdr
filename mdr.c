@@ -2457,7 +2457,7 @@ mdr_fill(void *buf, size_t buf_sz, size_t *offset,
 
 	*offset += r;
 
-	if (r < sz - *offset) {
+	if (*offset < sz) {
 		errno = EAGAIN;
 		return MDR_FAIL;
 	}
