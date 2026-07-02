@@ -50,10 +50,12 @@ struct tlsev_fd_cb    backend_reader;
 int                   backend_wfd;
 pid_t                 backend_pid = 0;
 volatile sig_atomic_t shutdown_triggered = 0;
-volatile sig_atomic_t reload_ssl_triggered = 0;
+volatile sig_atomic_t reload_cert_triggered = 0;
+volatile sig_atomic_t reload_crls_triggered = 0;
 struct timespec       last_cert_mtime = { 0, 0 };
 struct timespec       next_counter_update = { 0, 0 };
 struct timespec       next_crl_check = { 0, 0 };
+struct timespec       next_cert_check = { 0, 0 };
 uint64_t              restarts;
 int                   counters_out;
 
@@ -514,7 +516,8 @@ listener_handle_signals(int sig)
 {
 	switch (sig) {
 	case SIGHUP:
-		reload_ssl_triggered = 1;
+		reload_cert_triggered = 1;
+		reload_crls_triggered = 1;
 		break;
 	case SIGTERM:
 	case SIGINT:
@@ -623,6 +626,7 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 	memcpy(cb_data->buf + cb_data->len, buf, n);
 	cb_data->len += n;
 
+again:
 	if (umdr_init(&cb_data->msg, cb_data->buf, cb_data->len,
 	    MDR_FNONE) == MDR_FAIL) {
 		switch (errno) {
@@ -634,10 +638,12 @@ client_msg_in_cb(struct tlsev *t, const char *buf, size_t n, void **data)
 			error_reply(t, MDR_ERR_NOTSUPP,
 			    "mdr extension not supported");
 			return -1;
+		case EBADMSG:
 		case EOVERFLOW:
 			xlog_strerror(LOG_ERR, errno,
 			    "%s: umdr_init", __func__);
-			error_reply(t, MDR_ERR_BADMSG, "invalid payload size");
+			error_reply(t, MDR_ERR_BADMSG,
+			    "invalid message header");
 			return -1;
 		default:
 			xlog_strerror(LOG_ERR, errno,
@@ -725,7 +731,12 @@ end:
 	memmove(cb_data->buf, cb_data->buf + umdr_size(&cb_data->msg),
 	    cb_data->len - umdr_size(&cb_data->msg));
 	cb_data->len -= umdr_size(&cb_data->msg);
-	return status;
+
+	if (status == -1)
+		return -1;
+
+	/* We may have more complete messages in our buffer */
+	goto again;
 }
 
 /*
@@ -1092,11 +1103,6 @@ reload_cert(SSL_CTX *ctx)
 {
 	struct stat st;
 
-	if (!reload_ssl_triggered && !mdrd_conf.monitor_ssl_files)
-		return 1;
-
-	reload_ssl_triggered = 0;
-
 	if (stat(mdrd_conf.cert_file, &st) == -1) {
 		xlog_strerror(LOG_ERR, errno,
 		    "%s: stat: %s", __func__, mdrd_conf.cert_file);
@@ -1134,10 +1140,10 @@ reload_crls(SSL_CTX *ctx)
 	struct crl_stat *c;
 	int              r, i, j, match;
 
-	if (!reload_ssl_triggered && !mdrd_conf.monitor_ssl_files)
-		return 1;
-
-	reload_ssl_triggered = 0;
+	/*
+	 * We (currently) always return 1 because no error worth causing
+	 * the listener to terminate occurs, everything is recoverable.
+	 */
 
 	if (ctx == NULL) {
 		xlog(LOG_ERR, NULL,
@@ -1204,9 +1210,6 @@ listener_tasks(struct tlsev_listener *l, void *args)
 	struct timespec  now;
 	int              r;
 
-	if (!reload_cert(ctx))
-		return 0;
-
 	clock_gettime(CLOCK_MONOTONIC, &now);
 
 	if (timespeccmp(&now, &next_counter_update, >=)) {
@@ -1220,15 +1223,28 @@ listener_tasks(struct tlsev_listener *l, void *args)
 		listener_counters.messages_in_rejected = 0;
 		listener_counters.messages_out = 0;
 
-		now.tv_sec += 1;
 		memcpy(&next_counter_update, &now, sizeof(now));
+		next_counter_update.tv_sec += 1;
 	}
 
-	if (timespeccmp(&now, &next_crl_check, >=)) {
+	if (reload_cert_triggered ||
+	    (mdrd_conf.monitor_ssl_files &&
+	     timespeccmp(&now, &next_cert_check, >=))) {
+		reload_cert_triggered = 0;
+		if (!reload_cert(ctx))
+			return 0;
+		memcpy(&next_cert_check, &now, sizeof(now));
+		next_cert_check.tv_sec += 5;
+	}
+
+	if (reload_crls_triggered ||
+	    (mdrd_conf.monitor_ssl_files &&
+	     timespeccmp(&now, &next_crl_check, >=))) {
+		reload_crls_triggered = 0;
 		if (!reload_crls(ctx))
 			return 0;
-		now.tv_sec += mdrd_conf.crl_scan_interval_sec;
 		memcpy(&next_crl_check, &now, sizeof(now));
+		next_crl_check.tv_sec += mdrd_conf.crl_scan_interval_sec;
 	}
 
 	return 1;

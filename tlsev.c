@@ -446,10 +446,14 @@ again:
 			}
 		}
 		l->counters.ssl_bytes_in += r;
-		if (l->client_msg_in_cb(t, buf, r, &t->client_cb_data) == -1) {
+
+		/*
+		 * client_msg_in_cb() must return >=0 when it needs more bytes
+		 * or -1 on error.
+		 */
+		if (l->client_msg_in_cb(t, buf, r, &t->client_cb_data) == -1)
 			return XERRF(e, XLOG_APP, XLOG_CALLBACK_ERR,
 			    "t->client_cb_data failed");
-		}
 	} while (SSL_pending(t->ssl) > 0 || BIO_pending(t->r));
 
 	return 0;
@@ -632,9 +636,11 @@ tlsev_new_client(struct tlsev_listener *l, int fd,
 		goto fail;
 	}
 #endif
+	l->active_clients++;
+	l->counters.client_accepts++;
+
 	if (l->accepting) {
-		l->counters.client_accepts++;
-		if (++l->active_clients >= l->max_clients) {
+		if (l->active_clients >= l->max_clients) {
 			l->counters.max_clients_reached++;
 			xlog(LOG_WARNING, NULL, "max_clients reached (%d); "
 			    "not accepting new connections", l->active_clients);
@@ -906,7 +912,7 @@ tlsev_init(struct tlsev_listener *l, int *lsock, size_t lsock_len,
 		return -1;
 	}
 	l->events = malloc(sizeof(struct kevent) * l->max_events);
-	if (l->ch == NULL) {
+	if (l->events == NULL) {
 		free(l->lsock);
 		free(l->ch);
 		idxheap_free(&l->tlsev_store);
@@ -1197,22 +1203,23 @@ tlsev_reply(struct tlsev *t, const unsigned char *buf, int len)
 	 * meaning polling would have been turned off...
 	 */
 	if (!writes_on) {
+		/*
+		 * We can't free t on error here because some callers have
+		 * no way to know if it was freed or not based on how the
+		 * error is propagaged.
+		 */
 #ifdef __linux__
 		bzero(&ev, sizeof(ev));
 		ev.data.fd = t->fd;
 		ev.events = EPOLLIN|EPOLLOUT;
 		if (epoll_ctl(t->listener->epollfd, EPOLL_CTL_MOD, t->fd,
 		    &ev) == -1) {
-			errno = EIO;
 			xlog_strerror(LOG_ERR, errno, "epoll_ctl");
-			tlsev_close(t);
 			return -1;
 		}
 #else
 		if (kq_ev_set(t->listener, t->fd, EVFILT_WRITE, EV_ADD) == -1) {
-			errno = EIO;
 			xlog_strerror(LOG_ERR, errno, "kq_ev_set");
-			tlsev_close(t);
 			return -1;
 		}
 #endif
@@ -1247,7 +1254,7 @@ tlsev_poll(struct tlsev_listener *l)
 	int                  n, timeout;
 	size_t               i;
 	struct sockaddr_in6  peer;
-	socklen_t            peerlen = sizeof(peer);
+	socklen_t            peerlen;
 	struct tlsev        *t;
 	struct timespec      now;
 	int                  is_listen;
@@ -1262,10 +1269,6 @@ tlsev_poll(struct tlsev_listener *l)
 		}
 	}
 
-	if (nev == l->max_events && tlsev_grow_events_buffer(l) == -1)
-		xlog_strerror(LOG_WARNING, errno, "pending events buffer "
-		    "resize failed; current size  is %d", l->max_events);
-
 #ifdef __linux__
 	nev = epoll_wait(l->epollfd, l->events, l->max_events, 1000);
 #else
@@ -1273,6 +1276,10 @@ tlsev_poll(struct tlsev_listener *l)
 	    &kev_timeout);
 	l->chn = 0;
 #endif
+
+	if (nev == l->max_events && tlsev_grow_events_buffer(l) == -1)
+		xlog_strerror(LOG_WARNING, errno, "pending events buffer "
+		    "resize failed; current size  is %d", l->max_events);
 
 	if (nev == -1) {
 		if (errno != EINTR) {
@@ -1335,6 +1342,7 @@ tlsev_poll(struct tlsev_listener *l)
 			}
 		}
 		if (is_listen) {
+			peerlen = sizeof(peer);
 			if ((fd = accept(evfd, (struct sockaddr *)&peer,
 			    &peerlen)) == -1) {
 				if (errno == EINTR)

@@ -98,6 +98,9 @@ drop_privileges(const char *user, const char *group, struct xerr *e)
 	struct group  *gr;
 	struct passwd *pw;
 
+	if (setgroups(0, NULL) == -1)
+		return XERRF(e, XLOG_ERRNO, errno, "setgroups");
+
 	if (group != NULL) {
 		if ((gr = getgrnam(group)) == NULL)
 			return XERRF(e, XLOG_ERRNO, errno,

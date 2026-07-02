@@ -674,12 +674,17 @@ umdr_vec_asm(struct umdr_vec_ah *h, uint8_t type, void *dst, int32_t maxlen)
 			} else
 				pos += sizeof(uint8_t);
 
-			if (end - pos < sz) {
+			if (sz == 0 || end - pos < sz) {
 				errno = EBADMSG;
 				return MDR_FAIL;
 			}
+
 			((const char **)dst)[i] = (const char *)pos;
 			pos += sz;
+			if (*((const char *)pos - 1) != '\0') {
+				errno = EBADMSG;
+				return MDR_FAIL;
+			}
 		} else if (type == MDR_M) {
 			/*
 			 * Need room for both the size prefix and the features
@@ -811,19 +816,23 @@ unpack_array(const void *bstart, const void *bend, uint8_t type,
 		ah->p = b;
 
 		/*
-		 * We can at most return as many arrays as we can fit
-		 * single-byte (empty) strings, so do a sanity check on
-		 * the array size so the caller doesn't have to worry about
-		 * ah->size being stupidly large.
+		 * Make sure the packed array byte size cannot go beyond
+		 * the MDR's size.
 		 *
-		 * For MDRs, size is message-specific, but we should ensure
-		 * we have enough bytes to at least fit as many MDR headers.
+		 * For MDR arrays, make sure we have enough bytes left in our
+		 * the containing MDR to at least handle the reported length
+		 * times the minimum size of a MDR header.
 		 */
-		if ((type == MDR_AS && (bend - b < ah->size)) ||
-		    (type == MDR_AM &&
-		     ((bend - b) / mdr_hdr_size(0) < ah->size))) {
-			errno = EBADMSG;
-			return MDR_FAIL;
+		if (type == MDR_AS || type == MDR_AM) {
+			if (bend - b < ah->size) {
+				errno = EBADMSG;
+				return MDR_FAIL;
+			}
+			if (type == MDR_AM &&
+			    (bend - b) / mdr_hdr_size(0) < ah->length) {
+				errno = EBADMSG;
+				return MDR_FAIL;
+			}
 		}
 		b += ah->size;
 		break;
@@ -897,7 +906,7 @@ mdr_pack_array(struct mdr *m, uint8_t type, int32_t n, void *a)
 	int              i;
 	ptrdiff_t        r;
 	union mdr_num_v  nv;
-	void            *start;
+	uint64_t         start_offset;
 
 	/*
 	 * Callers can pass a negative value for the count of items
@@ -936,7 +945,12 @@ mdr_pack_array(struct mdr *m, uint8_t type, int32_t n, void *a)
 			return MDR_FAIL;
 		*(uint64_t *)m->pos = 0;
 		m->pos += sizeof(uint64_t);
-		start = m->pos;
+
+		/*
+		 * We can't use a pointer in the buffer directly as it could be
+		 * realloc'd.
+		 */
+		start_offset = m->pos - m->buf;
 	}
 
 	switch (type) {
@@ -1027,8 +1041,8 @@ mdr_pack_array(struct mdr *m, uint8_t type, int32_t n, void *a)
 		/*
 		 * We know the total bytes used by the array now, store it.
 		 */
-		htobe64buf((char *)start - sizeof(uint64_t),
-		    (char *)m->pos - (char *)start);
+		htobe64buf(m->buf + (start_offset - sizeof(uint64_t)),
+		    (m->pos - m->buf) - start_offset);
 	}
 
 	return mdr_update_size(m);
@@ -1152,7 +1166,7 @@ mdr_pack_rseq(struct mdr *m, uint32_t count, const struct pmdr_vec *src)
 	const uint8_t   *tp;
 	int              i, types_start, r;
 	union mdr_num_v  nv;
-	void            *start;
+	uint64_t         start_offset;
 
 	if (src == NULL || count > INT32_MAX) {
 		errno = EINVAL;
@@ -1208,7 +1222,11 @@ mdr_pack_rseq(struct mdr *m, uint32_t count, const struct pmdr_vec *src)
 	bzero(m->pos, sizeof(uint64_t));
 	m->pos += sizeof(uint64_t);
 
-	start = m->pos;
+	/*
+	 * We can't use a pointer in the buffer directly as it could be
+	 * realloc'd.
+	 */
+	start_offset = m->pos - m->buf;
 
 	for (i = 0; i < count;) {
 		for (tp = m->spec->types + types_start;
@@ -1221,42 +1239,62 @@ mdr_pack_rseq(struct mdr *m, uint32_t count, const struct pmdr_vec *src)
 
 			switch (*tp) {
 			case MDR_U8:
+				if (!mdr_can_fit(m, sizeof(uint8_t)))
+					return MDR_FAIL;
 				nv.u8 = src[i].v.u8;
 				r = mdr_pack_num_nochk(m, *tp, nv);
 				break;
 			case MDR_U16:
+				if (!mdr_can_fit(m, sizeof(uint16_t)))
+					return MDR_FAIL;
 				nv.u16 = src[i].v.u16;
 				r = mdr_pack_num_nochk(m, *tp, nv);
 				break;
 			case MDR_U32:
+				if (!mdr_can_fit(m, sizeof(uint32_t)))
+					return MDR_FAIL;
 				nv.u32 = src[i].v.u32;
 				r = mdr_pack_num_nochk(m, *tp, nv);
 				break;
 			case MDR_U64:
+				if (!mdr_can_fit(m, sizeof(uint64_t)))
+					return MDR_FAIL;
 				nv.u64 = src[i].v.u64;
 				r = mdr_pack_num_nochk(m, *tp, nv);
 				break;
 			case MDR_I8:
+				if (!mdr_can_fit(m, sizeof(int8_t)))
+					return MDR_FAIL;
 				nv.i8 = src[i].v.i8;
 				r = mdr_pack_num_nochk(m, *tp, nv);
 				break;
 			case MDR_I16:
+				if (!mdr_can_fit(m, sizeof(int16_t)))
+					return MDR_FAIL;
 				nv.i16 = src[i].v.i16;
 				r = mdr_pack_num_nochk(m, *tp, nv);
 				break;
 			case MDR_I32:
+				if (!mdr_can_fit(m, sizeof(int32_t)))
+					return MDR_FAIL;
 				nv.i32 = src[i].v.i32;
 				r = mdr_pack_num_nochk(m, *tp, nv);
 				break;
 			case MDR_I64:
+				if (!mdr_can_fit(m, sizeof(int64_t)))
+					return MDR_FAIL;
 				nv.i64 = src[i].v.i64;
 				r = mdr_pack_num_nochk(m, *tp, nv);
 				break;
 			case MDR_F32:
+				if (!mdr_can_fit(m, sizeof(float)))
+					return MDR_FAIL;
 				nv.f32 = src[i].v.f32;
 				r = mdr_pack_num_nochk(m, *tp, nv);
 				break;
 			case MDR_F64:
+				if (!mdr_can_fit(m, sizeof(double)))
+					return MDR_FAIL;
 				nv.f64 = src[i].v.f64;
 				r = mdr_pack_num_nochk(m, *tp, nv);
 				break;
@@ -1336,8 +1374,8 @@ mdr_pack_rseq(struct mdr *m, uint32_t count, const struct pmdr_vec *src)
 		return MDR_FAIL;
 	}
 
-	htobe64buf((char *)start - sizeof(uint64_t),
-	    (char *)m->pos - (char *)start);
+	htobe64buf(m->buf + (start_offset - sizeof(uint64_t)),
+	    (m->pos - m->buf) - start_offset);
 
 	return mdr_update_size(m);
 }
@@ -1474,7 +1512,7 @@ mdr_register_spec(struct mdr_def *def)
 	label_sz = strlen(def->label);
 
 	spec = malloc(sizeof(struct mdr_spec) + (n * sizeof(uint8_t)) +
-	    label_sz);
+	    label_sz + 1);
 	if (spec == NULL)
 		return NULL;
 
@@ -1483,7 +1521,7 @@ mdr_register_spec(struct mdr_def *def)
 	spec->vec_size = vec_sz;
 	memcpy(spec->types, def->types, n * sizeof(uint8_t));
 	spec->label = (char *)spec->types + (n * sizeof(uint8_t));
-	memcpy(spec->label, def->label, label_sz);
+	strlcpy(spec->label, def->label, label_sz + 1);
 
 	if (RB_INSERT(mdr_registry_tree, &mdr_registry.head, spec) != NULL) {
 		free(spec);
@@ -2050,7 +2088,7 @@ pmdr_pack(struct pmdr *pm, const struct mdr_spec *spec, struct pmdr_vec *pvec,
 
 	for (i = 0; i < pvec_sz && i < m->spec->vec_size; i++) {
 		if (pvec[i].type == MDR_RSVB) {
-			if (m->spec->types[i] != MDR_B) {
+			if (m->spec->types[m->spec_fld_idx] != MDR_B) {
 				errno = EINVAL;
 				goto fail;
 			}
@@ -2511,6 +2549,15 @@ umdr_init(struct umdr *um, const void *buf, size_t buf_sz,
 	m->pos += sizeof(*m->features);
 
 	/*
+	 * A message size that doesn't have enough bytes for our header
+	 * with optional fields is definitely bad.
+	 */
+	if (mdr_size(m) < mdr_hdr_size(mdr_features(m))) {
+		errno = EBADMSG;
+		return MDR_FAIL;
+	}
+
+	/*
 	 * Return an error if we're trying to support feature bits that
 	 * have no definition in this implementation.
 	 */
@@ -2528,7 +2575,7 @@ umdr_init(struct umdr *um, const void *buf, size_t buf_sz,
 		return MDR_FAIL;
 	}
 
-	if (buf_sz < mdr_hdr_size(accept_features)) {
+	if (buf_sz < mdr_hdr_size(mdr_features(m))) {
 		errno = EAGAIN;
 		return MDR_FAIL;
 	}

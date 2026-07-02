@@ -237,7 +237,7 @@ mdrd_beout(const struct mdrd_besession *sess, uint32_t beout_flags,
 			return -1;
 	}
 
-	if (write(1, pmdr_buf(&pm), pmdr_size(&pm)) < pmdr_size(&pm))
+	if (writeall(1, pmdr_buf(&pm), pmdr_size(&pm)) < pmdr_size(&pm))
 		return -1;
 
 	if (beout_flags & MDRD_BEOUT_FCLOSE)
@@ -362,6 +362,7 @@ again:
 			return MDR_FAIL;
 		if (writeall(1, pmdr_buf(&pm), pmdr_size(&pm)) < pmdr_size(&pm))
 			return MDR_FAIL;
+		goto again;
 	}
 
 	if (!umdr_dcv_match(&um, MDR_DOMAIN_MDRD, MDR_MASK_D)) {
@@ -414,7 +415,11 @@ again:
 		goto again;
 	}
 
-	id = mrh->uv[0].v.u64;
+	/*
+	 * For BEIN id is still unset here.
+	 */
+	if (umdr_dcv(&um) == MDR_DCV_MDRD_BEIN)
+		id = mrh->uv[0].v.u64;
 
 	needle.id = id;
 	sess = SPLAY_FIND(session_tree, &sessions, &needle);
