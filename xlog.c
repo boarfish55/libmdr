@@ -85,6 +85,7 @@ xerrz(struct xerr *e)
 	e->code = 0;
 	e->depth = 0;
 	e->msg[0] = '\0';
+	e->stack[0] = NULL;
 	return e;
 }
 
@@ -93,7 +94,7 @@ xerr_assemble(const struct xerr *e, char *dst, size_t dst_sz,
     const char *fmt, va_list *ap)
 {
 	int     i, len = 0;
-	char    errmsg[128];
+	char    errmsg[128] = "";
 
 	if (dst == NULL || dst_sz < 16)
 		return -1;
@@ -124,7 +125,8 @@ xerr_assemble(const struct xerr *e, char *dst, size_t dst_sz,
 		}
 	}
 
-	for (i = MIN(e->depth, XERR_MAX_DEPTH - 1); i >= 0; i--) {
+	for (i = MIN(e->depth, XERR_MAX_DEPTH - 1);
+	    i >= 0 && e->stack[i] != NULL; i--) {
 		if (strlcat(dst, e->stack[i], dst_sz) >= dst_sz) {
 			strlcpy(dst, "*: ", dst_sz);
 			break;
@@ -253,7 +255,7 @@ xlog_init2(const char *progname, int facility, const char *dbg_spec,
 		opt |= LOG_PERROR;
 
 	if (logf != NULL && logf[0] != '\0' && log_file == NULL)
-		if ((log_file = fopen(logf, "a")) == NULL)
+		if ((log_file = fopen(logf, "ae")) == NULL)
 			warn("fopen");
 
 	openlog(progname, opt, facility);

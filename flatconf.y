@@ -18,11 +18,10 @@
 static int yyparse();
 static int yylex(void);
 
-static long      pwnam_sz;
-static int       lineno = 1;
-static FILE     *cfg;
-static char      buf[PATH_MAX + 1];
-static char     *bufp = buf;
+static int   lineno = 1;
+static FILE *cfg;
+static char  buf[PATH_MAX + 1];
+static char *bufp = buf;
 
 static enum {
 	ST_NONE,
@@ -121,11 +120,14 @@ read:
 		yyerror("token too long");
 		return ERROR;
 	}
-	if ((c = getc(cfg)) == EOF)
-		return (ferror(cfg)) ? ERROR : 0;
+
+	c = getc(cfg);
 
 	switch (state) {
 	case ST_COMMENT:
+		if (c == EOF)
+			return (ferror(cfg)) ? ERROR : 0;
+
 		if (c == '\n') {
 			if (ungetc(c, cfg) == EOF)
 				return (ferror(cfg)) ? ERROR : 0;
@@ -133,7 +135,7 @@ read:
 		}
 		goto read;
 	case ST_WORD:
-		if (isspace(c)) {
+		if (isspace(c) || c == '=' || c == ']') {
 			*bufp = '\0';
 			if (strlcpy(yylval.word, buf, sizeof(yylval.word)) >=
 			    sizeof(yylval.word)) {
@@ -148,6 +150,11 @@ read:
 			return WORD;
 		}
 
+		if (c == EOF) {
+			yyerror("EOF while reading word");
+			return ERROR;
+		}
+
 		if (!isalnum(c) && c != '_') {
 			yyerror("invalid character in word");
 			return ERROR;
@@ -156,11 +163,20 @@ read:
 		*bufp++ = c;
 		goto read;
 	case ST_STRING_ESCAPE:
+		if (c == EOF) {
+			yyerror("EOF while reading escape sequence");
+			return ERROR;
+		}
 		state = ST_STRING;
 		*bufp++ = c;
 		goto read;
 	case ST_STRING:
 		if (c != '"') {
+			if (c == EOF) {
+				yyerror("EOF while reading string");
+				return ERROR;
+			}
+
 			if (c == '\\') {
 				state = ST_STRING_ESCAPE;
 				goto read;
@@ -180,9 +196,9 @@ read:
 		state = ST_NONE;
 		return STRING;
 	case ST_NUMBER:
-		if (isspace(c)) {
+		if (isspace(c) || c == EOF || c == ']') {
 			state = ST_NONE;
-			if (ungetc(c, cfg) == EOF)
+			if (c != EOF && ungetc(c, cfg) == EOF)
 				return (ferror(cfg)) ? ERROR : 0;
 			*bufp = '\0';
 			if (*buf == '-') {
@@ -236,6 +252,9 @@ read:
 		goto read;
 	case ST_NONE:
 	default:
+		if (c == EOF)
+			return (ferror(cfg)) ? ERROR : 0;
+
 		if (c == '\n') {
 			lineno++;
 			return NL;
@@ -394,11 +413,17 @@ flatconf_get_allocstring(void *dst, size_t *sz)
 		return 0;
 	}
 
+	/* Free previous value in case we redefine the same variable */
+	if (*sz > 0) {
+		free(*pdst);
+		*sz = 0;
+	}
+
 	if ((*pdst = strdup(v)) == NULL) {
 		yyerror("strdup failed");
 		return 0;
 	}
-	*sz = strlen(*pdst);
+	*sz = strlen(*pdst) + 1;
 
 	return 1;
 }
@@ -418,6 +443,13 @@ flatconf_get_allocstringlist(void *dst, size_t *sz)
 			return 0;
 		}
 		sum += strlen(v->value) + 1;
+	}
+
+	/* Free previous value in case we redefine the same variable */
+	if (*sz > 0) {
+		free(*pdst);
+		*pdst = NULL;
+		*sz = 0;
 	}
 
 	if (n == 0)
@@ -461,6 +493,13 @@ flatconf_get_alloculonglist(void *dst, size_t *sz)
 			return 0;
 		}
 		sum += sizeof(uint64_t);
+	}
+
+	/* Free previous value in case we redefine the same variable */
+	if (*sz > 0) {
+		free(*pdst);
+		*pdst = NULL;
+		*sz = 0;
 	}
 
 	if (n == 0)
@@ -540,6 +579,19 @@ flatconf_set_var(const char *var) {
 		if (strcmp(cv->name, var) != 0)
 			continue;
 
+		if (cv->t != FLATCONF_ALLOCSTRINGLIST &&
+		    cv->t != FLATCONF_ALLOCULONGLIST) {
+			if (flatconf_values == NULL) {
+				yyerror("no value passed for %s", var);
+				return 0;
+			}
+			if (flatconf_values->next != NULL) {
+				yyerror("list passed to scalar variable %s",
+				    var);
+				return 0;
+			}
+		}
+
 		switch (cv->t) {
 		case FLATCONF_STRING:
 			r = flatconf_get_string(cv->dst, cv->dst_sz);
@@ -580,8 +632,10 @@ flatconf_read(const char *cfg_path, struct flatconf *vars,
 {
 	int r;
 
-	if ((pwnam_sz = sysconf(_SC_LOGIN_NAME_MAX)) == -1)
-		pwnam_sz = 256;
+	/* Reset lexer state */
+	state = ST_NONE;
+	bufp = buf;
+	lineno = 1;
 
 	if (errfn != NULL)
 		flatconf_error = errfn;
@@ -608,7 +662,7 @@ flatconf_free(struct flatconf *vars)
 			/* Only free if we actually allocated this variable */
 			if (cv->dst_sz > 0) {
 				free(*(char **)cv->dst);
-				cv->dst = NULL;
+				*(char **)cv->dst = NULL;
 				cv->dst_sz = 0;
 			}
 			break;
@@ -616,15 +670,15 @@ flatconf_free(struct flatconf *vars)
 			/* Only free if we actually allocated this variable */
 			if (cv->dst_sz > 0) {
 				free(*(char ***)cv->dst);
-				cv->dst = NULL;
+				*(char ***)cv->dst = NULL;
 				cv->dst_sz = 0;
 			}
 			break;
 		case FLATCONF_ALLOCULONGLIST:
 			/* Only free if we actually allocated this variable */
 			if (cv->dst_sz > 0) {
-				free(*(uint64_t ***)cv->dst);
-				cv->dst = NULL;
+				free(*(uint64_t **)cv->dst);
+				*(uint64_t **)cv->dst = NULL;
 				cv->dst_sz = 0;
 			}
 			break;

@@ -361,6 +361,12 @@ spawnproc_init(struct spawnproc *sp, int nochdir, const char *execpromises,
 		 */
 		argv[argvi - 2] = NULL;
 
+		iov[0].iov_base = &smsg;
+		iov[0].iov_len = sizeof(smsg);
+		bzero(&msg, sizeof(msg));
+		msg.msg_iov = iov;
+		msg.msg_iovlen = 1;
+
 		smsg.status = spawn(argv, &smsg.child, &fds[0], &fds[1],
 		    user, group, xerrz(&e));
 		if (smsg.status == -1) {
@@ -370,21 +376,17 @@ spawnproc_init(struct spawnproc *sp, int nochdir, const char *execpromises,
 			fds[0] = -1;
 			fds[1] = -1;
 			smsg.child = 0;
-		}
-		iov[0].iov_base = &smsg;
-		iov[0].iov_len = sizeof(smsg);
-		bzero(&msg, sizeof(msg));
-		bzero(&cmsgbuf, sizeof(cmsgbuf));
-		msg.msg_iov = iov;
-		msg.msg_iovlen = 1;
-		msg.msg_control = cmsgbuf.buf;
-		msg.msg_controllen = sizeof(cmsgbuf.buf);
+		} else {
+			bzero(&cmsgbuf, sizeof(cmsgbuf));
+			msg.msg_control = cmsgbuf.buf;
+			msg.msg_controllen = sizeof(cmsgbuf.buf);
 
-		cmsg = CMSG_FIRSTHDR(&msg);
-		cmsg->cmsg_len = CMSG_LEN(sizeof(fds));
-		cmsg->cmsg_level = SOL_SOCKET;
-		cmsg->cmsg_type = SCM_RIGHTS;
-		memcpy(CMSG_DATA(cmsg), fds, sizeof(fds));
+			cmsg = CMSG_FIRSTHDR(&msg);
+			cmsg->cmsg_len = CMSG_LEN(sizeof(fds));
+			cmsg->cmsg_level = SOL_SOCKET;
+			cmsg->cmsg_type = SCM_RIGHTS;
+			memcpy(CMSG_DATA(cmsg), fds, sizeof(fds));
+		}
 again:
 		if (sendmsg(sv[1], &msg, 0) == -1) {
 			if (errno == EINTR)
@@ -498,7 +500,7 @@ spawnproc_exec(struct spawnproc *sp, char *const argv[], pid_t *cpid,
 	msg.msg_iovlen = 1;
 
 	received = 0;
-	while (received < sizeof(int)) {
+	while (received < sizeof(smsg)) {
 		if ((r = recvmsg(sp->sock, &msg,
 		    MSG_WAITALL|MSG_CMSG_CLOEXEC)) == -1) {
 			if (errno == EINTR)
@@ -521,6 +523,8 @@ spawnproc_exec(struct spawnproc *sp, char *const argv[], pid_t *cpid,
 		return XERRF(e, XLOG_APP, XLOG_IO,
 		    "recvmsg: control message truncated");
 
+	*in = -1;
+	*out = -1;
 	for (cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL;
 	    cmsg = CMSG_NXTHDR(&msg, cmsg)) {
 		if (cmsg->cmsg_len == CMSG_LEN(sizeof(fds)) &&
@@ -532,6 +536,12 @@ spawnproc_exec(struct spawnproc *sp, char *const argv[], pid_t *cpid,
 			break;
 		}
 	}
+
+	if (smsg.status > 0)
+		return XERRF(e, XLOG_ERRNO, smsg.status, "spawn");
+	if (smsg.status < 0)
+		return XERRF(e, XLOG_APP, XLOG_FAIL,
+		    "spawn failed in spawnproc");
 
 	return smsg.status;
 }

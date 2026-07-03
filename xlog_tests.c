@@ -5,6 +5,7 @@
 #include <mdr/xlog.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 
 static int
 some_func8(struct xerr *e)
@@ -89,7 +90,8 @@ int
 main()
 {
 	struct xerr e = XERR_INITIALIZER;
-	struct xerr e2, e3;
+	struct xerr e2, e3, e5;
+	struct xerr e4 = XERR_INITIALIZER;
 
 	some_func0(&e);
 
@@ -102,6 +104,17 @@ main()
 
 	e3 = direct_error2();
 	xerr_print(&e3);
+
+	/*
+	 * Regression: printing an xerr that carries no error must not
+	 * crash; stack[0] used to be NULL (XERR_INITIALIZER) or stale
+	 * (xerrz() on uninitialized memory).
+	 */
+	xerr_print(&e4);
+	xlog(LOG_ERR, &e4, "empty xerr with a format string");
+	memset(&e5, 0xa5, sizeof(e5));
+	xerr_print(xerrz(&e5));
+
 	OPENSSL_cleanup();
 	return 0;
 }
