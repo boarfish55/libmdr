@@ -340,7 +340,6 @@ pack(struct pmdr *m, const char *spec, const char **args, int count)
 			default:
 				errx(1, "invalid format spec");
 			}
-			a++;
 		} else if (spbuf[0] == 'f') {
 			if (strlen(spbuf) < 3)
 				errx(1, "invalid format spec");
